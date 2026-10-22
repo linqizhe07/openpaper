@@ -155,9 +155,10 @@ describe("the chrome around the mode", () => {
     expect(callers).toEqual(['$("mode-more").addEventListener("click", () => A && openMode());']);
   });
 
-  it("the top bar is the lens and the Statement, with the Account's header on its tabs (the mode, What changes, Settings) and the search on Markets' and Trade's; the Settings sheet is Trading · the agents' session and leverage · Background · Devices, with no Mode; the Agents sheet has the setup command and no Devices", () => {
+  it("the top bar is the lens, the background toggle and the Statement, with the Account's header on its tabs (the mode, What changes, Settings) and the search on Markets' and Trade's; the Settings sheet is Trading · the agents' session and leverage · Background · Devices, with no Mode; the Agents sheet has the setup command and no Devices", () => {
     const top = html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>"));
-    expect([...top.matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map((m) => m[1])).toEqual(["lens", "mode-more", "open-settings", "sign-out", "open-statement"]);
+    // the background toggle sits beside the Statement on every tab (its sun or moon follows the choice Settings → Background keeps)
+    expect([...top.matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map((m) => m[1])).toEqual(["lens", "mode-more", "open-settings", "sign-out", "theme-toggle", "open-statement"]);
     expect(top).toMatch(/<div class="acct-tools" data-only="account">/);
     expect(top).toMatch(/id="search-form"[^>]*data-only="trading"/);
     const p = page();
