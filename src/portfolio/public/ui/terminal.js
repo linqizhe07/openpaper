@@ -46,7 +46,27 @@
    (pollAt; 0 while none is set, or while its read is on its way) — and what the stream pushes: the market showing as it is followed
    (followKey, `<venue>:<symbol>`), the positions' markets followed for their price (posKeys), the way the bar's pushed price last moved
    (tick), and what waits to be drawn in the next frame (due) */
-const TT = { item: null, row: null, kind: "", at: null, mk: null, readAt: 0, said: "", fails: 0, posN: 0, tab: "positions", m: "chart", mounted: "", started: false, timer: 0, pollAt: 0, seq: 0, followKey: "", posKeys: [], tick: null, due: { bar: false, pos: false, lag: null, frame: false } };
+const TT = { item: null, row: null, kind: "", at: null, mk: null, readAt: 0, said: "", fails: 0, posN: 0, tab: "positions", m: "chart", mounted: "", started: false, timer: 0, pollAt: 0, seq: 0, followKey: "", posKeys: [], tick: null, due: { bar: false, pos: false, lag: null, frame: false }, ind: "" };
+/* THE CHART'S INDICATORS (ui/chart.js, ui/indicators.js) the owner has on: kept in this browser between visits, and written in the address
+   with the range and the bar size (ttUrl) so a link or a reload shows the same picture; an address that names them wins over the browser's
+   memory (onRoute). Nothing is kept where the browser refuses its storage (a private window): then they last the page's life */
+const TT_IND_KEY = "account.chart.indicators";
+function ttIndStored() {
+  try {
+    return typeof localStorage !== "undefined" && typeof inParse === "function" ? inString(inParse(localStorage.getItem(TT_IND_KEY) || "")) : "";
+  } catch {
+    return "";
+  }
+}
+function ttIndKeep(v) {
+  try {
+    if (v) localStorage.setItem(TT_IND_KEY, v);
+    else localStorage.removeItem(TT_IND_KEY);
+  } catch {
+    /* a browser that refuses its storage: the indicators last the page's life */
+  }
+}
+TT.ind = ttIndStored();
 /* the tabs under the panels, as HL names its own: what is held, what rests on a book, what filled, and every order with what became of it */
 const TT_TABS = [["positions", "Positions"], ["open", "Open orders"], ["history", "Trade history"], ["funding", "Funding history"], ["orders", "Order history"]];
 /* the three tabs a narrow terminal shows the chart and the book behind (one panel), so the order panel follows the chart directly */
@@ -392,7 +412,7 @@ function ttMount(el) {
   const base = { venue: at.venue, symbol: at.symbol, kind: mk.kind, quote: mk.quote };
   // the range, the bar size and the price scale the owner picked stay when the market changes (a range pressed takes its own bar size:
   // ui/chart.js says both back)
-  if (typeof chMount === "function") chMount(chart, { ...base, fullscreen: true, priceStep: mk.priceStep, range: TT.range || "1M", interval: TT.interval || undefined, log: TT.log === true, onRange: (r) => ((TT.range = r), ttUrl()), onInterval: (iv) => ((TT.interval = iv), ttUrl()), onLog: (on) => (TT.log = on) });
+  if (typeof chMount === "function") chMount(chart, { ...base, fullscreen: true, priceStep: mk.priceStep, range: TT.range || "1M", interval: TT.interval || undefined, log: TT.log === true, indicators: TT.ind, onRange: (r) => ((TT.range = r), ttUrl()), onInterval: (iv) => ((TT.interval = iv), ttUrl()), onLog: (on) => (TT.log = on), onIndicators: (v) => ((TT.ind = v), ttIndKeep(v), ttUrl()) });
   else paint(chart, '<p class="empty tt-wait">The chart is not on this page.</p>');
   // the account's own lines over it (orders, the position's entry, its exits, its liquidation), and the address saying what shows
   ttLinesDraw();
@@ -691,6 +711,11 @@ if (typeof onRoute === "function") onRoute((tab, params) => {
   if (tab === "trade" && params) {
     if (typeof CH_RANGE_BAR === "object" && CH_RANGE_BAR[params.range]) TT.range = params.range;
     if (typeof CH_MS === "object" && CH_MS[params.iv]) TT.interval = params.iv;
+    // the indicators the address names (ind=sma:20,rsi:14) are the ones the chart mounts with, and this browser keeps them from here on
+    if (typeof params.ind === "string" && typeof inParse === "function") {
+      TT.ind = inString(inParse(params.ind));
+      ttIndKeep(TT.ind);
+    }
   }
   ttFollow();
 });
@@ -713,7 +738,7 @@ function ttUrl() {
   // reload or link that asked for it keeps asking for it
   const waiting = !at && !named && typeof tkWaitsForRestore === "function" && TK.pending && TK.pending.symbol && tkWaitsForRestore(TK.pending) ? { venue: TK.pending.venue, symbol: TK.pending.symbol } : null;
   const where = at || named || waiting;
-  const params = { ...(TK.kind ? { kind: TK.kind } : {}), ...(where ? { venue: where.venue, symbol: where.symbol } : {}), ...(TT.range ? { range: TT.range } : {}), ...(TT.interval ? { iv: TT.interval } : {}) };
+  const params = { ...(TK.kind ? { kind: TK.kind } : {}), ...(where ? { venue: where.venue, symbol: where.symbol } : {}), ...(TT.range ? { range: TT.range } : {}), ...(TT.interval ? { iv: TT.interval } : {}), ...(TT.ind ? { ind: TT.ind } : {}) };
   const h = hashOf("trade", params);
   if (location.hash === h) return;
   // the ticket is on this market already: the route naming it opens nothing again (ui/trade.js onRoute, TK.routed)

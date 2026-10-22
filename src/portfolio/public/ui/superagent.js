@@ -108,7 +108,7 @@ const SG = {
   pick: "",
   linesSig: "",
   marksSig: "",
-  chart: { range: "1D", interval: "5m", log: false },
+  chart: { range: "1D", interval: "5m", log: false, ind: "" },
   stopSecond: null,
   // WHAT IS BEING PLAYED (sgPlay): what just happened, by "<lead>|in", "<lead>|out", "<lead>|plan", "<lead>|no", "<lead>|card" → until when
   // it is fresh (ms); the banners waiting and the one showing ({ id, role, tone, text, sub } and until when); the lead's chip on the seats'
@@ -1801,7 +1801,7 @@ function sgPaintChart(root, feed, now) {
     if (!key) paint(chart, `<p class="sg-dim sg-wait-w">${m ? `${esc(sgVenueName(feed, SG.view).replace(/^the /, "The "))} is not connected: no chart until it is.` : "Nothing to chart yet: the market of the desk's first lead shows here."}</p>`);
     else if (typeof chMount === "function") {
       const c = SG.chart;
-      chMount(chart, { venue, symbol: m.symbol, kind: m.kind, fullscreen: true, range: c.range, interval: c.interval || undefined, log: c.log === true, onRange: (r) => (c.range = r), onInterval: (iv) => (c.interval = iv), onLog: (v) => (c.log = v) });
+      chMount(chart, { venue, symbol: m.symbol, kind: m.kind, fullscreen: true, range: c.range, interval: c.interval || undefined, log: c.log === true, indicators: c.ind, onRange: (r) => (c.range = r), onInterval: (iv) => (c.interval = iv), onLog: (v) => (c.log = v), onIndicators: (v) => (c.ind = v) });
     } else paint(chart, '<p class="sg-dim">The chart is not on this page.</p>');
   }
   paint(root.querySelector('[data-sg-p="chart-h"]'), sgChartHeadHtml(feed, m));

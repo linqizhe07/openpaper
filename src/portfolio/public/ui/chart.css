@@ -13,7 +13,7 @@
    The live layer (the newest candle, the price axis's figures, the last price) lies over the picture, and the hint (older bars loading,
    where the history ends) at the plot's foot, both out of the flow too. A drag moves the chart sideways only: up and down is the page's. */
 
-.ch { display: flex; flex-direction: column; flex: 1 1 auto; gap: 4px; height: 100%; min-height: 280px; min-width: 0; padding: 0 0 6px; background: transparent; container-type: inline-size; }
+.ch { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; gap: 4px; height: 100%; min-height: 280px; min-width: 0; padding: 0 0 6px; background: transparent; container-type: inline-size; }
 
 /* ---- the chart filling the window (chart.js chSetFull): its frame laid over the page — under a sheet, the drawer and the toasts — in the
    panel's own colour, and the page behind it held still. Doubled so it stands over the frames' own heights (terminal.css, superagent.css) -- */
@@ -40,6 +40,24 @@ html[data-chart-full] { overflow: hidden; }
 .ch-fullb { margin-left: auto; padding: 0 6px; }
 .ch-log + .ch-fullb { margin-left: 0; }
 .ch-fulli { display: block; }
+/* the indicators' button (the first of the head's right-hand group) and its menu under the head (chart.js chIndPopHtml) */
+.ch-indb { margin-left: auto; }
+.ch-indb ~ .ch-log, .ch-indb ~ .ch-fullb { margin-left: 0; }
+.ch-indb[aria-expanded="true"] { background: var(--hl-inset); }
+.ch-ind-pop { position: absolute; top: 40px; right: 8px; z-index: 6; width: min(440px, calc(100% - 16px)); max-height: calc(100% - 48px); overflow: auto; padding: 8px 10px; border-radius: var(--hl-r-pop); background: var(--hl-panel); box-shadow: inset 0 0 0 1px var(--card-border), 0 8px 24px rgba(0, 0, 0, 0.18); color: var(--hl-text); font: 400 12px/1.4 var(--font-sans); }
+.ch-ind-pop[hidden] { display: none; }
+.ch-ind-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; font-weight: 600; }
+.ch-ind-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 32px; padding: 3px 0; border-top: 1px solid var(--hl-grid); }
+.ch-ind-row.off { color: var(--hl-dim); }
+.ch-ind-sw { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 180px; min-width: 0; cursor: pointer; }
+.ch-ind-sw input { margin: 0; }
+.ch-ind-sw b { font-weight: 600; }
+.ch-ind-w { color: var(--hl-dim); font-size: 11px; }
+.ch-ind-ps { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.ch-ind-p { display: inline-flex; align-items: center; gap: 4px; color: var(--hl-dim); font-size: 11px; }
+.ch-ind-n { width: 58px; min-height: 24px; height: 24px; padding: 0 4px; border: 1px solid var(--hl-inset); border-radius: 4px; background: transparent; color: var(--hl-text); font: 400 12px var(--font-sans); font-variant-numeric: tabular-nums; }
+.ch-ind-n:disabled { opacity: 0.45; }
+.ch-ind-note { margin: 6px 0 0; color: var(--hl-dim); font-size: 11px; }
 @media (hover: hover) {
   .ch-iv:hover, .ch-ivsel:hover { background: var(--hl-inset); }
   .ch-iv[aria-pressed="true"]:hover { color: var(--hl-accent); }
@@ -89,6 +107,28 @@ html[data-chart-full] { overflow: hidden; }
 .ch-start { fill: none; stroke: var(--hl-muted); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.7; }
 /* a seam: the bars before it are another source's (the foot says whose, and where) */
 .ch-seam { fill: none; stroke: var(--hl-muted); stroke-width: 1; stroke-dasharray: 6 2 1 2; opacity: 0.7; }
+
+/* the indicators (chart.js chIndSvg, ui/indicators.js): lines over the price in their colours (the accent, amber, the muted ink, the second
+   ink), a band's light fill, the panes under the price with their label, their dashed guides and a histogram in the up and down colours;
+   the readout's figures in the same colours */
+.ch-ind { position: absolute; inset: 0; pointer-events: none; }
+.ch-inl { fill: none; stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+.ch-inl.in-a { stroke: var(--hl-accent); }
+.ch-inl.in-b { stroke: var(--hl-warn); }
+.ch-inl.in-c { stroke: var(--hl-muted); }
+.ch-inl.in-d { stroke: var(--hl-text-2); }
+.ch-inb { stroke: none; opacity: 0.1; }
+.ch-inb.in-c { fill: var(--hl-muted); }
+.ch-ing { fill: none; stroke: var(--hl-muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.6; }
+.ch-svg .ch-inlab { fill: var(--hl-tv-text); font-size: 11px; }
+.ch-inh { shape-rendering: crispEdges; opacity: 0.6; }
+.ch-inh.up { fill: var(--hl-up); }
+.ch-inh.down { fill: var(--hl-down); }
+.ch-ohlc .ch-v.in-a { color: var(--hl-accent); }
+.ch-ohlc .ch-v.in-b { color: var(--hl-warn); }
+.ch-ohlc .ch-v.in-c { color: var(--hl-muted); }
+.ch-ohlc .ch-v.in-d { color: var(--hl-text-2); }
+.ch-ohlc .ch-v.in-hist { color: var(--hl-text); }
 
 /* the account's own lines (chart.js chLines): an order resting, a position's entry, its take-profit and stop-loss, its liquidation price —
    dashed across the price pane in their kind's colour, their words in a tag at the left, their price in a tag on the axis. A line the owner

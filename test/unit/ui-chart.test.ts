@@ -13,7 +13,7 @@ import { HISTORY_WAIT_MS, PAGE_WAIT_MS } from "../../src/portfolio/service.ts";
  * the venue's word never laid over the source's close, a share's daily bar moved only in its regular session, and what release stops */
 const UI = fileURLToPath(new URL("../../src/portfolio/public/ui/", import.meta.url));
 // book.js after the chart, as account.html loads them: the chart asks it whether a read reached the account (bkUnanswered)
-const FILES = ["core.js", "chart.js", "book.js"];
+const FILES = ["core.js", "indicators.js", "chart.js", "book.js"];
 
 type Listener = (e: Record<string, unknown>) => void;
 /** a stand-in element: what the chart writes into it (innerHTML through paint, attributes, classes, words) is kept to be read; its parts are
@@ -152,7 +152,7 @@ function page(answer: (path: string) => Answer = () => new Promise(() => {}), op
   if (opts.stream) Object.assign(sandbox, { EventSource: FakeES, setInterval, clearInterval });
   const ctx = createContext(sandbox);
   sandbox.window = runInContext("globalThis", ctx);
-  for (const f of opts.stream ? ["core.js", "stream.js", "chart.js", "book.js"] : FILES) new Script(readFileSync(`${UI}${f}`, "utf8"), { filename: f }).runInContext(ctx);
+  for (const f of opts.stream ? ["core.js", "stream.js", "indicators.js", "chart.js", "book.js"] : FILES) new Script(readFileSync(`${UI}${f}`, "utf8"), { filename: f }).runInContext(ctx);
   const run = <T = unknown>(code: string): T => runInContext(code, ctx) as T;
   const el = fake("root", opts.size);
   sandbox.EL = el;
@@ -750,7 +750,7 @@ describe("the chart mounted", () => {
     p.run('chMount(EL, { venue: "okx", symbol: "BTC/USDT" })');
     // the frame: the head holds the nine ranges, the seven bar sizes' menu and the log switch; the readout, the hint and the key back to the
     // newest bar (hidden until the view is behind it) are inside the plot, between the picture's two layers and the crosshair
-    expect(p.el.innerHTML).toMatch(/<div class="ch-head"><div class="ch-rs"[^>]*>(<button[^>]*>[^<]*<\/button>){9}<\/div><span class="ch-hsep"[^>]*><\/span><span class="ch-ivw"><select[^>]*>(<option[^>]*>[^<]*<\/option>){7}<\/select><\/span><button[^>]*data-ch-log[^>]*>Log<\/button><\/div><div class="ch-plot"[^>]*><div class="ch-draw"><\/div><div class="ch-live"><\/div><div class="ch-lines"><\/div><div class="ch-ohlc"><\/div><p class="ch-hint"[^>]*><\/p><button type="button" class="ch-now" data-ch-now hidden[^>]*>Now →<\/button><div class="ch-cross"/);
+    expect(p.el.innerHTML).toMatch(/<div class="ch-head"><div class="ch-rs"[^>]*>(<button[^>]*>[^<]*<\/button>){9}<\/div><span class="ch-hsep"[^>]*><\/span><span class="ch-ivw"><select[^>]*>(<option[^>]*>[^<]*<\/option>){7}<\/select><\/span><button[^>]*data-ch-ind[^>]*>Indicators<\/button><button[^>]*data-ch-log[^>]*>Log<\/button><\/div><div class="ch-ind-pop"[^>]*hidden><\/div><div class="ch-plot"[^>]*><div class="ch-draw"><\/div><div class="ch-live"><\/div><div class="ch-ind"><\/div><div class="ch-lines"><\/div><div class="ch-ohlc"><\/div><p class="ch-hint"[^>]*><\/p><button type="button" class="ch-now" data-ch-now hidden[^>]*>Now →<\/button><div class="ch-cross"/);
     // the hint, like the readout, is out of the flow and kept while empty
     expect(rule(".ch-hint")).toMatch(/position: absolute;/);
     expect(rule(".ch-hint")).toMatch(/pointer-events: none;/);
@@ -2288,5 +2288,162 @@ describe("the chart filling the window", () => {
     p.run("chRelease(EL)");
     expect(p.el.classes.has("ch-full")).toBe(false);
     expect(doc(p).documentElement.dataset.chartFull).toBeUndefined();
+  });
+});
+
+describe("the indicators on the chart (ui/indicators.js)", () => {
+  const bars = hourly(40);
+  const mount = (opts = "", answer: (path: string) => Answer = (path) => (path.startsWith("/api/account/candles") ? candles(bars) : new Promise(() => {})), size?: { w: number; h: number }) => {
+    const p = page(answer, size ? { size } : {});
+    p.run(`var KEPT = []; chMount(EL, { venue: "okx", symbol: "BTC/USDT", kind: "spot", quote: "USDT", onIndicators: (v) => KEPT.push(v)${opts} })`);
+    return p;
+  };
+  const doc = (p: ReturnType<typeof page>) => p.sandbox.document as Omit<Fake, "querySelector"> & { querySelector: () => unknown };
+  const press = (el: Fake, dataset: Record<string, string>) => el.fire("click", { target: { closest: () => ({ dataset }) } });
+  const layer = (p: ReturnType<typeof page>) => p.el.querySelector(".ch-ind").innerHTML;
+
+  it("draws a moving average as one line through its values — none before its length — says how many are on in the head and each value after the bar's figures in the readout, and gives the list back", async () => {
+    const p = mount(', indicators: "sma:3"');
+    await settle();
+    expect(p.run("chIndicators(EL)")).toBe("sma:3");
+    expect(p.run("KEPT")).toEqual([]);
+    expect(p.el.innerHTML).toContain('<button type="button" class="ch-iv ch-indb" data-ch-ind aria-expanded="false" aria-haspopup="dialog" data-fk="ch-ind" title="Indicators: moving averages, Bollinger bands, VWAP, RSI, MACD, the stochastic, ATR">Indicators · 1</button>');
+    expect(p.el.innerHTML).toContain('<div class="ch-ind-pop" data-ch-pop role="dialog" aria-label="Indicators" hidden></div>');
+    const ind = layer(p);
+    expect(ind).toMatch(/^<svg class="ch-svg ch-isvg" width="640" height="360"/);
+    // the line is clipped to the price pane: an inner svg as tall as it
+    expect(ind).toContain(`<svg x="0" y="0" width="${p.run("CH.get(EL).L.plotW")}" height="${Math.round(p.run<number>("CH.get(EL).L.sc.bottom"))}">`);
+    const d = /<path class="ch-inl in-a" d="([^"]+)"\/>/.exec(ind)![1]!;
+    const pts = d.split(/(?=[ML])/);
+    expect(pts).toHaveLength(38);
+    expect(pts[0]!.startsWith("M")).toBe(true);
+    expect(pts.slice(1).every((x) => x.startsWith("L"))).toBe(true);
+    const sma = (bars[0]!.c + bars[1]!.c + bars[2]!.c) / 3;
+    expect(pts[0]).toBe(`M${p.run<number>("CH.get(EL).L.sc.cx(2)") + 0.5} ${Math.round(p.run<number>(`CH.get(EL).L.sc.y(${sma})`)) + 0.5}`);
+    // nothing under the price: the price pane is the whole plot
+    expect(p.run("[CH.get(EL).L.priceH === CH.get(EL).L.plotH, CH.get(EL).L.subs]")).toEqual([true, []]);
+    // the readout on the last bar carries the average's value in its colour
+    const last = (bars[37]!.c + bars[38]!.c + bars[39]!.c) / 3;
+    expect(p.el.querySelector(".ch-ohlc").innerHTML).toContain(`<span class="ch-kv ch-inv"><span class="ch-k">SMA 3</span> <span class="ch-v in-a">${p.run(`CH.get(EL).L.fmt(${last})`)}</span></span>`);
+    // the readout's room counts it (one more line at this width than the bar's figures alone take)
+    expect(p.run("chReadoutLines(9, 300, false, [11])")).toBe(3);
+    expect(p.run("chReadoutLines(9, 300)")).toBe(2);
+    // the pointer over the third bar: the first average
+    const plot = p.el.querySelector(".ch-plot");
+    plot.fire("pointermove", { clientX: p.run<number>("CH.get(EL).L.sc.cx(2)"), clientY: 100, pointerId: 1 });
+    expect(p.el.querySelector(".ch-ohlc").innerHTML).toContain(`<span class="ch-k">SMA 3</span> <span class="ch-v in-a">${p.run(`CH.get(EL).L.fmt(${sma})`)}</span>`);
+    plot.fire("pointermove", { clientX: p.run<number>("CH.get(EL).L.sc.cx(1)"), clientY: 100, pointerId: 1 });
+    expect(p.el.querySelector(".ch-ohlc").innerHTML).toContain('<span class="ch-k">SMA 3</span> <span class="ch-v in-a">—</span>');
+    // the band: filled between its two lines, the three lines over it
+    p.run('chIndicators(EL, "bb:3:2")');
+    expect(p.run("KEPT")).toEqual(["bb:3:2"]);
+    const bb = layer(p);
+    expect(bb).toMatch(/<path class="ch-inb in-c" d="M[\d.]+ [\d.]+L.*Z"\/>/);
+    expect(bb.match(/<path class="ch-inl in-c"/g)).toHaveLength(3);
+    expect(p.el.querySelector(".ch-head").innerHTML).toContain("Indicators · 1</button>");
+    p.run("chRelease(EL)");
+  });
+
+  it("a pane under the price: RSI takes a fifth of the plot with its label, its guides at 30 and 70 and their figures on the axis, its line clipped to the pane; the volume and the last price keep to the price pane; three panes at most, and the price pane keeps 140 pixels — a short chart draws fewer", async () => {
+    const p = mount(', indicators: "rsi:14"');
+    await settle();
+    const L = p.run<{ plotH: number; priceH: number; subs: Array<{ top: number; h: number; lo: number; hi: number }> }>("JSON.parse(JSON.stringify({ plotH: CH.get(EL).L.plotH, priceH: CH.get(EL).L.priceH, subs: CH.get(EL).L.subs.map((x) => ({ top: x.top, h: x.h, lo: x.lo, hi: x.hi })) }))");
+    expect([L.plotH, L.priceH]).toEqual([338, 270]);
+    expect(L.subs).toEqual([{ top: 270, h: 68, lo: 0, hi: 100 }]);
+    const ind = layer(p);
+    const plotW = p.run<number>("CH.get(EL).L.plotW");
+    expect(ind).toContain(`<path class="ch-sep" d="M0 270.5H${plotW}"/><text class="ch-inlab" x="6" y="281">RSI 14</text>`);
+    expect(ind).toContain(`<path class="ch-ing" d="M0 299.5H${plotW}"/><text class="ch-ax" x="${plotW + 6}" y="303">70</text>`);
+    expect(ind).toContain(`<path class="ch-ing" d="M0 319.5H${plotW}"/><text class="ch-ax" x="${plotW + 6}" y="323">30</text>`);
+    expect(ind).toContain(`<svg x="0" y="270" width="${plotW}" height="68" aria-hidden="true"><path class="ch-inl in-a" d="M${p.run<number>("CH.get(EL).L.sc.cx(14)") + 0.5} `);
+    // the volume bars stand on the price pane's foot, and the last price's line is inside it
+    const vu = /<path class="ch-vu" d="M[\d.-]+ (\d+)h\d+v(\d+)/.exec(p.el.querySelector(".ch-draw").innerHTML)!;
+    expect(Number(vu[1]) + Number(vu[2])).toBe(270);
+    expect(Number(/<path class="ch-last up" d="M0 ([\d.]+)H/.exec(p.el.querySelector(".ch-live").innerHTML)![1])).toBeLessThan(270);
+    // the readout: the oscillator to one decimal
+    expect(p.el.querySelector(".ch-ohlc").innerHTML).toMatch(/<span class="ch-k">RSI 14<\/span> <span class="ch-v in-a">\d+(\.\d)?<\/span>/);
+    // four asked, three drawn (the cap), the price pane kept at 140: 66 pixels each
+    p.run('chIndicators(EL, "rsi:14,macd:12:26:9,stoch:14:3:3,atr:14")');
+    expect(p.run("chIndicators(EL)")).toBe("rsi:14,macd:12:26:9,stoch:14:3:3");
+    expect(p.run("KEPT")).toEqual(["rsi:14,macd:12:26:9,stoch:14:3:3"]);
+    expect(p.run("[CH.get(EL).L.priceH, CH.get(EL).L.subs.map((x) => [x.top, x.h])]")).toEqual([140, [[140, 66], [206, 66], [272, 66]]]);
+    const three = layer(p);
+    expect(three).toContain(">MACD 12 26 9</text>");
+    expect(three).toContain(">Stoch 14 3 3</text>");
+    expect(three).toMatch(/<path class="ch-inh up" d="M[\d.]+ \d+h\d+v\d+h-?\d+Z/);
+    expect(three.match(/<path class="ch-inl in-b"/g)).toHaveLength(2);
+    expect(p.el.querySelector(".ch-head").innerHTML).toContain("Indicators · 3</button>");
+    p.run("chRelease(EL)");
+    // a short chart: one pane of what is left over 140
+    const q = mount(', indicators: "rsi:14,macd:12:26:9"', undefined, { w: 640, h: 220 });
+    await settle();
+    expect(q.run("[CH.get(EL).L.plotH, CH.get(EL).L.priceH, CH.get(EL).L.subs.length]")).toEqual([198, 140, 1]);
+    q.run("chRelease(EL)");
+  });
+
+  it("the menu: the button opens it with every indicator's switch and lengths; a switch turns one on with its defaults and the page is told; a length changed keeps its place, one out of range is not taken; Clear takes all off; Esc, and a click elsewhere, close it; VWAP says why it cannot be read", async () => {
+    const p = mount(', indicators: "sma:3"');
+    await settle();
+    const pop = p.el.querySelector(".ch-ind-pop");
+    const head = () => p.el.querySelector(".ch-head").innerHTML;
+    press(p.el, { chInd: "" });
+    expect(pop.hidden).toBe(false);
+    expect(head()).toContain('data-ch-ind aria-expanded="true"');
+    expect(pop.innerHTML).toContain('<div class="ch-ind-h"><span>Indicators</span><button type="button" class="ch-iv ch-ind-clear" data-ind-clear>Clear</button></div>');
+    expect(pop.innerHTML).toContain('<div class="ch-ind-row on"><label class="ch-ind-sw"><input type="checkbox" data-ind-on="sma" checked> <b>SMA</b> <span class="ch-ind-w">simple moving average of the close</span></label><span class="ch-ind-ps"><label class="ch-ind-p"><span>length</span><input type="number" class="ch-ind-n" data-ind-p="sma:0" value="3" min="2" max="500" step="1" aria-label="SMA length"></label></span></div>');
+    expect(pop.innerHTML).toContain('<input type="checkbox" data-ind-on="rsi"> <b>RSI</b>');
+    expect(pop.innerHTML).toContain('data-ind-p="rsi:0" value="14" min="2" max="200" step="1" aria-label="RSI length" disabled>');
+    expect(pop.innerHTML).toContain('data-ind-p="bb:1" value="2" min="0.5" max="5" step="0.5"');
+    expect(pop.innerHTML).not.toContain("intraday bars only");
+    expect(pop.innerHTML).toContain("At most 3 under the price.");
+    // a switch on: the defaults, the page told, the head's count
+    p.el.fire("change", { target: { dataset: { indOn: "ema" }, checked: true } });
+    expect(p.run("chIndicators(EL)")).toBe("sma:3,ema:50");
+    expect(p.run("KEPT")).toEqual(["sma:3,ema:50"]);
+    expect(head()).toContain("Indicators · 2</button>");
+    expect(pop.innerHTML).toContain('data-ind-on="ema" checked>');
+    // a length changed keeps its place; one out of range is not taken and the field shows the one kept
+    p.el.fire("change", { target: { dataset: { indP: "sma:0" }, value: "5" } });
+    expect(p.run("chIndicators(EL)")).toBe("sma:5,ema:50");
+    p.el.fire("change", { target: { dataset: { indP: "sma:0" }, value: "1" } });
+    expect(p.run("chIndicators(EL)")).toBe("sma:5,ema:50");
+    expect(pop.innerHTML).toContain('data-ind-p="sma:0" value="5"');
+    p.el.fire("change", { target: { dataset: { indP: "rsi:0" }, value: "7" } });
+    expect(p.run("chIndicators(EL)")).toBe("sma:5,ema:50");
+    // a switch off
+    p.el.fire("change", { target: { dataset: { indOn: "sma" }, checked: false } });
+    expect(p.run("chIndicators(EL)")).toBe("ema:50");
+    expect(p.run("KEPT")).toEqual(["sma:3,ema:50", "sma:5,ema:50", "ema:50"]);
+    // Esc closes the menu; the button opens it again; a click elsewhere closes it, one inside does not
+    doc(p).fire("keydown", { key: "Escape", target: { closest: () => null } });
+    expect(pop.hidden).toBe(true);
+    expect(head()).toContain('data-ch-ind aria-expanded="false"');
+    press(p.el, { chInd: "" });
+    expect(pop.hidden).toBe(false);
+    doc(p).fire("click", { target: { closest: (sel: string) => (sel === "[data-ch-pop]" ? {} : null) } });
+    expect(pop.hidden).toBe(false);
+    doc(p).fire("click", { target: { closest: () => null } });
+    expect(pop.hidden).toBe(true);
+    // Clear
+    press(p.el, { chInd: "" });
+    press(p.el, { indClear: "" });
+    expect(p.run("chIndicators(EL)")).toBe("");
+    expect(p.run<string[]>("KEPT").at(-1)).toBe("");
+    expect(head()).toContain(">Indicators</button>");
+    expect(pop.innerHTML).toContain('data-ind-clear disabled>Clear</button>');
+    expect(layer(p)).toBe("");
+    p.run("chRelease(EL)");
+    // bars without volume: VWAP is on but draws nothing and the menu says why; daily bars: not even offered
+    const dry = mount(', indicators: "vwap"', (path) => (path.startsWith("/api/account/candles") ? candles(bars.map((b) => ({ t: b.t, o: b.o, h: b.h, l: b.l, c: b.c }))) : new Promise(() => {})));
+    await settle();
+    expect(layer(dry)).toBe("");
+    press(dry.el, { chInd: "" });
+    expect(dry.el.querySelector(".ch-ind-pop").innerHTML).toContain('<div class="ch-ind-row on off"><label class="ch-ind-sw"><input type="checkbox" data-ind-on="vwap" checked> <b>VWAP</b> <span class="ch-ind-w">these bars carry no volume</span></label></div>');
+    dry.run("chRelease(EL)");
+    const daily = mount("", (path) => (path.startsWith("/api/account/candles") ? candles(bars, { interval: "1d" }) : new Promise(() => {})));
+    await settle();
+    press(daily.el, { chInd: "" });
+    expect(daily.el.querySelector(".ch-ind-pop").innerHTML).toContain('<input type="checkbox" data-ind-on="vwap" disabled> <b>VWAP</b> <span class="ch-ind-w">intraday bars only</span>');
+    daily.run("chRelease(EL)");
   });
 });

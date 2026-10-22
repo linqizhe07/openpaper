@@ -3485,6 +3485,28 @@ describe("feat/paper-live phase 4: the tables, the chart's lines, the address, t
     expect(p.out("[TT.range, TT.interval]")).toEqual(["5Y", "1w"]);
   });
 
+  it("writes the chart's indicators into the address and this browser's storage, reads them back from an address (which wins over the storage), and shrugs off a browser that refuses its storage", () => {
+    const p = page();
+    p.set("A", pageOf([PAPER1]));
+    p.run('var REPLACED = []; history.replaceState = (s, t, h) => { REPLACED.push(h); location.hash = h; }; var STORE = {}; localStorage = { getItem: (k) => STORE[k] ?? null, setItem: (k, v) => { STORE[k] = String(v); }, removeItem: (k) => { delete STORE[k]; } }');
+    p.run('ROUTE.tab = "trade"; TK.kind = "perps"; TT.at = { venue: "paper-1", symbol: "BTC-PERP" }; TT.range = "3M"; TT.interval = "4h"; TT.ind = "sma:20,rsi:14"; ttUrl()');
+    expect(p.out<string[]>("REPLACED").at(-1)).toBe("#/trade?kind=perps&venue=paper-1&symbol=BTC-PERP&range=3M&iv=4h&ind=sma%3A20%2Crsi%3A14");
+    // the chart's keeper (ui/chart.js onIndicators, as ttMount wires it): the list kept here and in the address; none kept once cleared
+    p.run('ttIndKeep("sma:20,rsi:14")');
+    expect(p.out('[STORE["account.chart.indicators"], ttIndStored()]')).toEqual(["sma:20,rsi:14", "sma:20,rsi:14"]);
+    p.run('ttIndKeep("")');
+    expect(p.out('["account.chart.indicators" in STORE, ttIndStored()]')).toEqual([false, ""]);
+    // an address that names them (junk in it dropped) wins over the storage, and the storage keeps them from then on
+    p.run('drawPane = () => {}; STORE["account.chart.indicators"] = "ema:50"; TT.ind = ""; location.hash = "#/trade?kind=crypto&range=5Y&iv=1w&ind=sma%3A20%2Cfoo%2Crsi%3A14"; routed()');
+    expect(p.out('[TT.ind, STORE["account.chart.indicators"]]')).toEqual(["sma:20,rsi:14", "sma:20,rsi:14"]);
+    // an address that names none leaves them
+    p.run('location.hash = "#/trade?kind=crypto&range=1Y"; routed()');
+    expect(p.out("TT.ind")).toBe("sma:20,rsi:14");
+    // a browser that refuses its storage
+    p.run('localStorage = { getItem: () => { throw new Error("no"); }, setItem: () => { throw new Error("no"); }, removeItem: () => { throw new Error("no"); } }');
+    expect(p.out('(ttIndKeep("sma:20"), ttIndStored())')).toBe("");
+  });
+
   it("stars a market in this browser's picker (kept per kind, nothing signed), lists the starred first, and moves through the picker by the keys — ↓ from the search, ↑ ↓ Home End between markets, S to star", async () => {
     const p = page();
     p.set("A", pageOf([EX]));

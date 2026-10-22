@@ -108,7 +108,7 @@ describe("the account page's scripts", () => {
     // the order the contract names: the ocean right after the contract (the page's ground, drawn before any pane), then the account's push
     // channel (every pane after it listens to it), what moves money and what connects before the panes that use it, the statement and the
     // agents' mount point after them, the shell last
-    expect(named).toEqual(["/owner.js", "/ui/core.js", "/ui/ocean.js", "/ui/stream.js", "/ui/connect.js", "/ui/money.js", "/ui/asset.js", "/ui/intent.js", "/ui/live.js", "/ui/portfolio.js", "/ui/memory.js", "/ui/earn.js", "/ui/markets.js", "/ui/trade.js", "/ui/chart.js", "/ui/book.js", "/ui/terminal.js", "/ui/brains.js", "/ui/desk.js", "/ui/superagent.js", "/ui/statement.js", "/ui/agents-mount.js", "/ui/shell.js"]);
+    expect(named).toEqual(["/owner.js", "/ui/core.js", "/ui/ocean.js", "/ui/stream.js", "/ui/connect.js", "/ui/money.js", "/ui/asset.js", "/ui/intent.js", "/ui/live.js", "/ui/portfolio.js", "/ui/memory.js", "/ui/earn.js", "/ui/markets.js", "/ui/trade.js", "/ui/indicators.js", "/ui/chart.js", "/ui/book.js", "/ui/terminal.js", "/ui/brains.js", "/ui/desk.js", "/ui/superagent.js", "/ui/statement.js", "/ui/agents-mount.js", "/ui/shell.js"]);
     // each ui script waits for the page to be parsed and runs in the order named
     for (const m of html.matchAll(/<script\b([^>]*)\bsrc="(\/ui\/[^"]+)"/g)) expect(m[1], m[2] ?? "").toMatch(/\bdefer\b/);
     // the tokens first (both backgrounds), then the shell, then what the earlier renderers still draw; the classic page's sheet is not needed
