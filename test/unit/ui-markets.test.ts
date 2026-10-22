@@ -448,16 +448,17 @@ describe("the Markets pane", () => {
     const html = p.run<string>("EL.innerHTML");
     const tabs = [...html.matchAll(/data-act="tab" data-tab="([a-z]*)"[^>]*aria-pressed="(true|false)">([^<]+)</g)].map((m) => `${m[3]}${m[2] === "true" ? "*" : ""}`);
     expect(tabs).toEqual(["All*", "Crypto", "Predictions", "Watching"]);
-    // one table, no Now sections, no Venues board
+    // one table; over it the account's three lists as cards (mkListsHtml), not the old Now sections; no Venues board
     expect(html.match(/<table class="t mk-t">/g)).toHaveLength(1);
-    expect(html).not.toMatch(/<h2[^>]*>(Closing soon|Movers|Most traded)<\/h2>/);
+    expect([...html.matchAll(/<section class="mk-list" aria-label="([^"]+)">/g)].map((m) => m[1])).toEqual(["Biggest moves", "Most traded", "Closing soonest"]);
+    expect(html).not.toMatch(/<h2[^>]*>(Closing soon|Movers)<\/h2>/);
     expect(html).not.toContain("mk-chip");
     expect(html).not.toContain("Your venues");
     expect(html).not.toContain("Connect a venue");
     // the event is a row too, one line high: its lead outcome in cents; what kind of thing it is and when it closes are in its hover card
-    // (a screen reader hears them, as a time), not under its name
+    // (a screen reader hears them, as a time), not under its name — the countdown is in the Closing soonest list over the table, not the table
     expect(html).toContain('<span data-q="kalshi|KXFED-DEC:YES" data-fmt="c-last">62¢</span><span class="dim small"> Yes</span>');
-    expect(html).not.toContain("mk-close");
+    expect(html.slice(html.indexOf("<table"), html.indexOf("</table>"))).not.toContain("mk-close");
     expect(html).toContain('data-fk="open:kalshi:KXFED-DEC" data-peek="0"');
     // its row carries its close, so the list is read again the moment it closes (a rolling market's next one takes its place)
     expect(html).toContain('<tr data-k="kalshi:KXFED-DEC" data-pairs="kalshi|KXFED-DEC:YES,kalshi|KXFED-DEC:NO" data-ends="2026-10-08T09:12:30.000Z">');
@@ -535,6 +536,48 @@ describe("the Markets pane", () => {
     p.run(`mkPaneClick(${press({ act: "sort", v: "volume" })})`);
     expect(p.run("GONE[1]")).toEqual(["markets", { sort: "" }, { replace: true }]);
     expect(p.asked.map((a) => a.path)).toEqual(["/api/account/explore"]);
+  });
+
+  it("draws the account's three lists over All — five rows each, the market's name and the list's figures, See all → to the whole list — and nothing while searching, elsewhere, or with nothing in them", async () => {
+    const p = page(() => ({}));
+    p.set("A", account());
+    p.set("ITEMS", { btc, doge, fed });
+    const coins = [0, 1, 2, 3, 4, 5].map((i) => ({ ...btc, key: `coin:B${i}`, name: `Coin ${i}`, base: `B${i}`, changePct24h: 9 - i }));
+    p.set("B", { asOf: new Date(NOW).toISOString(), items: [fed, btc, doge], movers: coins, mostTraded: [btc, doge], closing: [fed] });
+    p.run("MKT.reg = []");
+    const html = p.run<string>("mkListsHtml(B, lensNow())");
+    expect([...html.matchAll(/<section class="mk-list" aria-label="([^"]+)">/g)].map((m) => m[1])).toEqual(["Biggest moves", "Most traded", "Closing soonest"]);
+    // five rows at most, in the list's order; each the name button (registered, with its hover card) and the figures on the right
+    const moves = html.slice(html.indexOf('aria-label="Biggest moves"'), html.indexOf('aria-label="Most traded"'));
+    expect([...moves.matchAll(/<b>([^<]+)<\/b>/g)].map((m) => m[1])).toEqual(["Coin 0", "Coin 1", "Coin 2", "Coin 3", "Coin 4"]);
+    expect(moves).toMatch(/<span class="up"><span aria-hidden="true">▲<\/span><span class="sr">up<\/span> 9(\.0)?%<\/span><span class="mk-li-px">/);
+    expect(p.run<number>("MKT.reg.length")).toBe(5 + 2 + 1);
+    expect(html).toContain('data-k="li:coin:BTC" data-pairs="ex|BTC/USDT"');
+    const traded = html.slice(html.indexOf('aria-label="Most traded"'), html.indexOf('aria-label="Closing soonest"'));
+    expect(traded).toContain('<span class="mk-li-vol">$1.9B</span>');
+    const closing = html.slice(html.indexOf('aria-label="Closing soonest"'));
+    expect(closing).toMatch(/<span class="mk-close" data-ended="Closed" data-close="[^"]+">Closes in 2d 04:12<\/span><span class="mk-li-px"><span data-q="kalshi\|KXFED-DEC:YES" data-fmt="c-last">62¢<\/span>/);
+    // See all →: the same order over the whole list — All for moves and volume, Predictions for what closes soonest
+    p.run("var SEEN = []; go = (tab, params, opts) => SEEN.push([tab, params, opts])");
+    p.run(`mkPaneClick(${press({ act: "seeall", tab: "", sort: "movers" })})`);
+    p.run(`mkPaneClick(${press({ act: "seeall", tab: "predictions", sort: "closing" })})`);
+    expect(p.run("SEEN.map(([t, q]) => [t, q.tab, q.sort])")).toEqual([["markets", "all", "movers"], ["markets", "predictions", "closing"]]);
+    // the lens narrows each list; a list with nothing is left out; with nothing in any, nothing is drawn
+    expect(p.run<string>("mkListsHtml(B, { kind: 'venue', id: 'kalshi' })")).not.toContain('aria-label="Biggest moves"');
+    expect(p.run<string>("mkListsHtml(B, { kind: 'venue', id: 'kalshi' })")).toContain('aria-label="Closing soonest"');
+    expect(p.run<string>("mkListsHtml({ items: [ITEMS.fed] }, lensNow())")).toBe("");
+    expect(p.run<string>("mkListsHtml(null, lensNow())")).toBe("");
+    // the pane draws them over All only, and not over a search
+    for (const [hash, there] of [["#/markets", true], ["#/markets?tab=crypto", false], ["#/markets?q=btc", false]] as const) {
+      const q = page(() => ({ ok: true, tabs: [{ id: "all", label: "All", count: 3 }, { id: "crypto", label: "Crypto", count: 2 }], asOf: new Date(NOW).toISOString(), items: [fed, btc, doge], movers: [btc], mostTraded: [btc], closing: [fed] }));
+      q.set("A", account());
+      // the route as the shell keeps it: the redraw after the read draws from ROUTE.params, as the shell's would
+      q.run(`ROUTE.tab = "markets"; ROUTE.params = Object.fromEntries(new URLSearchParams(${JSON.stringify(hash.split("?")[1] ?? "")})); ${PANE}`);
+      q.run(`location.hash = ${JSON.stringify(hash)}; renderMarkets({ el: EL, owner: true, params: ROUTE.params, lens: lensNow() })`);
+      await settle();
+      await settle();
+      expect(q.run<string>("EL.innerHTML").includes('class="mk-lists"'), hash).toBe(there);
+    }
   });
 
   it("shows the tabs the account lists, in its order — All · Crypto · Perps · Pre-IPO · Predictions — and sends a legacy or unknown tab to All", async () => {

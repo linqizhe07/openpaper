@@ -772,6 +772,31 @@ function mkAsOfHtml(body) {
   return `<p class="mk-asof" title="${esc(line)}">${esc(line)}</p>`;
 }
 
+// ---- the three lists over All: the account's own biggest moves, most traded and closing soonest, drawn as rows ---------------------------
+
+/** THE LISTS under the Pulse, over All when nothing is searched: the account's `movers` (the biggest 24-hour moves among markets with real
+ * volume), `mostTraded`, and `closing` (the busiest events that close within a day), five rows each — the market's name, opening its drawer
+ * with its hover card, and the figures the list is about: the move and the price; the volume and the move; the countdown (ticking with the
+ * others) and the lead outcome. "See all →" opens the whole list in that order. A list with nothing is left out; with nothing in any, nothing */
+function mkListsHtml(body, lens) {
+  if (!body) return "";
+  const pick = (list) => (list || []).filter((x) => x && Array.isArray(x.at) && mkInLens(x, lens)).slice(0, 5);
+  const move = (it) => (it.kind === "event" ? mkEventChg(it) : chg(it.changePct24h));
+  const lists = [
+    ["Biggest moves", pick(body.movers), (it) => `${move(it)}<span class="mk-li-px">${mkPriceCell(it)}</span>`, { tab: "", sort: "movers" }],
+    ["Most traded", pick(body.mostTraded), (it) => `<span class="mk-li-vol">${esc(mkVolCell(it))}</span>${move(it)}`, { tab: "", sort: "" }],
+    ["Closing soonest", pick(body.closing), (it) => `${mkCloseHtml(it, mkEnded(it))}<span class="mk-li-px">${mkPriceCell(it)}</span>`, { tab: "predictions", sort: "closing" }],
+  ].filter(([, items]) => items.length);
+  if (!lists.length) return "";
+  const row = (it, cell) => {
+    const i = mkReg(it);
+    const pairs = mkAllPairs(it).slice(0, 2);
+    return `<li class="mk-li" data-k="li:${esc(it.key)}"${pairs.length ? ` data-pairs="${esc(pairs.join(","))}"` : ""}>${mkNameBtn(it, i)}<span class="mk-li-r">${cell(it)}</span></li>`;
+  };
+  const section = ([title, items, cell, to]) => `<section class="mk-list" aria-label="${esc(title)}"><div class="mk-list-h"><h2 class="h2">${esc(title)}</h2><button type="button" class="link dim small" data-act="seeall" data-fk="seeall:${esc(title)}" data-tab="${esc(to.tab)}" data-sort="${esc(to.sort)}">See all →</button></div><ol class="mk-li-list">${items.map((it) => row(it, cell)).join("")}</ol></section>`;
+  return `<div class="mk-lists">${lists.map(section).join("")}</div>`;
+}
+
 // ---- the pane ----------------------------------------------------------------------------------------
 
 /* the route's tab, search and sort, as the pane reads them: an unknown tab is All (All results while searching), a legacy one (now, venues)
@@ -859,9 +884,10 @@ function renderMarkets(ctx) {
       // rows keep the places (data-i) they have always had; the tiles take the places after them
       const list = mkListHtml(p, got, ctx.lens);
       const pulse = p.tab === "all" && !p.q ? mkPulseHtml(got) : "";
-      // one line first: when these prices were read and whose they are (mkAsOfHtml)
+      // one line first: when these prices were read and whose they are (mkAsOfHtml); then, over All, the account's three lists (mkListsHtml)
       const asOf = mkAsOfHtml(got);
-      body = `${asOf}${pulse}${list}${failed ? `<p class="mk-missing">Couldn't read the markets again just now: ${esc(mkSaid(failed))}. This is what was read at ${esc(nyTime(g.goodAt))}.</p>` : ""}`;
+      const lists = p.tab === "all" && !p.q ? mkListsHtml(got, ctx.lens) : "";
+      body = `${asOf}${pulse}${lists}${list}${failed ? `<p class="mk-missing">Couldn't read the markets again just now: ${esc(mkSaid(failed))}. This is what was read at ${esc(nyTime(g.goodAt))}.</p>` : ""}`;
       foot = mkFootHtml(got);
     } else if (failed) body = `<div class="mk-fail"><div class="msg no">Couldn't read the markets: ${esc(mkSaid(failed))}.</div><button type="button" class="btn btn-sm" data-act="retry" data-fk="retry">Try again</button></div>`;
     else body = mkSkel();
@@ -882,6 +908,8 @@ function mkPaneClick(e) {
   switch (b.dataset.act) {
     case "tab": return void go("markets", { q: ROUTE.params.q, tab: b.dataset.tab });
     case "sort": return void go("markets", { ...ROUTE.params, sort: b.dataset.v === "volume" ? "" : b.dataset.v }, { replace: true });
+    // a list's "See all →": the whole list in that order — All for moves and volume, Predictions for what closes soonest
+    case "seeall": return void go("markets", { ...ROUTE.params, tab: b.dataset.tab || "all", sort: b.dataset.sort || "" });
     case "clear-q": return void go("markets", { ...ROUTE.params, q: "", tab: ROUTE.params.tab || "" }, { replace: true });
     case "retry": for (const g of MKT.got.values()) g.at = 0; return void mkRedraw();
     case "connect": return void connectVia(b.dataset.connector, { name: b.dataset.name });
