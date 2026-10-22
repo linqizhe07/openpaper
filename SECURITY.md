@@ -27,4 +27,4 @@ You will get an answer within seven days. Please keep the report private until a
 
 ## Versions
 
-Only the latest commit on `main` is supported. There are no releases to backport to yet.
+The latest release and `main` are supported: a fix lands on `main` and goes into the next release. Which one you run is in Settings → Version, or the first line `npm run account` prints; what changed in each is in [CHANGELOG.md](CHANGELOG.md).
