@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { TABS } from "../src/portfolio/live/categories.ts";
 import { exchangeList } from "../src/portfolio/live/exchange.ts";
 import { CONNECTORS } from "../src/portfolio/live/index.ts";
+import { DEFAULT_CAP_USD } from "../src/portfolio/cli.ts";
 
 export const ROOT = fileURLToPath(new URL("../", import.meta.url));
 export const NUMBERS_FILE = join(ROOT, "site", "data", "numbers.json");
@@ -67,11 +68,9 @@ export function mcpTools(): SiteNumbers["mcpTools"] {
   return { real: names.real.length, simulationOnly: names.sim.length, names: names.real };
 }
 
-/** --live-cap's default, as server.ts reads it */
+/** --live-cap's default, the one cli.ts gives the server */
 export function capUsd(): number {
-  const m = /Number\(at\("--live-cap"\)\s*\?\?\s*(\d+)\)/.exec(read("src/portfolio/server.ts"));
-  if (!m) throw new Error("server.ts: the --live-cap default was not found");
-  return Number(m[1]);
+  return DEFAULT_CAP_USD;
 }
 
 /** how long a card waits for the owner, from mode-rules.ts */

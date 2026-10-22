@@ -2,7 +2,7 @@
  *
  *   npm run account                   → http://127.0.0.1:4820 · the Account: real accounts only, connected on the page, trading on
  *                                       (`npm run portfolio` is the same; `--read-only` places and moves nothing; `--live-cap 100` is the most
- *                                       one order or movement may be worth)
+ *                                       one order or movement may be worth; `--help` lists every option, and a misspelt one is refused)
  *   npm run account -- --classic      → the original simulated statement (no account layer); `--mm` there reads the real `mm` CLI
  *
  *   GET  /api/overview                 the statement, the liquidity map, the flight board
@@ -187,6 +187,7 @@ import { sessionFrom } from "./openness.ts";
 import type { OrderPlan } from "./router.ts";
 import { isPending, loadOpenness, PortfolioService } from "./service.ts";
 import { defaultHome } from "./home.ts";
+import { DEFAULT_CAP_USD, DEFAULT_PORT, parseFlags, SERVER_FLAGS, SERVER_USAGE } from "./cli.ts";
 import { pairingCode } from "./account/pairing.ts";
 import type { Side } from "./venues.ts";
 
@@ -1152,23 +1153,24 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
 export { defaultHome, pairingCode };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const args = process.argv.slice(2);
-  const at = (flag: string) => {
-    const i = args.indexOf(flag);
-    return i >= 0 ? args[i + 1] : undefined;
-  };
-  const port = Number(at("--port") ?? 4820);
-  const classic = args.includes("--classic");
+  // the options (cli.ts): a misspelt one is refused with the list, never ignored — `--readonly` would otherwise leave trading on
+  const opts = parseFlags(process.argv.slice(2), SERVER_FLAGS, SERVER_USAGE);
+  if (opts.kind !== "ok") {
+    (opts.kind === "help" ? process.stdout : process.stderr).write(opts.kind === "help" ? opts.text : `${opts.text}\n`);
+    process.exit(opts.kind === "help" ? 0 : 2);
+  }
+  const port = opts.number("port") ?? DEFAULT_PORT;
+  const classic = opts.has("classic");
   // the `mm` reads stand in for the simulated statement's MetaMask: a real account connects MetaMask from the page instead
-  const live = (args.includes("--mm") || process.env.PORTFOLIO_MM === "1") && classic;
-  if (!classic && args.includes("--mm")) console.log("--mm is for --classic: on your account, connect MetaMask from the page (it uses the same mm)");
+  const live = (opts.has("mm") || process.env.PORTFOLIO_MM === "1") && classic;
+  if (!classic && opts.has("mm")) console.log("--mm is for --classic: on your account, connect MetaMask from the page (it uses the same mm)");
   // REAL orders and movements at venues connected live: on for the account (an airport where nothing takes off is no airport), off with
   // --read-only. With them on, the first owner pairs with a code printed here, in the terminal; every order is the owner's signature or
   // inside a limit the owner signed, and none is worth more than --live-cap
-  const capUsd = Number(at("--live-cap") ?? 100);
+  const capUsd = opts.number("live-cap") ?? DEFAULT_CAP_USD;
   if (!(capUsd > 0)) throw new Error("--live-cap is a number of dollars, more than zero");
-  const readOnly = args.includes("--read-only");
-  if (readOnly && args.includes("--live-writes")) throw new Error("--read-only and --live-writes say opposite things: pick one");
+  const readOnly = opts.has("read-only");
+  if (readOnly && opts.has("live-writes")) throw new Error("--read-only and --live-writes say opposite things: pick one");
   // the first owner pairs with a code printed here whether or not trading is on: an owner let in without one would own the account's later
   // runs too, trading and all
   const code = classic ? undefined : pairingCode();
@@ -1177,8 +1179,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const openness = sessionFrom(loadOpenness() as { sessionExpiresAt?: string }, Date.now());
   // a real account continues its earlier runs — the owner's device, the venues, the agents and their limits come back (account/restore.ts);
   // --fresh starts it from nothing
-  const fresh = args.includes("--fresh");
-  const service = await PortfolioService.create({ home: at("--home") ?? defaultHome(), live, fresh, ...(liveWrites ? { liveWrites } : {}), ...(code ? { pairingCode: code } : {}), ...(classic ? {} : { venues: "frontline" as const, real: true, openness }) });
+  const fresh = opts.has("fresh");
+  const service = await PortfolioService.create({ home: opts.get("home") ?? defaultHome(), live, fresh, ...(liveWrites ? { liveWrites } : {}), ...(code ? { pairingCode: code } : {}), ...(classic ? {} : { venues: "frontline" as const, real: true, openness }) });
   const srv = await startPortfolioServer({ port, service }).catch((e: NodeJS.ErrnoException) => {
     if (e.code !== "EADDRINUSE") throw e;
     // the usual reason: this server is already running in another terminal
