@@ -3,6 +3,174 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 2,
+      "title": "CI runs typecheck and the test suite on every pull request; the stand-in's curves no longer depend on the date",
+      "mergedAt": "2026-10-22T20:13:00Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/2",
+      "branch": "ci/typecheck-and-tests"
+    },
+    {
+      "number": 14,
+      "title": "The ledger-evidence and session-after-revoke attack tests assert what now holds, and the it.fails convention is retired",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/14",
+      "branch": "test/attack-asserts-e"
+    },
+    {
+      "number": 12,
+      "title": "A background toggle in the top bar: one press switches Light and Black",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/12",
+      "branch": "feat/theme-toggle"
+    },
+    {
+      "number": 11,
+      "title": "The home is ~/.openpaper and the service is com.openpaper.account, with the earlier names honoured",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/11",
+      "branch": "feat/rename-home-and-label"
+    },
+    {
+      "number": 10,
+      "title": "The service runs under systemd on Linux, rotates its logs when restarted, and account:backup archives the home",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/10",
+      "branch": "feat/service-linux"
+    },
+    {
+      "number": 9,
+      "title": "The README says what openpaper does, shows the page, lists every option and variable, and says what has and has not been tested",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/9",
+      "branch": "docs/readme-english"
+    },
+    {
+      "number": 8,
+      "title": "The site's baked Progress list is refreshed by a script and checked before every publish",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/8",
+      "branch": "feat/site-progress-check"
+    },
+    {
+      "number": 6,
+      "title": "A code of conduct, issue forms and a pull request template; security reports steered to the private advisory form",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/6",
+      "branch": "chore/community-files"
+    },
+    {
+      "number": 5,
+      "title": "A changelog and a version: CHANGELOG.md, and the version and commit in /api/now, Settings, the service's status and the server's first line",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/5",
+      "branch": "feat/version-and-changelog"
+    },
+    {
+      "number": 4,
+      "title": "npm run account -- --help lists every option; a misspelt option is refused instead of ignored",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/4",
+      "branch": "feat/cli-help"
+    },
+    {
+      "number": 3,
+      "title": "The ledger is 0600 like every other file in the home; seat keys are read on Windows whatever their mode bits",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/3",
+      "branch": "fix/ledger-0600-and-windows-keys"
+    },
+    {
+      "number": 1,
+      "title": "The project is openpaper: its own name everywhere, and every link points at linqizhe07/openpaper",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/1",
+      "branch": "chore/rename-openpaper"
+    },
+    {
+      "number": 24,
+      "title": "The page's keys are listed in one sheet behind ?, from Settings too, and written in one place the sheet and the tests read",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/24",
+      "branch": "feat/shortcuts-sheet"
+    },
+    {
+      "number": 23,
+      "title": "The chart takes drawings from a Draw menu — a horizontal line placed, a trend line dragged, a note typed — anchored to bars and prices and kept in this browser for the market",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/23",
+      "branch": "feat/chart-drawings"
+    },
+    {
+      "number": 22,
+      "title": "The chart offers eight indicators from a menu in its head, drawn over the price and in panes under it, their values in the readout, the list kept in the address and this browser",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/22",
+      "branch": "feat/chart-indicators"
+    },
+    {
+      "number": 21,
+      "title": "The chart fills the window from its head's last button or F, Esc brings the page back, and a market's drawer opens the Trade page's own chart of it",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/21",
+      "branch": "feat/chart-fullscreen"
+    },
+    {
+      "number": 20,
+      "title": "A US share's drawer carries the company's own record and its newest filings from the SEC, and agents read both over portfolio_financials",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/20",
+      "branch": "feat/company-profile"
+    },
+    {
+      "number": 19,
+      "title": "⌘K is a palette: the top matches under the search box, walked with the keys, a row opening its drawer, and the recent searches",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/19",
+      "branch": "feat/search-palette"
+    },
+    {
+      "number": 18,
+      "title": "Three lists over All: the biggest moves, the most traded and what closes soonest, from the account's own lists",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/18",
+      "branch": "feat/markets-lists"
+    },
+    {
+      "number": 17,
+      "title": "Nine agent-limit attack tests assert the refusal that closes each hole, in place of it.fails",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/17",
+      "branch": "test/attack-asserts-a"
+    },
+    {
+      "number": 16,
+      "title": "The HTTP-reset, cosigner-swap and fractional-nonce attack tests assert the refusals that close each hole",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/16",
+      "branch": "test/attack-asserts-cd"
+    },
+    {
+      "number": 15,
+      "title": "One line over the Markets list says when the prices were read, how they reach the page, and whose they are",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/15",
+      "branch": "feat/markets-as-of"
+    },
+    {
+      "number": 13,
+      "title": "Four payee and session attack tests assert the refusal that closes each hole instead of passing on any error",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/13",
+      "branch": "test/attack-asserts-b"
+    },
+    {
+      "number": 7,
+      "title": "The background service carries the MetaMask switches; a .env file can never be committed",
+      "mergedAt": "2026-10-22T20:12:59Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/7",
+      "branch": "feat/service-env-switches"
+    },
+    {
       "number": 45,
       "title": "From-zero run before the beta: six things a first-time user hits (search keeps the share's paper line, Financials after a restart, ★ wording, icon, site links, README note)",
       "mergedAt": "2026-10-22T16:13:44Z",
