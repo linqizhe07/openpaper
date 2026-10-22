@@ -57,7 +57,10 @@ export function plan(serverArgs: string[], o: { node?: string; root?: string; ho
   // the commands the account itself runs (mm for the MetaMask Agent Wallet) are found on the user's own PATH; the home, if moved, moves too
   // (without the folders npm puts first on PATH while it runs this script: they are npm's, not the user's)
   const path = (env.PATH ?? "").split(":").filter((d) => d !== "" && !d.includes("/node_modules/")).join(":");
-  const keep = Object.fromEntries(Object.entries({ PATH: path, HOME: env.HOME ?? homedir(), BUYER_HOME: env.BUYER_HOME, SEC_CONTACT: env.SEC_CONTACT, ...Object.fromEntries(Object.entries(env).filter(([k]) => k.startsWith("PORTFOLIO_RPC_"))) }).filter(([, v]) => typeof v === "string" && v !== "")) as Record<string, string>;
+  // what travels with the service: the home, the SEC contact, the RPC endpoints, and the MetaMask Agent Wallet's command and its own switch
+  // for real transfers (PORTFOLIO_MM_WRITES=1; without it mm transfers were silently off under the service). Never a model key from the
+  // shell (ANTHROPIC_*, OPENAI_*): the plist is a 0644 file, and a key belongs in the home's key files, which the page writes 0600
+  const keep = Object.fromEntries(Object.entries({ PATH: path, HOME: env.HOME ?? homedir(), BUYER_HOME: env.BUYER_HOME, SEC_CONTACT: env.SEC_CONTACT, PORTFOLIO_MM_BIN: env.PORTFOLIO_MM_BIN, PORTFOLIO_MM_WRITES: env.PORTFOLIO_MM_WRITES, ...Object.fromEntries(Object.entries(env).filter(([k]) => k.startsWith("PORTFOLIO_RPC_"))) }).filter(([, v]) => typeof v === "string" && v !== "")) as Record<string, string>;
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

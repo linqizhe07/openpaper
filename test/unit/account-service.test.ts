@@ -3,7 +3,7 @@ import { codeLine, LABEL, plan, stillLeaving, tryAgain, untilGone } from "../../
 
 /** The LaunchAgent that keeps the account up for agents: what launchd is told to run, and what it is not given */
 describe("the account as a background service", () => {
-  const p = plan(["--live-cap", "20", "--port", "4820"], { node: "/opt/homebrew/bin/node", root: "/Users/me/demo", home: "/Users/me/.buyer-agent-demo", env: { PATH: "/Users/me/demo/node_modules/.bin:/opt/homebrew/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin:/opt/homebrew/bin:/usr/bin", HOME: "/Users/me", PORTFOLIO_RPC_BASE: "https://rpc.example", SECRET_TOKEN: "x", SEC_CONTACT: "owner@example.org" } });
+  const p = plan(["--live-cap", "20", "--port", "4820"], { node: "/opt/homebrew/bin/node", root: "/Users/me/demo", home: "/Users/me/.buyer-agent-demo", env: { PATH: "/Users/me/demo/node_modules/.bin:/opt/homebrew/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin:/opt/homebrew/bin:/usr/bin", HOME: "/Users/me", PORTFOLIO_RPC_BASE: "https://rpc.example", SECRET_TOKEN: "x", SEC_CONTACT: "owner@example.org", PORTFOLIO_MM_BIN: "/opt/homebrew/bin/mm", PORTFOLIO_MM_WRITES: "1", ANTHROPIC_API_KEY: "sk-ant-not-for-the-plist", OPENAI_API_KEY: "sk-not-for-the-plist" } });
 
   it("runs this folder's server under node and tsx by their full paths, with the options given", () => {
     expect(p.args).toEqual(["/opt/homebrew/bin/node", "/Users/me/demo/node_modules/tsx/dist/cli.mjs", "/Users/me/demo/src/portfolio/server.ts", "--live-cap", "20", "--port", "4820"]);
@@ -18,11 +18,16 @@ describe("the account as a background service", () => {
     expect([p.log, p.errLog]).toEqual(["/Users/me/.buyer-agent-demo/logs/account.log", "/Users/me/.buyer-agent-demo/logs/account.err.log"]);
   });
 
-  it("keeps the user's PATH, HOME and RPC settings — not npm's own folders, and nothing else from the environment", () => {
+  it("keeps the user's PATH, HOME, RPC settings, SEC contact and MetaMask switches — not npm's own folders, never a model key, and nothing else", () => {
     expect(p.plist).toContain("<key>PATH</key><string>/opt/homebrew/bin:/usr/bin</string>");
     expect(p.plist).toContain("<key>PORTFOLIO_RPC_BASE</key><string>https://rpc.example</string>");
     expect(p.plist).toContain("<key>SEC_CONTACT</key><string>owner@example.org</string>");
+    expect(p.plist).toContain("<key>PORTFOLIO_MM_BIN</key><string>/opt/homebrew/bin/mm</string>");
+    expect(p.plist).toContain("<key>PORTFOLIO_MM_WRITES</key><string>1</string>");
     expect(p.plist).not.toContain("SECRET_TOKEN");
+    expect(p.plist).not.toContain("ANTHROPIC_API_KEY");
+    expect(p.plist).not.toContain("OPENAI_API_KEY");
+    expect(p.plist).not.toContain("not-for-the-plist");
     expect(p.plist).not.toContain("node_modules/.bin");
   });
 
