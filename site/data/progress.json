@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 31,
+      "title": "Why beside every trade of the superagent's, and on paper a seat's limit is the whole balance",
+      "mergedAt": "2026-10-22T22:54:46Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/31",
+      "branch": "feat/superagent-why"
+    },
+    {
       "number": 30,
       "title": "One hand of motion and bolder colour for a move: the tick fades, a press is felt, menus and toasts arrive, the moves are chips, the live dot breathes",
       "mergedAt": "2026-10-22T21:58:58Z",
