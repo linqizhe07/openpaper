@@ -531,11 +531,12 @@ describe("the setup: what Start the superagent signs, in order", () => {
     const steps = p.out<Array<{ say: string; draft: Record<string, unknown> }>>(`sgSetupSteps(${JSON.stringify(FIELDS)}, SG.catalog, sgPaperVenues().find((v) => v.id === "paper-1"), sgBrainOf(${JSON.stringify(FIELDS)}, SG.catalog), ${NOW})`);
     expect(steps.map((s) => s.say)).toEqual(["Let in Desk Head", "Let in Desk Search", "Let in Desk Risk", "Let in Desk Sniper", "Let in Desk Exit", "Let in Desk Watch", "Sniper's trading limit", "Exit's trading limit", "Watch's trading limit", "Hire the desk, autonomy on paper"]);
     expect(steps.slice(0, 6).map((s) => s.draft)).toEqual(["Head", "Search", "Risk", "Sniper", "Exit", "Watch"].map((n, i) => ({ type: "approveAgent", agentAddress: addr(i + 1), agentName: `Desk ${n}`, validUntil: UNTIL })));
-    // an entry: 1% of the paper account's $10,000; per order, that with room for a close of a lead that gained (SG_CLOSE_ROOM: $150 — the
-    // per-order cap still holds a close on a renewing limit); twenty entries a day, the budget renewing every 24 hours (renewHours, signed:
-    // the session no longer stops after its twentieth order, and a close counts against none of it); the window 0 — on a trade limit a
-    // window allows one order per window at each venue (account/state.ts covers), so a day's window would let the Sniper enter once a day
-    expect(steps.slice(6, 9).map((s) => s.draft)).toEqual([4, 5, 6].map((n) => ({ type: "approveSpend", agent: addr(n), scope: "trade", allow: "paper-1", perPayment: "150", budget: "2000", windowHours: 0, validUntil: UNTIL, renewHours: 24 })));
+    // an entry: 1% of the paper account's $10,000; per order, all the account holds ($10,000: paper money, so the limit cuts no order the
+    // desk sizes and a lead that gained is always closed — never less than the entry with room for a close, SG_CLOSE_ROOM); fifty balances
+    // of entries a day ($500,000, never less than twenty entries), the budget renewing every 24 hours (renewHours, signed: the session no
+    // longer stops at a day's budget, and a close counts against none of it); the window 0 — on a trade limit a window allows one order per
+    // window at each venue (account/state.ts covers), so a day's window would let the Sniper enter once a day
+    expect(steps.slice(6, 9).map((s) => s.draft)).toEqual([4, 5, 6].map((n) => ({ type: "approveSpend", agent: addr(n), scope: "trade", allow: "paper-1", perPayment: "10000", budget: "500000", windowHours: 0, validUntil: UNTIL, renewHours: 24 })));
     const hire = steps[9]!.draft;
     expect({ ...hire, value: JSON.parse(String(hire.value)) }).toEqual({ type: "setDesk", desk: "desk", change: "hire", value: { name: "Paper desk", objective: { text: FIELDS.text, venue: "paper-1", universe: "all", targetPct: 3, maxRiskPct: 1, maxDailyLossPct: 5, hours: 22, everyMin: 5, reportAt: "21:00", maxOpen: 3 }, brain: { provider: "claude", model: "claude-opus-5-5", effort: "medium" }, roles: ["head", "search", "risk", "sniper", "exit", "watch"].map((role) => ({ role, kind: "house" })), autonomy: { paper: true } } });
     // the autonomy rides in the hire: no eleventh signature, no moment when the desk is hired without it
@@ -547,13 +548,16 @@ describe("the setup: what Start the superagent signs, in order", () => {
     expect(words).toContain("Starting signs 10 things, one after another: 6 house seats let in (Head of desk, Search, Risk, Sniper, Exit, Watch)");
     // the words say what is signed: the per-order cap holds entries too (a later session of an account that grew sizes them up to it), so
     // the entry is said as the desk sizes it — the risk per lead of a session's start, today's figure beside it — never as a cap of its own
-    expect(words).toContain("a trading limit for Sniper, Exit, Watch at Paper account — entries sized at 1% of what the paper account holds when a session starts ($100.00 now), any one order up to $150.00 so a lead that gained can still be closed, and $2,000.00 of entries a day (about 20 at today's size), counted afresh every 24 hours (a close counts against none of it), for 30 days");
+    expect(words).toContain("a trading limit for Sniper, Exit, Watch at Paper account — entries sized at 1% of what the paper account holds when a session starts ($100.00 now), any one order up to $10,000.00 (all the paper account holds), and $500,000.00 of entries a day (50 times what it holds), counted afresh every 24 hours (a close counts against none of it), for 30 days");
     expect(words).not.toContain("entries of up to");
     expect(words).toContain("placed at once, without a card for you — paper money — each inside its seat's limit");
     expect(words).toContain("The brain's calls (Claude · Opus 5.5) are billed to your key.");
     expect(words).toContain("You can pause or end it at any time, or turn it back to cards: its orders then wait for you on this page, in the Waits for you strip, and under Portfolio.");
-    // 2% of risk: $200 an entry, $4,000 in all, $300 an order
-    expect(p.run(`sgSetupWords(${JSON.stringify({ ...FIELDS, maxRiskPct: "2" })}, SG.catalog, sgPaperVenues()[0], sgBrainOf(${JSON.stringify(FIELDS)}, SG.catalog))`)).toContain("entries sized at 2% of what the paper account holds when a session starts ($200.00 now), any one order up to $300.00 so a lead that gained can still be closed, and $4,000.00 of entries a day (about 20 at today's size), counted afresh every 24 hours");
+    // 2% of risk: $200 an entry; the order and the day stay the account's balance and fifty of it
+    expect(p.run(`sgSetupWords(${JSON.stringify({ ...FIELDS, maxRiskPct: "2" })}, SG.catalog, sgPaperVenues()[0], sgBrainOf(${JSON.stringify(FIELDS)}, SG.catalog))`)).toContain("entries sized at 2% of what the paper account holds when a session starts ($200.00 now), any one order up to $10,000.00 (all the paper account holds), and $500,000.00 of entries a day (50 times what it holds), counted afresh every 24 hours");
+    // a paper account too small to hold an entry with its room in one balance: the order is the entry with room for a close; the day stays
+    // fifty balances
+    expect(p.run(`sgSetupWords(${JSON.stringify({ ...FIELDS, maxRiskPct: "80" })}, SG.catalog, { ...sgPaperVenues()[0], usd: 100 }, sgBrainOf(${JSON.stringify(FIELDS)}, SG.catalog))`)).toContain("entries sized at 80% of what the paper account holds when a session starts ($80.00 now), any one order up to $120.00 (the entry with room for a close of a lead that gained), and $5,000.00 of entries a day (50 times what it holds), counted afresh every 24 hours");
   });
 
   it("refuses what it cannot sign, in a sentence: no paper account, a real one, no words, a number at zero", () => {
@@ -617,7 +621,7 @@ describe("the setup: what Start the superagent signs, in order", () => {
     const steps = p.out<Array<{ say: string; draft: Record<string, unknown> }>>(`sgMoveSteps(${JSON.stringify({ ...real, open: [] })}, SG.catalog, sgPaperVenues()[0], ${NOW})`);
     expect(steps.map((s) => s.say)).toEqual(["Let in Desk Watch", "Sniper's trading limit at Paper account", "Exit's trading limit at Paper account", "Watch's trading limit at Paper account", "Move the desk to Paper account", "Autonomy on paper"]);
     expect(steps[0]!.draft).toEqual({ type: "approveAgent", agentAddress: addr(6), agentName: "Desk Watch", validUntil: UNTIL });
-    expect(steps[1]!.draft).toEqual({ type: "approveSpend", agent: addr(4), scope: "trade", allow: "paper-1", perPayment: "150", budget: "2000", windowHours: 0, validUntil: UNTIL, renewHours: 24 });
+    expect(steps[1]!.draft).toEqual({ type: "approveSpend", agent: addr(4), scope: "trade", allow: "paper-1", perPayment: "10000", budget: "500000", windowHours: 0, validUntil: UNTIL, renewHours: 24 });
     expect(JSON.parse(String(steps[4]!.draft.value))).toEqual({ ...VIEW.objective, venue: "paper-1", hours: undefined });
     // an expired key is let in again too; every key ok: nothing to let in
     const lapsed = { ...real, open: [], seats: VIEW.seats.map((s) => (s.role === "sniper" ? { ...s, status: "expired" } : s.role === "watch" ? { ...s, status: "ok" } : s)) };
@@ -635,10 +639,10 @@ describe("the setup: what Start the superagent signs, in order", () => {
     const steps = p.out<Array<{ say: string; draft: Record<string, unknown> }>>(`sgRenewSteps(${JSON.stringify(VIEW)}, SG.catalog, sgPaperVenues()[0], ${NOW})`);
     expect(steps.map((s) => s.say)).toEqual(["Let in Desk Watch", "Sniper's trading limit, renewing", "Exit's trading limit, renewing", "Watch's trading limit, renewing"]);
     expect(steps[0]!.draft).toEqual({ type: "approveAgent", agentAddress: addr(6), agentName: "Desk Watch", validUntil: UNTIL });
-    // exactly what the setup signs (sgSetupSteps): $150 an order, $2,000 of entries a day, renewing every 24 hours
-    expect(steps.slice(1).map((s) => s.draft)).toEqual([4, 5, 6].map((n) => ({ type: "approveSpend", agent: addr(n), scope: "trade", allow: "paper-1", perPayment: "150", budget: "2000", windowHours: 0, validUntil: UNTIL, renewHours: 24 })));
+    // exactly what the setup signs (sgSetupSteps): all the account holds an order ($10,000), fifty of it a day ($500,000), renewing every 24 hours
+    expect(steps.slice(1).map((s) => s.draft)).toEqual([4, 5, 6].map((n) => ({ type: "approveSpend", agent: addr(n), scope: "trade", allow: "paper-1", perPayment: "10000", budget: "500000", windowHours: 0, validUntil: UNTIL, renewHours: 24 })));
     const words = p.run<string>(`sgRenewWords(${JSON.stringify(VIEW)}, SG.catalog, sgPaperVenues()[0])`);
-    expect(words).toContain("Renewing signs a trading limit for Sniper, Exit, Watch at Paper account that renews — entries sized at 1% of what the paper account holds when a session starts ($100.00 now), any one order up to $150.00");
+    expect(words).toContain("Renewing signs a trading limit for Sniper, Exit, Watch at Paper account that renews — entries sized at 1% of what the paper account holds when a session starts ($100.00 now), any one order up to $10,000.00 (all the paper account holds)");
     expect(words).toContain("a seat whose key is not let in now is let in again first.");
     // a desk whose trading seats all renew: nothing to renew, nothing said
     const renewing = { perOrderUsd: 150, leftUsd: 1_850, budgetUsd: 2_000, venues: ["paper-1"], renewHours: 24, renewsAt: iso(NOW + 6 * 3_600_000) };
@@ -987,8 +991,10 @@ describe("the desk: the chart with its trades, Now, the seats' line and What it 
     expect(part('[data-sg-p="banner"]')).toBe("");
     // What it did: each entry, newest first, with its plan where Risk gave one
     const did = part('[data-sg-p="did"]');
-    expect([...did.matchAll(/<b>([^<]+)<\/b>/g)].map((m) => m[1])).toEqual([`Bought 0.6667 SOL at ${p.run("px(150)")}`, `Bought 0.04 ETH at ${p.run("px(2500)")}`, `Bought 0.0016 BTC at ${p.run("px(63000)")}`]);
-    expect(did).toContain("$100.00 · take-profit +1.5% · stop −0.8% · 12 h");
+    expect([...did.matchAll(/<b>([^<]+)<\/b>/g)].map((m) => m[1])).toEqual([`Bought 0.6667 SOL at ${p.run("px(150)")} · $100.00`, `Bought 0.04 ETH at ${p.run("px(2500)")}`, `Bought 0.0016 BTC at ${p.run("px(63000)")}`]);
+    // the size stands in the line itself (Bought … · $100.00), its plan under it without it
+    expect(did).toContain("take-profit +1.5% · stop −0.8% · 12 h");
+    expect(did).not.toContain("$100.00 · take-profit");
     expect(part('[data-sg-p="did-n"]')).toBe("newest first");
     // the positions: the lead held, and the day's closes over it
     const pos = part('[data-sg-p="pos"]');
@@ -1052,7 +1058,7 @@ describe("the desk: the chart with its trades, Now, the seats' line and What it 
     expect(p.out("[SG.banner.now.text, SG.banner.now.sub, SG.banner.now.tone]")).toEqual(["Search picked SOL long", "confidence 71%", "go"]);
     expect(p.out("[SG.bubble.role, SG.bubble.text]")).toEqual(["search", "Search: SOL looks strong on volume"]);
     expect(p.out("[SG.chip.lead, SG.chip.base, SG.chip.step, SG.chip.to, SG.chip.tone]")).toEqual(["L-0003", "SOL", 0, 1, "go"]);
-    expect(p.out("SG.banner.queue.map((b) => [b.text, b.tone, b.chip && b.chip.step])")).toEqual([["Risk cleared SOL long", "go", 2], ["Sniper buys SOL · $100.00", "up", 2], [`Bought 0.6667 SOL at ${p.run("px(150)")}`, "up", 3]]);
+    expect(p.out("SG.banner.queue.map((b) => [b.text, b.tone, b.chip && b.chip.step])")).toEqual([["Risk cleared SOL long", "go", 2], ["Sniper buys SOL · $100.00", "up", 2], [`Bought 0.6667 SOL at ${p.run("px(150)")} · $100.00`, "up", 3]]);
     expect(p.out("SG.banner.queue[0].sub")).toBe("$100.00 · take-profit +1.5% · stop −0.8% · 12 h");
     expect(p.out("SG.banner.queue.at(-1).sub")).toBe(`take-profit ${p.run("sgAtDecimals(152.25, 150)")} · stop ${p.run("sgAtDecimals(148.8, 150)")}`);
     expect(p.out("AGAIN")).toBeGreaterThan(0);
