@@ -54,7 +54,7 @@ function drawAgents() {
 /** the Settings sheet: trading on or off (and the cap), the agents' session and leverage, the background, the devices. The mode is the
  * rail's: its seg, and the Mode sheet behind "What changes ›" */
 function openSettings() {
-  openSheet('<section class="sheet-sec"><div class="set"><div><b>Trading</b><span class="note-s" id="set-writes"></span></div><div id="set-cap"></div></div><div id="dial"></div><div class="set"><div><b>Background</b><span class="note-s">Kept in this browser.</span></div><div id="set-theme"></div></div></section><section class="sheet-sec old" aria-labelledby="set-devices-h"><h3 class="h2" id="set-devices-h">Devices</h3><div id="devices"></div></section>', { title: "Settings", redraw: drawSettings });
+  openSheet('<section class="sheet-sec"><div class="set"><div><b>Trading</b><span class="note-s" id="set-writes"></span></div><div id="set-cap"></div></div><div id="dial"></div><div class="set"><div><b>Background</b><span class="note-s">Kept in this browser.</span></div><div id="set-theme"></div></div><div class="set"><div><b>Version</b><span class="note-s" id="set-version"></span></div><div><a class="btn btn-sm" href="https://github.com/linqizhe07/openpaper/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a></div></div></section><section class="sheet-sec old" aria-labelledby="set-devices-h"><h3 class="h2" id="set-devices-h">Devices</h3><div id="devices"></div></section>', { title: "Settings", redraw: drawSettings });
   drawSettings();
 }
 function drawSettings() {
@@ -66,6 +66,8 @@ function drawSettings() {
   if ($("cap-change")) $("cap-change").addEventListener("click", openCap);
   // the light ocean keeps the name it was stored under ("cream"), so every browser keeps its choice
   $("set-theme").innerHTML = seg([["cream", "Light"], ["black", "Black"]], document.documentElement.dataset.theme || "cream", setTheme, { label: "Background" });
+  // which openpaper this is, as /api/account says it: the version, and the commit where the checkout has a .git to read
+  $("set-version").textContent = A && A.version ? `openpaper v${A.version}${A.commit ? ` (${A.commit})` : ""}` : "";
   renderDial(connected(), owner);
   renderDevices(owner);
 }
