@@ -1,0 +1,28 @@
+# Runs the type check and the test suite on every push to main and every pull request, the two commands CONTRIBUTING.md asks for.
+# The suite is serial by design (vitest.config.ts: the simulators bind fixed ports), so one job; about three minutes on a fresh runner.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      # the packages' install scripts are not needed (README: "nothing here needs them"); pages.yml installs the same way
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      # the github-actions reporter marks a failing assertion on its line in the pull request's diff
+      - run: npm run test:ci

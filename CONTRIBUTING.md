@@ -32,7 +32,7 @@ npx tsx test/standin/ui-standin.ts --port 4821 --superagent
 - One branch per change, off `main`, one pull request; no stacked branches.
 - A commit message is a plain-English subject sentence saying what changed, and a body saying why.
 - A pull request says what a user sees differently and how you tested it. Tests go with the change; an attack you closed gets a test under `test/attack/` that must fail.
-- Run `npm test` and `npm run typecheck` before you open it.
+- Run `npm test` and `npm run typecheck` before you open it. CI runs the same two commands on every pull request (`.github/workflows/ci.yml`).
 
 By contributing you agree that your contribution is licensed under the Apache License 2.0, as section 5 of [LICENSE](LICENSE) says. There is no separate contributor agreement.
 

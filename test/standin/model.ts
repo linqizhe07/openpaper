@@ -4,7 +4,8 @@
  * A curve is three slow waves on top of one another (minutes, hours, days), plus a ramp over the 24 hours before the stand-in started that
  * makes its 24-hour change at the start exactly the one it was given. A price lives in log space; an event contract's price (a probability)
  * lives in logit space, so it stays between 0 and 1. On top of the curve, `now()` adds a few seconds' jitter that `tick()` moves. Nothing
- * here is random from run to run except the jitter: the waves are seeded from each curve's name.
+ * here is random from run to run except the jitter: the waves are seeded from each curve's name and measured from the stand-in's start,
+ * so what a curve does in the hours and days after the start is the same on any date.
  *
  * Nothing here is any venue's data. It is made up, and every page that shows it is the stand-in's.
  */
@@ -116,7 +117,8 @@ export class PriceBook {
 
   private waves(c: Curve, t: number): number {
     let s = 0;
-    for (let i = 0; i < 3; i++) s += c.amps[i]! * Math.sin((2 * Math.PI * t) / c.periods[i]! + c.phases[i]!);
+    // measured from the stand-in's start, so the curve ahead of it has the same shape whatever the date it started on
+    for (let i = 0; i < 3; i++) s += c.amps[i]! * Math.sin((2 * Math.PI * (t - this.t0)) / c.periods[i]! + c.phases[i]!);
     return s;
   }
 
