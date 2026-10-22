@@ -4,7 +4,7 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "scripts/site-numbers.ts", ".github/workflows/pages.yml"]
+    paths: ["site/**", "scripts/site-numbers.ts", "scripts/site-progress.ts", ".github/workflows/pages.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,6 +21,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # the progress check reads the newest merge commit
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -28,6 +31,8 @@ jobs:
       - run: npm ci --ignore-scripts
       # the page's numbers are computed from the repository; a stale site/data/numbers.json stops the publish
       - run: node --import tsx scripts/site-numbers.ts --check
+      # the baked Progress list must name the newest merge; a stale site/data/progress.json stops the publish too
+      - run: node --import tsx scripts/site-progress.ts --check
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
