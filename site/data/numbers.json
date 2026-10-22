@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-10-22",
   "mcpTools": {
-    "real": 35,
+    "real": 36,
     "simulationOnly": 7,
     "names": [
       "portfolio_overview",
@@ -25,6 +25,7 @@
       "portfolio_asset",
       "portfolio_candles",
       "portfolio_book",
+      "portfolio_financials",
       "portfolio_receive",
       "portfolio_venues",
       "portfolio_earn",

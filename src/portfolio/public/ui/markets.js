@@ -1398,7 +1398,7 @@ function openMarket(item) {
   if (!A) return;
   const it = mkResolve(item);
   if (!it) return void mkLookup(item);
-  MKT.open = { item: it, range: "1M", interval: "1h", asset: undefined, assetFor: "", compare: undefined, candles: undefined, ipoRead: undefined, ipo: [], fin: undefined };
+  MKT.open = { item: it, range: "1M", interval: "1h", asset: undefined, assetFor: "", compare: undefined, candles: undefined, ipoRead: undefined, ipo: [], fin: undefined, co: undefined };
   const body = openDrawer(`<div class="mk-d" data-mk-drawer>${mkDrawerHtml(MKT.open)}</div>`, { title: it.name, redraw: mkDrawerRedraw });
   if (!MKT.drawerWired) {
     $("drawer").addEventListener("close", () => {
@@ -1492,6 +1492,15 @@ function mkDrawerLoad(o) {
     api(`/api/account/financials?symbol=${encodeURIComponent(ticker)}`, { ttl: 600_000, timeout: 20_000 }).then((b) => {
       if (MKT.open !== o) return;
       o.fin = b;
+      mkDrawerRedraw();
+    });
+  }
+  // the company's own record and its newest filings (SEC EDGAR submissions: GET /api/account/company), read once a drawer, kept ten minutes
+  if (ticker && o.co === undefined) {
+    o.co = null;
+    api(`/api/account/company?symbol=${encodeURIComponent(ticker)}`, { ttl: 600_000, timeout: 20_000 }).then((b) => {
+      if (MKT.open !== o) return;
+      o.co = b;
       mkDrawerRedraw();
     });
   }
@@ -1786,6 +1795,35 @@ function mkChartHtml(o, it, leg, key) {
   return fromAsset || `<p class="empty">${esc(((a.missing || []).find((m) => m.part === "candles") || {}).why || (mkPublicOnly(it) ? "Price history comes from a connected venue that trades it: connect one to see it." : ev ? "The venue keeps price history for a contract you hold." : "No venue on the account keeps price history for it."))}</p>`;
 }
 
+// ---- a share's company record and its latest filings (SEC EDGAR submissions, live/edgar.ts) ---------------------------------------------
+
+/** the Company part: what the SEC's record says of the company — where it is listed, its industry (SIC), when its fiscal year ends, where it
+ * is incorporated, its filer category, its sites — its latest annual and quarterly reports, and its newest filings, each a link to the
+ * document on the SEC's site, an 8-K said by its items in plain words. Read once a drawer and kept ten minutes (GET /api/account/company).
+ * None of it is news: it is what the company itself filed, and the foot says the account reads no news site */
+function mkCompanyHtml(o) {
+  if (o.co === undefined || o.co === null) return '<div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel" style="width:70%"></span></div>';
+  const c = o.co.ok !== false ? o.co : null;
+  if (!c) return `<p class="mk-quiet">${esc(mkSaid(refusalOf(o.co)) || "The SEC did not answer")}.</p>`;
+  const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x).join(", ") : "");
+  const facts = [
+    ["Listed", esc([list(c.exchanges), list(c.tickers)].filter(Boolean).join(" · "))],
+    ["Industry", c.sicDescription ? `${esc(c.sicDescription)}${c.sic ? ` <span class="dim">SIC ${esc(c.sic)}</span>` : ""}` : ""],
+    ["Fiscal year ends", c.fiscalYearEnd && c.fiscalYearEnd.words ? esc(c.fiscalYearEnd.words) : ""],
+    ["Incorporated in", esc(c.stateOfIncorporationWords || c.stateOfIncorporation || "")],
+    ["Filer", esc(c.category || "")],
+  ].filter(([, v]) => v);
+  const site = (url, words) => `<a class="link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(words)}</a>`;
+  const sites = [c.website ? site(c.website, String(c.website).replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")) : "", c.investorWebsite ? site(c.investorWebsite, "investors") : ""].filter(Boolean).join(" · ");
+  const dl = facts.length || sites ? `<dl class="mk-facts mk-co">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join("")}${sites ? `<div><dt>Site</dt><dd>${sites}</dd></div>` : ""}</dl>` : "";
+  const report = (f, what) => (f ? `<a class="link" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${esc(what)} ${esc(f.form)}</a> filed ${esc(mkDate(f.filed))}` : "");
+  const latest = [report(c.latest && c.latest.annual, "Annual report"), report(c.latest && c.latest.quarterly, "Quarterly report")].filter(Boolean);
+  // a filing's description where it says more than the form's name does (a 4 described as "FORM 4" is said by its form alone)
+  const said = (f) => { const d = typeof f.description === "string" ? f.description.trim() : ""; return d && d.toUpperCase().replace(/^FORM\s+/, "") !== String(f.form).toUpperCase() ? d : ""; };
+  const filings = Array.isArray(c.filings) && c.filings.length ? `<h3 class="label mk-fin-h">Latest filings</h3><ul class="mk-filings">${c.filings.slice(0, 8).map((f) => `<li><a class="link" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(f.form)}</b>${said(f) ? ` ${esc(said(f))}` : ""}</a><span class="dim"> · filed ${esc(mkDate(f.filed))}</span></li>`).join("")}</ul>` : "";
+  return `${dl}${latest.length ? `<p class="mk-co-latest">${latest.join(" · ")}</p>` : ""}${filings}<p class="mk-src">${esc(c.source || "SEC EDGAR")} · what the company itself filed; the account reads no news site</p>`;
+}
+
 // ---- a share's financials (SEC EDGAR, live/edgar.ts) -----------------------------------------------------------------------------
 
 /* a US share's ticker as the SEC's reader takes one: a stock row's base — letters, a class letter after a dot or a dash (BRK.B); "" for
@@ -1919,12 +1957,15 @@ function mkDrawerParts(o) {
   const alerts = alertLines ? `<section class="sec" aria-label="Price alerts"><div class="sec-head"><h2 class="h2">Price alerts</h2>${mkWatchTarget(it) ? `<button type="button" class="link" data-act="alert" data-fk="d-alert2"${mkDis()}>Set another →</button>` : ""}</div>${alertLines}</section>` : "";
   // a US share's own filed figures from the SEC (mkFinHtml), with the company's filings there one click away
   const finOk = o.fin && o.fin.ok !== false && typeof o.fin.filingsUrl === "string" && /^https:\/\/www\.sec\.gov\//.test(o.fin.filingsUrl) ? o.fin : null;
+  const coOk = o.co && o.co.ok !== false ? o.co : null;
+  const coPart = !pre && mkTicker(it) ? `<section class="sec" aria-label="Company"><div class="sec-head"><h2 class="h2">Company</h2>${coOk ? `<a class="link mk-fin-link" href="${esc(coOk.filingsUrl)}" target="_blank" rel="noopener noreferrer">All filings ${icon("external", "sm")}</a>` : ""}</div>${mkCompanyHtml(o)}</section>` : "";
   const financials = !pre && mkTicker(it) ? `<section class="sec" aria-label="Financials"><div class="sec-head"><h2 class="h2">Financials</h2>${finOk ? `<a class="link mk-fin-link" href="${esc(finOk.filingsUrl)}" target="_blank" rel="noopener noreferrer">Filings at the SEC ${icon("external", "sm")}</a>` : ""}</div>${mkFinHtml(o)}</section>` : "";
   return {
     head,
     chart,
     alerts,
     across,
+    company: coPart,
     financials,
     ipo: pre ? mkIpoHtml(o) : "",
     held: `<section class="sec" aria-label="You hold"><h2 class="h2">You hold</h2>${mkHeldHtml(o)}</section>`,

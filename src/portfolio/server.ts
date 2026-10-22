@@ -127,6 +127,10 @@
  *                                                        with `more` (older bars exist) and, where the history ends, why: a connected
  *                                                        venue's own, or a venue not connected from its public data, without a key; kept
  *                                                        seconds to minutes in a bounded memory, nothing written
+ *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
+ *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
+ *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
+ *                                                        SEC_CONTACT; the stock drawer's Company part
  *   GET  /api/account/financials?symbol=AAPL               a US stock's figures as the company filed them: its last four fiscal years and
  *                                                        quarters (revenue, net income, diluted EPS) and the shares outstanding, read without
  *                                                        a key from SEC EDGAR's XBRL company facts (live/edgar.ts); the SEC asks every reader
@@ -840,6 +844,16 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { symbol: 12 });
     if (!q) return;
     answerOf(res, await svc.financials(q.symbol));
+  }));
+
+  // COMPANY: a US company's own record as the SEC keeps it — who it is, its fiscal year end, where it is incorporated, its latest reports
+  // and its newest filings — read keyless from SEC EDGAR's submissions file with the contact the owner set (service.ts company,
+  // live/edgar.ts); the stock drawer's Company part. A read
+  app.get("/api/account/company", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { symbol: 12 });
+    if (!q) return;
+    answerOf(res, await svc.company(q.symbol));
   }));
 
   // one market's order book (best first, `depth` levels a side, 1 to 50) and its latest trades (newest first, `limit`, 1 to 100): a connected

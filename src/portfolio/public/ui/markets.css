@@ -189,6 +189,14 @@
 .mk-facts div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mk-facts dt { font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--dim); letter-spacing: 0; text-transform: none; }
 .mk-facts dd { margin: 0; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 700; }
+/* the Company part (markets.js mkCompanyHtml): the record's facts in words, the latest reports, the newest filings as links */
+.mk-co dd { font-weight: 600; font-size: 14px; }
+.mk-co-latest { margin: 10px 0 0; font-size: 13px; line-height: 1.5; }
+.mk-filings { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.4; }
+.mk-filings li { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; }
+.mk-filings b { font-weight: 600; }
+/* these links read as text (the drawer's 44px link boxes would set a form and its words apart); .link::after keeps the 44px tap target */
+.mk-d .mk-filings .link, .mk-d .mk-co-latest .link { display: inline; min-height: 0; }
 .mk-outs { display: flex; flex-direction: column; }
 .mk-out { display: flex; align-items: center; gap: 12px; min-height: 56px; border-bottom: 1px solid var(--border); }
 .mk-out:last-child { border-bottom: 0; }
