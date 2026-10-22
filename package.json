@@ -21,6 +21,7 @@
     "control-room": "tsx src/control-room/server.ts",
     "wallet": "tsx src/wallet/server.ts",
     "test": "vitest run",
+    "test:ci": "vitest run --reporter=default --reporter=github-actions",
     "typecheck": "tsc --noEmit",
     "account": "tsx src/portfolio/server.ts",
     "portfolio": "tsx src/portfolio/server.ts",
