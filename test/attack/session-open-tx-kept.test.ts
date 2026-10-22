@@ -1,16 +1,20 @@
-/** AN ATTACK THAT MUST FAIL (found by an independent review on 2026-10-04, written as it succeeded then, and run with `it.fails`:
- * this test passes only while the attack below does NOT go through) — attacker B, a payee the owner has approved once.
+/** A HOLE FOUND BY AN INDEPENDENT REVIEW (2026-10-04), closed — attacker B, a payee the owner has approved once.
  *
- * To open an MPP session the account SIGNS the escrow's `open` transaction (the deposit) and hands it to the payee to broadcast. If the payee
- * answers 402 and broadcasts nothing, the account says "did not accept it" and forgets the transaction (payees.ts: `if (!chan) return refused(res)`)
- * — nothing is set aside, unlike a refused EIP-3009 authorisation, which is now held until it expires. The payee still holds a signed
- * transaction. Broadcast later, each one moves a deposit out of the float into an escrow channel the account does not know it has: no session,
- * no payment row, no budget used, and nobody ever asks for it back. */
+ * The hole: to open an MPP session the account SIGNS the escrow's `open` transaction (the deposit) and hands it to the payee to broadcast. When
+ * the payee answered 402 and broadcast nothing, the account said "did not accept it" and forgot the transaction (payees.ts: `if (!chan)
+ * return refused(res)`) — nothing was set aside, unlike a refused EIP-3009 authorisation, which is held until it expires. The payee still
+ * held a signed transaction. Broadcast later, each one moved a deposit out of the float into an escrow channel the account did not know it
+ * had: no session, no payment row, no budget used, and nobody ever asked for it back.
+ *
+ * What closes it: an `open` the payee did not use is cancelled on the spot — the float's key spends that transaction's nonce
+ * (`chain.spendTxNonce`), and the ledger gets an "escrow.open cancelled" row. The refusal is still the payee's (`E_PAYEE_REJECTED`, "did not
+ * accept it"); nothing is set aside because nothing can be cashed; and the kept transaction reverts whenever it is broadcast. The test below
+ * runs the attack as it went through then and asserts what holds now. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { isRefusal } from "../../src/core/errors.ts";
+import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { cardHash, type Outcome } from "../../src/portfolio/account/exchange.ts";
 import * as X from "../../src/portfolio/account/protocols.ts";
 import { signAgent, signOwner, simKey, type AgentAction, type Hex, type OwnerAction } from "../../src/portfolio/account/sign.ts";
@@ -32,7 +36,7 @@ const hostsOf = (world: unknown) => (world as { hosts: Map<string, Handler> }).h
 const code = (o: Outcome): string => (isRefusal(o) ? o.code : o.kind);
 
 describe("B · a session's signed open transaction, kept by a payee that says no", () => {
-  it.fails("two refused opens become $40 locked in escrow two days later: the budget shows nothing, the account knows of no session", async () => {
+  it("two refused opens are two cancelled transactions: broadcast two days later they revert, the float and the budget are untouched, and the account knows of one session, closed", async () => {
     let t = START;
     let n = 0;
     const home = mkdtempSync(join(tmpdir(), "attack-open-"));
@@ -42,15 +46,15 @@ describe("B · a session's signed open transaction, kept by a payee that says no
     const world = svc.payees!;
     const own = async (a: Record<string, unknown>) => svc.exchange(await signOwner(owner, { ...a, nonce: t + ++n } as OwnerAction));
     const pay = async (maxAmount: string, close = false) => svc.exchange(await signAgent(cc, { type: "agentPay", url: STREAM, maxAmount, fromSubAccount: "research", ...(close ? { close: true } : {}), nonce: t + ++n } as AgentAction));
-    await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: t + 30 * DAY });
-    await own({ type: "createSubAccount", name: "research", agent: cc.address, float: "60" });
+    expect(code(await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: t + 30 * DAY }))).toBe("account");
+    expect(code(await own({ type: "createSubAccount", name: "research", agent: cc.address, float: "60" }))).toBe("account");
     const fund = { destination: "self", sourceDex: "metamask", destinationDex: "sub:research", token: "USDC", amount: "50" };
     const route = await engine.resolve(fund, "owner");
     if (isRefusal(route)) throw new Error(route.message);
-    await own({ type: "sendAsset", ...fund, fromSubAccount: "", route: route.route.hash, maxFee: String(route.route.feeUsd), deadline: route.route.arrivalMs + MIN });
+    expect(code(await own({ type: "sendAsset", ...fund, fromSubAccount: "", route: route.route.hash, maxFee: String(route.route.feeUsd), deadline: route.route.arrivalMs + MIN }))).toBe("payment");
     t += 2 * MIN;
     await engine.settle();
-    await own({ type: "approveSpend", agent: cc.address, scope: "payees", allow: "infer.sim", perPayment: "30", budget: "40", windowHours: 0, validUntil: t + 30 * DAY });
+    expect(code(await own({ type: "approveSpend", agent: cc.address, scope: "payees", allow: "infer.sim", perPayment: "30", budget: "40", windowHours: 0, validUntil: t + 30 * DAY }))).toBe("account");
     const float = () => engine.sub("research")!.balanceMicro;
     const spend = () => engine.state.spends.find((s) => s.scope === "payees" && s.revokedAt === undefined)!;
     const start = float();
@@ -72,22 +76,23 @@ describe("B · a session's signed open transaction, kept by a payee that says no
       kept.push(payload.transaction);
       return honest({ ...c, header: () => undefined });
     });
+    const refused = await pay("0.05");
+    expect(code(refused)).toBe("E_PAYEE_REJECTED");
+    expect((refused as Refusal).message).toBe("infer.sim did not accept it (payment-required)");
     expect(code(await pay("0.05"))).toBe("E_PAYEE_REJECTED");
-    expect(code(await pay("0.05"))).toBe("E_PAYEE_REJECTED");
-    // nothing moved, and — unlike a refused authorisation — nothing is set aside
-    expect([start - float(), spend().reservedMicro, kept.length]).toEqual([10_000, 0, 2]);
+    // nothing moved, and nothing needs setting aside: each transaction the payee kept was cancelled on the spot
+    expect([start - float(), spend().spentMicro, spend().reservedMicro, kept.length]).toEqual([10_000, 10_000, 0, 2]);
+    expect(svc.rows().filter((r) => r.tool === "escrow.open cancelled" && r.outcome === "cancelled")).toHaveLength(2);
 
-    // later, the payee broadcasts what it was handed
-    for (const raw of kept) {
-      // (as the signed transaction: there is no other way into the escrow. It reverts — the float's key spent that nonce when the open was refused)
-      expect(typeof (await world.escrow.broadcast(raw))).toBe("object");
-    }
+    // later, the payee broadcasts what it was handed: there is no other way into the escrow, and it reverts — the float's key spent that nonce
+    for (const raw of kept) expect(await world.escrow.broadcast(raw)).toBe("transaction-reverted");
     t += 2 * DAY;
     const view = await engine.view();
-    const lockedInEscrow = world.chain.balance(world.escrow.address);
-    const unknownToTheAccount = view.pay.sessions.every((s) => s.status === "closed") && engine.payments.filter((p) => p.protocol === "mpp-session").length === 1;
-    expect([start - float(), lockedInEscrow, unknownToTheAccount]).toEqual([40_010_000, 40_000_000, true]);
-    // the approval's books: one cent spent, nothing held — while $40 of the float is gone
+    expect([start - float(), world.chain.balance(world.escrow.address)]).toEqual([10_000, 0]);
+    // the account knows of one session, the honest one, closed
+    expect(view.pay.sessions.map((s) => s.status)).toEqual(["closed"]);
+    expect(engine.payments.filter((p) => p.protocol === "mpp-session")).toHaveLength(1);
+    // and the approval's books agree with the float: one cent spent, nothing held
     expect([spend().spentMicro, spend().reservedMicro]).toEqual([10_000, 0]);
   });
 });

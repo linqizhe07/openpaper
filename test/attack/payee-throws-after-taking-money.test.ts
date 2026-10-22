@@ -1,15 +1,21 @@
-/** AN ATTACK THAT MUST FAIL (found by an independent review on 2026-10-04, written as it succeeded then, and run with `it.fails`:
- * this test passes only while the attack below does NOT go through) — attacker B, a payee the owner has approved once.
+/** A HOLE FOUND BY AN INDEPENDENT REVIEW (2026-10-04), closed — attacker B, a payee the owner has approved once.
  *
- * The payee TAKES the payment (the token ledger moves) and then answers with a receipt the account's code trips over: x402 `payer: 5`
- * (payees.ts `sameAddress(res.payer, …)` calls `.toLowerCase()` on a number), AP2 a receipt that is not a string. The throw is caught in `pay()` and turned into "…could not read: nothing further was sent" — but `book()` never
- * ran: the approval's budget is not charged, no payment row exists, the ledger has no accepted row. The next call passes the same budget check.
- * An agent that retries an error (or one that works with the payee) empties the float past the budget; the books say one payment happened. */
+ * The hole: the payee TOOK the payment (the token ledger moved) and then answered with a receipt the account's code tripped over — x402
+ * `payer: 5` (payees.ts `sameAddress(res.payer, …)` called `.toLowerCase()` on a number), AP2 a receipt that was not a string. The throw was
+ * caught in `pay()` and turned into "…could not read: nothing further was sent", but `book()` never ran: the approval's budget was not
+ * charged, no payment row existed, the ledger had no accepted row, and the next call passed the same budget check. An agent that retried the
+ * error (or one that worked with the payee) emptied the float past the budget while the books said one payment had happened.
+ *
+ * What closes it: whether money moved is the ledger's word, never the receipt's. `sameAddress` takes only strings, so a receipt of any shape is
+ * read without a throw; the x402 branch asks the chain whether the authorisation was used and books what moved however the receipt looks
+ * (`E_PAYEE_UNVERIFIED` with `detail.paid: true` — "the payment is on the ledger"); and if reading an answer does throw, `afterTrouble` asks
+ * the ledger the same way before answering. Every payment charges the budget, so the budget stops the call that would pass it. The test below
+ * runs the attack as it went through then and asserts what holds now. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { isRefusal } from "../../src/core/errors.ts";
+import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { cardHash, type Outcome } from "../../src/portfolio/account/exchange.ts";
 import * as X from "../../src/portfolio/account/protocols.ts";
 import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
@@ -46,22 +52,22 @@ async function boot(budget: string) {
     const r = await pay(url, maxAmount, from);
     return !isRefusal(r) && r.kind === "card" ? own({ type: "approveCard", card: r.card.id, action: cardHash(r.card), decision: "approve" }) : r;
   };
-  await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: t + 30 * DAY });
-  await own({ type: "createSubAccount", name: "research", agent: cc.address, float: "60" });
+  expect(code(await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: t + 30 * DAY }))).toBe("account");
+  expect(code(await own({ type: "createSubAccount", name: "research", agent: cc.address, float: "60" }))).toBe("account");
   const fund = { destination: "self", sourceDex: "metamask", destinationDex: "sub:research", token: "USDC", amount: "50" };
   const route = await engine.resolve(fund, "owner");
   if (isRefusal(route)) throw new Error(route.message);
-  await own({ type: "sendAsset", ...fund, fromSubAccount: "", route: route.route.hash, maxFee: String(route.route.feeUsd), deadline: route.route.arrivalMs + MIN });
+  expect(code(await own({ type: "sendAsset", ...fund, fromSubAccount: "", route: route.route.hash, maxFee: String(route.route.feeUsd), deadline: route.route.arrivalMs + MIN }))).toBe("payment");
   t += 2 * MIN;
   await engine.settle();
-  await own({ type: "approveSpend", agent: cc.address, scope: "payees", allow: "data.sim,shop.sim", perPayment: "30", budget, windowHours: 0, validUntil: t + 30 * DAY });
+  expect(code(await own({ type: "approveSpend", agent: cc.address, scope: "payees", allow: "data.sim,shop.sim", perPayment: "30", budget, windowHours: 0, validUntil: t + 30 * DAY }))).toBe("account");
   const float = () => engine.sub("research")!.balanceMicro;
   const spend = () => engine.state.spends.find((s) => s.scope === "payees" && s.revokedAt === undefined)!;
   return { svc, engine, world: svc.payees!, pay, payOk, float, spend, start: float() };
 }
 
 describe("B · the payee takes the money, then sends a receipt the account cannot read", () => {
-  it.fails("x402: four $9 payments leave the float, none is booked, and the $40 budget is passed", async () => {
+  it("x402: every $9 the payee takes is booked against the budget, the agent is told it went, and the budget stops the fourth", async () => {
     const x = await boot("40");
     x.world.data.priceMicro = 9_000_000;
     expect(code(await x.payOk(QUOTE, "9", "research"))).toBe("payment");
@@ -76,16 +82,23 @@ describe("B · the payee takes the money, then sends a receipt the account canno
     });
     const answers: Outcome[] = [];
     for (let i = 0; i < 4; i++) answers.push(await x.pay(QUOTE, "9", "research"));
-    // the agent is told nothing was sent
-    expect(answers.map(code)).toEqual(["E_PAYEE_UNVERIFIED", "E_PAYEE_UNVERIFIED", "E_PAYEE_UNVERIFIED", "E_PAYEE_UNVERIFIED"]);
-    expect(isRefusal(answers[0]!) && answers[0]!.message).toContain("nothing further was sent");
+    // three times the agent is told the money went and the receipt did not verify; the fourth is stopped by the budget, not by the payee
+    expect(answers.map(code)).toEqual(["E_PAYEE_UNVERIFIED", "E_PAYEE_UNVERIFIED", "E_PAYEE_UNVERIFIED", "E_MANDATE_BUDGET"]);
+    const pays = x.engine.payments.filter((p) => p.kind === "pay");
+    for (const a of answers.slice(0, 3) as Refusal[]) {
+      expect(a.message).toBe("data.sim took $9.00 and sent no valid receipt: the payment is on the ledger, and this payee should not be paid again");
+      expect(a.detail?.paid).toBe(true);
+      expect(pays.some((p) => p.id === a.detail?.payment)).toBe(true);
+    }
+    expect((answers[3] as Refusal).message).toBe("the spending approval has $4.00 left of $40.00; $9.00 is more than that");
 
+    // what left the float is what the payee has and what the budget was charged — and it is inside the budget
     const leftTheFloat = x.start - x.float();
-    const spentBeyondBudget = leftTheFloat > x.spend().budgetMicro;
-    expect([leftTheFloat, x.world.chain.balance(x.world.data.payTo), spentBeyondBudget]).toEqual([45_000_000, 45_000_000, true]);
-    // and the books know of one payment of $9
-    expect(x.spend().spentMicro).toBe(9_000_000);
-    expect(x.engine.payments.filter((p) => p.kind === "pay")).toHaveLength(1);
-    expect(x.svc.rows().filter((r) => r.tool === "agentPay" && r.outcome === "accepted")).toHaveLength(1);
+    expect([leftTheFloat, x.world.chain.balance(x.world.data.payTo), x.spend().spentMicro]).toEqual([36_000_000, 36_000_000, 36_000_000]);
+    expect(leftTheFloat <= x.spend().budgetMicro).toBe(true);
+    // and the books know of every payment: four rows of $9, settled, three of them noting the receipt
+    expect(pays.map((p) => [p.amountUsd, p.status])).toEqual([[9, "settled"], [9, "settled"], [9, "settled"], [9, "settled"]]);
+    expect(pays.filter((p) => p.note === "data.sim took the payment and sent no valid receipt")).toHaveLength(3);
+    expect(x.svc.rows().filter((r) => r.tool === "agentPay" && r.outcome === "accepted")).toHaveLength(4);
   });
 });
