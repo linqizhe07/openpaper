@@ -40,46 +40,58 @@ export interface Progress {
 /** this repository, by name: the site's Progress and its "Read all" link are this repository's pull requests */
 export const REPO = "linqizhe07/openpaper";
 
+/** a merge commit's subject, as GitHub writes it ("Merge pull request #24 from owner/branch"): the number and the branch. A subject
+ * written by hand may lack its number (one on this repository's main does): the branch still names the pull request */
+export interface MergeRef {
+  number?: number;
+  branch: string;
+}
+const MERGE_SUBJECT = /^Merge pull request #(\d*) from [^/\s]+\/(\S+)/;
+export function mergeRef(line: string): MergeRef | undefined {
+  const m = MERGE_SUBJECT.exec(line.trim());
+  if (!m) return undefined;
+  return { ...(m[1] ? { number: Number(m[1]) } : {}), branch: m[2]! };
+}
 /** the newest merged pull request a git log names, from its merge subjects (newest first) */
-export function newestMerge(log: string): { number: number; branch: string } | undefined {
+export function newestMerge(log: string): MergeRef | undefined {
   for (const line of log.split("\n")) {
-    const m = /^Merge pull request #(\d+) from [^/\s]+\/(\S+)/.exec(line.trim());
-    if (m) return { number: Number(m[1]), branch: m[2]! };
+    const r = mergeRef(line);
+    if (r) return r;
   }
   return undefined;
 }
-
-/** every merged pull request a git log names, as "number|branch", newest first: the order the repository merged them, which is the
- * order the page shows them (a batch pushed at once has one merge time at GitHub for all of it, so the time says nothing of the order) */
-export function mergedOrder(log: string): string[] {
-  const out: string[] = [];
+/** every merged pull request a git log names, newest first: the order the repository merged them, which is the order the page shows them
+ * (a batch pushed at once has one merge time at GitHub for all of it, so the time says nothing of the order) */
+export function mergedOrder(log: string): MergeRef[] {
+  const out: MergeRef[] = [];
   for (const line of log.split("\n")) {
-    const m = /^Merge pull request #(\d+) from [^/\s]+\/(\S+)/.exec(line.trim());
-    if (m) out.push(`${Number(m[1])}|${m[2]}`);
+    const r = mergeRef(line);
+    if (r) out.push(r);
   }
   return out;
 }
-/** the same as a set, for keeping the earlier home's list to this history */
-export function mergedInHistory(log: string): Set<string> {
-  return new Set(mergedOrder(log));
+/** does an entry name a merge: the same branch, and the same number where both say one (numbers alone collide across the repository's
+ * homes); an entry baked before branches were kept, by its number alone */
+export function sameMerge(e: { number: number; branch?: string }, h: MergeRef): boolean {
+  if (e.branch) return e.branch === h.branch && (h.number === undefined || h.number === e.number);
+  return h.number === e.number;
 }
-/** the list in the history's order, newest first; an entry the history does not name (a shallow checkout) after the named ones, by its
- * merge time; an entry without a branch matches by number alone */
+/** where an entry stands in the history's order; the history's length where it names none (merged elsewhere, or a shallow checkout) */
+export function historyRank(e: { number: number; branch?: string }, order: MergeRef[]): number {
+  const i = order.findIndex((h) => sameMerge(e, h));
+  return i < 0 ? order.length : i;
+}
+/** the list in the history's order, newest first; an entry the history does not name after the named ones, by its merge time */
 export function orderByHistory(list: Merged[], log: string): Merged[] {
   const order = mergedOrder(log);
-  const rank = (e: Merged): number => {
-    const i = order.findIndex((k) => (e.branch ? k === `${e.number}|${e.branch}` : k.startsWith(`${e.number}|`)));
-    return i < 0 ? order.length : i;
-  };
-  return [...list].sort((a, b) => rank(a) - rank(b) || Date.parse(b.mergedAt) - Date.parse(a.mergedAt));
+  return [...list].sort((a, b) => historyRank(a, order) - historyRank(b, order) || Date.parse(b.mergedAt) - Date.parse(a.mergedAt));
 }
 
 /** does the file's first entry name the newest merge? (an entry without a branch, from before branches were kept, matches by number) */
-export function isFresh(file: Progress, newest: { number: number; branch: string } | undefined): boolean {
+export function isFresh(file: Progress, newest: MergeRef | undefined): boolean {
   if (!newest) return true;
   const first = file.merged[0];
-  if (!first) return false;
-  return first.number === newest.number && (first.branch === undefined || first.branch === newest.branch);
+  return !!first && sameMerge(first, newest);
 }
 
 /** the merged pull requests of `repo`, newest first, as the page wants them */
@@ -95,8 +107,8 @@ export async function fetchMerged(repo: string, perPage = 100): Promise<Merged[]
 
 /** this repository's merged pull requests, then the earlier home's that this history merged */
 export async function refresh(log: string = execFileSync("git", ["log", "--merges", "--first-parent", "--format=%s"], { cwd: ROOT, encoding: "utf8" })): Promise<Progress> {
-  const history = mergedInHistory(log);
-  const earlier = (await fetchMerged(EARLIER_HOME)).filter((e) => (e.branch ? history.has(`${e.number}|${e.branch}`) : [...history].some((h) => h.startsWith(`${e.number}|`))));
+  const order = mergedOrder(log);
+  const earlier = (await fetchMerged(EARLIER_HOME)).filter((e) => historyRank(e, order) < order.length);
   const merged = orderByHistory([...(await fetchMerged(REPO)), ...earlier], log);
   return { asOf: new Date().toISOString().slice(0, 10), source: `https://api.github.com/repos/${REPO}/pulls?state=closed`, merged };
 }
@@ -108,7 +120,7 @@ if (isMain) {
     const log = execFileSync("git", ["log", "--merges", "--first-parent", "-1", "--format=%s"], { cwd: ROOT, encoding: "utf8" });
     const newest = newestMerge(log);
     if (!isFresh(file, newest)) {
-      console.error(`site/data/progress.json is stale: its first entry is #${file.merged[0]?.number ?? "none"}, the newest merge is #${newest?.number} (${newest?.branch}). Run \`npm run site:progress\``);
+      console.error(`site/data/progress.json is stale: its first entry is #${file.merged[0]?.number ?? "none"}, the newest merge is ${newest?.number === undefined ? "" : `#${newest.number} `}(${newest?.branch}). Run \`npm run site:progress\``);
       process.exit(1);
     }
     console.log("site/data/progress.json names the newest merge");
