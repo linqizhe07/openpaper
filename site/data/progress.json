@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 29,
+      "title": "The changelog's rail line links its pull request",
+      "mergedAt": "2026-10-22T21:49:15Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/29",
+      "branch": "fix/changelog-rail-link"
+    },
+    {
       "number": 28,
       "title": "The left rail keeps watch from any tab: the markets starred with fresh prices, the books in a line each, the stream's dot beside the clock, how many agents",
       "mergedAt": "2026-10-22T21:48:17Z",
