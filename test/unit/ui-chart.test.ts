@@ -121,7 +121,8 @@ function page(answer: (path: string) => Answer = () => new Promise(() => {}), op
   const asked: string[] = [];
   const element = (): Record<string, unknown> => ({ addEventListener() {}, removeAttribute() {}, setAttribute() {}, querySelectorAll: () => [], querySelector: () => null, classList: { add() {}, remove() {}, toggle() {} }, dataset: {}, style: {}, hidden: false, innerHTML: "", textContent: "", value: "" });
   const sandbox: Record<string, unknown> = {
-    document: { getElementById: element, querySelector: () => null, querySelectorAll: () => [], addEventListener() {}, body: element(), documentElement: { dataset: { theme: "cream" } } },
+    // the document keeps its listeners (a stand-in element), so a test can press a key on the page
+    document: Object.assign(fake("document") as unknown as Record<string, unknown>, { getElementById: element, querySelector: () => null, querySelectorAll: () => [], body: element(), documentElement: { dataset: { theme: "cream" } } }),
     location: { hash: "", origin: "http://127.0.0.1:4820" },
     history: { replaceState() {} },
     Event: class {
@@ -2219,5 +2220,73 @@ describe("the desk's trades on the chart (the superagent's desk: chMarks)", () =
     const tag = Number((/data-mk="b">[^]*?<rect class="ch-mkr" x="-?\d+" y="(-?\d+)"/.exec(html) || [])[1]);
     expect(tag).toBeLessThan(y);
     q.run("chRelease(EL)");
+  });
+});
+
+describe("the chart filling the window", () => {
+  const bars = hourly(30);
+  const mount = (opts = "") => {
+    const p = page((path) => (path.startsWith("/api/account/candles") ? candles(bars) : new Promise(() => {})));
+    p.run(`chMount(EL, { venue: "okx", symbol: "BTC/USDT", kind: "spot", quote: "USDT"${opts} })`);
+    return p;
+  };
+  const doc = (p: ReturnType<typeof page>) => p.sandbox.document as Omit<Fake, "querySelector"> & { documentElement: { dataset: Record<string, string> }; querySelector: () => unknown };
+  const pressFull = (el: Fake) => el.fire("click", { target: { closest: () => ({ dataset: { chFull: "" } }) } });
+
+  it("offers the button only where the page asked for it; pressed, the frame fills the window and the page behind holds still; again, the page's own layout", async () => {
+    const plain = mount();
+    await settle();
+    expect(plain.el.innerHTML).not.toContain("data-ch-full");
+    plain.run("chFull(EL, true)");
+    expect(plain.el.classes.has("ch-full")).toBe(false);
+    plain.run("chRelease(EL)");
+    const p = mount(", fullscreen: true");
+    await settle();
+    expect(p.el.innerHTML).toContain('<button type="button" class="ch-iv ch-fullb" data-ch-full aria-pressed="false" data-fk="ch-full" aria-label="Fill the window" title="Fill the window with the chart (F)">');
+    pressFull(p.el);
+    expect(p.el.classes.has("ch-full")).toBe(true);
+    expect(doc(p).documentElement.dataset.chartFull).toBe("");
+    // the head drawn again: the button says the way back
+    const head = () => p.el.querySelector(".ch-head").innerHTML;
+    expect(head()).toContain('data-ch-full aria-pressed="true" data-fk="ch-full" aria-label="Back to the page" title="Back to the page (Esc, or F)">');
+    pressFull(p.el);
+    expect(p.el.classes.has("ch-full")).toBe(false);
+    expect(doc(p).documentElement.dataset.chartFull).toBeUndefined();
+    expect(head()).toContain('data-ch-full aria-pressed="false"');
+    p.run("chRelease(EL)");
+  });
+
+  it("F on the plot fills the window and brings the page back; Esc anywhere brings it back unless a sheet or the drawer is open; the page's own call, and release, bring it back", async () => {
+    const p = mount(", fullscreen: true");
+    await settle();
+    const plot = p.el.querySelector(".ch-plot");
+    plot.fire("keydown", { key: "f" });
+    expect(p.el.classes.has("ch-full")).toBe(true);
+    // a chord is the browser's own
+    plot.fire("keydown", { key: "f", ctrlKey: true });
+    expect(p.el.classes.has("ch-full")).toBe(true);
+    plot.fire("keydown", { key: "F" });
+    expect(p.el.classes.has("ch-full")).toBe(false);
+    plot.fire("keydown", { key: "f" });
+    // Esc pressed inside a sheet: the sheet's own
+    doc(p).fire("keydown", { key: "Escape", target: { closest: (sel: string) => (sel === "dialog" ? {} : null) } });
+    expect(p.el.classes.has("ch-full")).toBe(true);
+    // a sheet open anywhere on the page
+    doc(p).querySelector = () => ({ open: true });
+    doc(p).fire("keydown", { key: "Escape", target: { closest: () => null } });
+    expect(p.el.classes.has("ch-full")).toBe(true);
+    doc(p).querySelector = () => null;
+    doc(p).fire("keydown", { key: "Escape", target: { closest: () => null } });
+    expect(p.el.classes.has("ch-full")).toBe(false);
+    expect(doc(p).documentElement.dataset.chartFull).toBeUndefined();
+    // the page leaving the chart's tab asks the same; release lets the view go with the chart
+    p.run("chFull(EL, true)");
+    expect(p.el.classes.has("ch-full")).toBe(true);
+    p.run("chFull(EL, false)");
+    expect(p.el.classes.has("ch-full")).toBe(false);
+    p.run("chFull(EL, true)");
+    p.run("chRelease(EL)");
+    expect(p.el.classes.has("ch-full")).toBe(false);
+    expect(doc(p).documentElement.dataset.chartFull).toBeUndefined();
   });
 });

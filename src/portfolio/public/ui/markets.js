@@ -1848,7 +1848,13 @@ function mkDrawerParts(o) {
     ${why}
     ${mkCredit([it])}`;
   const ranges = mkSeg(MKT_RANGES.map(([r]) => [r, r]), mkRangeOf(o), "range", "Price history over").replace('class="seg"', 'class="seg mk-rseg"');
-  const chart = `<section class="sec" aria-label="Price history"><div class="sec-head"><h2 class="h2">Price</h2>${key || leg ? ranges : ""}</div>${mkChartHtml(o, it, leg, key)}</section>`;
+  // the Trade page's own chart of it (full size, the window if asked, the ticket beside it): at the account its history is read from where
+  // that account is yours, else the kind and the symbol, for the ticket to find an account of yours that trades it (ui/trade.js onRoute).
+  // Not for a dollar held (a stablecoin, cash): there is no market to chart
+  const tradeKind = it.kind === "perp" && pre ? "preipo" : MKT_KIND_OF[it.kind] || "";
+  const tradeTo = tradeKind && typeof hashOf === "function" ? hashOf("trade", leg && mkVenue(leg.venue) ? { kind: tradeKind, venue: leg.venue, symbol: leg.symbol } : { kind: tradeKind, ...(it.base ? { symbol: it.base } : {}) }) : "";
+  const openTrade = tradeTo ? `<a class="link mk-open-trade" href="${esc(tradeTo)}" data-drawer-close>Open in Trade →</a>` : "";
+  const chart = `<section class="sec" aria-label="Price history"><div class="sec-head"><span class="mk-sec-t"><h2 class="h2">Price</h2>${openTrade}</span>${key || leg ? ranges : ""}</div>${mkChartHtml(o, it, leg, key)}</section>`;
   // a dollar held (a stablecoin, cash) is compared with nothing: a dollar is a dollar
   const across = it.kind === "stable" || it.kind === "cash" ? "" : `<section class="sec" aria-label="Across venues"><h2 class="h2">Across venues</h2>${mkAcrossHtml(o)}</section>`;
   const lines = `<section class="sec" aria-label="On the statement"><div class="sec-head"><h2 class="h2">On the statement</h2>${typeof openStatement === "function" ? '<button type="button" class="link" data-act="statement" data-fk="d-statement">Open the Statement →</button>' : ""}</div>${mkLinesHtml(o)}</section>`;

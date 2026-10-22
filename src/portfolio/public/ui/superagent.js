@@ -1801,7 +1801,7 @@ function sgPaintChart(root, feed, now) {
     if (!key) paint(chart, `<p class="sg-dim sg-wait-w">${m ? `${esc(sgVenueName(feed, SG.view).replace(/^the /, "The "))} is not connected: no chart until it is.` : "Nothing to chart yet: the market of the desk's first lead shows here."}</p>`);
     else if (typeof chMount === "function") {
       const c = SG.chart;
-      chMount(chart, { venue, symbol: m.symbol, kind: m.kind, range: c.range, interval: c.interval || undefined, log: c.log === true, onRange: (r) => (c.range = r), onInterval: (iv) => (c.interval = iv), onLog: (v) => (c.log = v) });
+      chMount(chart, { venue, symbol: m.symbol, kind: m.kind, fullscreen: true, range: c.range, interval: c.interval || undefined, log: c.log === true, onRange: (r) => (c.range = r), onInterval: (iv) => (c.interval = iv), onLog: (v) => (c.log = v) });
     } else paint(chart, '<p class="sg-dim">The chart is not on this page.</p>');
   }
   paint(root.querySelector('[data-sg-p="chart-h"]'), sgChartHeadHtml(feed, m));

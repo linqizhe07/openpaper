@@ -928,11 +928,14 @@ describe("the one drawer", () => {
     expect(html).not.toContain('data-act="rekey"');
     // the parts, each in its own element, in the brief's order
     expect([...html.matchAll(/data-sec="([a-z]+)"/g)].map((m) => m[1])).toEqual(["head", "chart", "alerts", "across", "financials", "ipo", "held", "agents", "lines"]);
+    // the Price head opens the Trade page's own chart of it, at the account its history is read from (yours), the drawer closing on the way
+    expect(html).toContain('<span class="mk-sec-t"><h2 class="h2">Price</h2><a class="link mk-open-trade" href="#/trade?kind=crypto&amp;venue=ex&amp;symbol=BTC%2FUSDT" data-drawer-close>Open in Trade →</a></span>');
     expect(html.indexOf('aria-label="Across venues"')).toBeLessThan(html.indexOf('aria-label="You hold"'));
     expect(html.indexOf('aria-label="You hold"')).toBeLessThan(html.indexOf('aria-label="Agents on it"'));
     expect(html.indexOf('aria-label="Agents on it"')).toBeLessThan(html.indexOf('aria-label="On the statement"'));
     // an event: cents, its outcome's name, the change in cents, once
     const ev = p.run<string>('mkDrawerHtml({ item: ITEMS.fed, interval: "1h", ipo: [] })');
+    expect(ev).toMatch(/<a class="link mk-open-trade" href="#\/trade\?kind=predictions&amp;venue=[a-z-]+&amp;symbol=[^"]+" data-drawer-close>Open in Trade →<\/a>/);
     expect(ev).toContain('<span class="num-m" data-q="kalshi|KXFED-DEC:YES" data-fmt="c-last">62¢</span><span class="dim">Yes</span>');
     expect(ev).toContain("<dt>Closes</dt>");
   });

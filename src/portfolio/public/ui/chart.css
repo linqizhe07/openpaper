@@ -15,6 +15,11 @@
 
 .ch { display: flex; flex-direction: column; flex: 1 1 auto; gap: 4px; height: 100%; min-height: 280px; min-width: 0; padding: 0 0 6px; background: transparent; container-type: inline-size; }
 
+/* ---- the chart filling the window (chart.js chSetFull): its frame laid over the page — under a sheet, the drawer and the toasts — in the
+   panel's own colour, and the page behind it held still. Doubled so it stands over the frames' own heights (terminal.css, superagent.css) -- */
+.ch-full.ch-full { position: fixed; inset: 0; z-index: 40; height: auto; max-height: none; margin: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); border-radius: 0; box-shadow: none; background: var(--hl-panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
+html[data-chart-full] { overflow: hidden; }
+
 /* ---- the head: the ranges, the bar sizes' menu, the log switch — one row of fixed height (a narrow chart scrolls it sideways) ------------ */
 .ch-head { display: flex; align-items: center; flex: none; flex-wrap: nowrap; gap: 4px; height: 38px; padding: 0 8px; border-bottom: 1px solid var(--hl-grid); min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .ch-head::-webkit-scrollbar { display: none; }
@@ -31,6 +36,10 @@
 .ch-ivsel { appearance: none; -webkit-appearance: none; min-height: 30px; margin: 0; padding: 0 20px 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--hl-tv-text); font: 400 14px system-ui, -apple-system, "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; cursor: pointer; }
 .ch-ivsel option { background: var(--hl-panel); color: var(--hl-text); }
 .ch-log { margin-left: auto; }
+/* the window-filling view's button: after Log, or first at the right where an event contract has no Log */
+.ch-fullb { margin-left: auto; padding: 0 6px; }
+.ch-log + .ch-fullb { margin-left: 0; }
+.ch-fulli { display: block; }
 @media (hover: hover) {
   .ch-iv:hover, .ch-ivsel:hover { background: var(--hl-inset); }
   .ch-iv[aria-pressed="true"]:hover { color: var(--hl-accent); }

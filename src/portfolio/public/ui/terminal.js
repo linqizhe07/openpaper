@@ -392,7 +392,7 @@ function ttMount(el) {
   const base = { venue: at.venue, symbol: at.symbol, kind: mk.kind, quote: mk.quote };
   // the range, the bar size and the price scale the owner picked stay when the market changes (a range pressed takes its own bar size:
   // ui/chart.js says both back)
-  if (typeof chMount === "function") chMount(chart, { ...base, priceStep: mk.priceStep, range: TT.range || "1M", interval: TT.interval || undefined, log: TT.log === true, onRange: (r) => ((TT.range = r), ttUrl()), onInterval: (iv) => ((TT.interval = iv), ttUrl()), onLog: (on) => (TT.log = on) });
+  if (typeof chMount === "function") chMount(chart, { ...base, fullscreen: true, priceStep: mk.priceStep, range: TT.range || "1M", interval: TT.interval || undefined, log: TT.log === true, onRange: (r) => ((TT.range = r), ttUrl()), onInterval: (iv) => ((TT.interval = iv), ttUrl()), onLog: (on) => (TT.log = on) });
   else paint(chart, '<p class="empty tt-wait">The chart is not on this page.</p>');
   // the account's own lines over it (orders, the position's entry, its exits, its liquidation), and the address saying what shows
   ttLinesDraw();
@@ -681,6 +681,12 @@ function ttFollow() {
   stFollow(main ? [main] : [], marks);
 }
 if (typeof onRoute === "function") onRoute((tab, params) => {
+  // the chart filling the window comes back to the page as the page leaves Trade: its frame would lie over the next pane
+  if (tab !== "trade" && typeof chFull === "function") {
+    const pane = $("pane-trade");
+    const chart = pane && typeof pane.querySelector === "function" ? pane.querySelector("[data-tt-chart]") : null;
+    if (chart) chFull(chart, false);
+  }
   // the chart's range and bar size the address names (#/trade?…&range=3M&iv=4h: a link shared, a reload) are the ones it mounts with
   if (tab === "trade" && params) {
     if (typeof CH_RANGE_BAR === "object" && CH_RANGE_BAR[params.range]) TT.range = params.range;
