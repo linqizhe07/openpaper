@@ -64,6 +64,8 @@ function renderChrome(L, owner) {
   drawBanner(owner);
   drawRestoreNotice();
   shSharks();
+  // the rail's watch and books (ui/rail.js)
+  if (typeof rlDraw === "function") rlDraw();
 }
 
 /* THE PAPER ACCOUNTS' SHARKS: the ocean under the page (ui/ocean.js OCEAN.bonus) swims one more shark for each whole 1% the paper accounts
@@ -1020,6 +1022,8 @@ routed();
   else setTimeout(ahead, 500);
   // what changes on the account, pushed from here on (ui/stream.js; a browser without event streams goes on by the read below)
   if (typeof stStart === "function") stStart();
+  // the rail's watch: its prices every five seconds while the page is in view (ui/rail.js)
+  if (typeof rlStart === "function") rlStart();
   // a refresh due in the middle of a scroll waits for it to rest (its drawing is main-thread work the scroll's frames would wait for); while
   // the stream is connected it is due REFRESH_SLOW times less often — what changes comes pushed (the account's door follows the real
   // venues by itself while a page listens: service.ts watchDoor) — and a page drawn only in part since a pushed read (SH.late) is drawn
