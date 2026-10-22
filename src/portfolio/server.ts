@@ -24,7 +24,7 @@
  *   GET  /                             the page: net worth, accounts, activity, agents, devices (`/account` sends you here)
  *   GET  /api/account                  what that page reads, with `agentSetup`: the command an agent's owner runs to add this account's MCP seat,
  *                                      and the lists the door accepts (`dollars`, `networks`, `bridgeChains`)
- *   GET  /api/now                      the service's clock (a signer takes its nonce from here)
+ *   GET  /api/now                      the service's clock (a signer takes its nonce from here), and which openpaper this is: `version`, `commit`
  *   POST /api/account/pair   {jwk}     a browser offers the public half of its device key; the first one becomes the owner's device
  *   POST /api/account/prepare {draft}  turn what the owner asked for into the exact action to sign (a movement gets its route, fee and arrival;
  *                                      an order its exact size, price and the most it may be worth)
@@ -188,6 +188,7 @@ import type { OrderPlan } from "./router.ts";
 import { isPending, loadOpenness, PortfolioService } from "./service.ts";
 import { defaultHome } from "./home.ts";
 import { DEFAULT_CAP_USD, DEFAULT_PORT, parseFlags, SERVER_FLAGS, SERVER_USAGE } from "./cli.ts";
+import { commit as commitSha, VERSION, versionLine } from "./version.ts";
 import { pairingCode } from "./account/pairing.ts";
 import type { Side } from "./venues.ts";
 
@@ -503,7 +504,7 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     res.json({ ...(svc.real ? real : o), ledger, approvals: layer() ? o.approvals.map((a) => ({ ...a, hash: cardHash(a) })) : o.approvals, presets: PRESETS, accountLayer: layer() });
   }));
 
-  app.get("/api/now", (_req, res) => void res.json({ ok: true, now: svc.now(), ms: Date.parse(svc.now()) }));
+  app.get("/api/now", (_req, res) => void res.json({ ok: true, now: svc.now(), ms: Date.parse(svc.now()), version: VERSION, commit: commitSha() }));
 
   app.get("/api/account", wrap(async (req, res) => {
     const view = await svc.accountView();
@@ -512,7 +513,7 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     // the dial as the page needs it: the agents' session, the venues switched off for agents, the most leverage they may set
     // and how each venue connected live has answered lately (its health, for the Venues board)
     // and the command an agent's owner runs to add this account's seat (the server's own origin, the seat by its absolute path)
-    res.json({ ok: true, ...(view.real ? realPage(view) : view), mode: o.mode, live: svc.live, dial: { sessionExpiresAt: o.sessionExpiresAt, sessionEnded: Date.parse(o.sessionExpiresAt) <= Date.parse(view.now), revoked: o.revoked, maxLeverage: o.maxLeverage ?? 1 }, health: svc.venueHealth(), memoryAsks: svc.memoryAsks(), agentSetup: agentSetupOf(origin || `${req.protocol}://${req.get("host") ?? "127.0.0.1"}`) });
+    res.json({ ok: true, version: VERSION, commit: commitSha(), ...(view.real ? realPage(view) : view), mode: o.mode, live: svc.live, dial: { sessionExpiresAt: o.sessionExpiresAt, sessionEnded: Date.parse(o.sessionExpiresAt) <= Date.parse(view.now), revoked: o.revoked, maxLeverage: o.maxLeverage ?? 1 }, health: svc.venueHealth(), memoryAsks: svc.memoryAsks(), agentSetup: agentSetupOf(origin || `${req.protocol}://${req.get("host") ?? "127.0.0.1"}`) });
   }));
 
   app.post("/api/account/pair", (req, res) => {
@@ -1192,7 +1193,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const owned = (service.account?.state.owners.length ?? 0) > 0;
   if (liveWrites) console.log(`TRADING IS ON · real orders and movements at the accounts you connect · at most $${liveWrites.capUsd} an order or a movement (--live-cap; --read-only turns it off) · every one is signed by you, or inside a limit you signed for an agent · money leaves a venue only for a place shown to be yours${owned ? "" : `\n  pairing code: ${liveWrites.pairingCode} — the first browser becomes the owner only with this code, typed on the page`}`);
   else if (!classic) console.log(`read-only: nothing is traded or moved from this server (started with --read-only)${owned ? "" : `\n  pairing code: ${code} — the first browser becomes the owner only with this code, typed on the page`}`);
-  console.log(classic ? `simulated statement at ${srv.url} · ${service.accounts().length} accounts · MetaMask ${live ? "LIVE via mm" : "simulated (--mm for live)"} · no account layer · ledger ${service.ledgerPath()} · Ctrl-C to stop` : `your account at ${srv.url} · real accounts only: connect them on the page · ledger ${service.ledgerPath()} · Ctrl-C to stop`);
+  console.log(classic ? `${versionLine()} · simulated statement at ${srv.url} · ${service.accounts().length} accounts · MetaMask ${live ? "LIVE via mm" : "simulated (--mm for live)"} · no account layer · ledger ${service.ledgerPath()} · Ctrl-C to stop` : `${versionLine()} · your account at ${srv.url} · real accounts only: connect them on the page · ledger ${service.ledgerPath()} · Ctrl-C to stop`);
   // where the owner can connect, kept fresh without anyone asking: the venues' own answers to this network, and their terms matched to where
   // it is (live/availability.ts) — so the page and the agents know before anyone makes a key
   if (!classic && service.account) service.watchVenues();
