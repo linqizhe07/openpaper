@@ -153,6 +153,41 @@ button.ink { background: var(--primary); color: var(--on-primary); }
 .rail-links button[aria-current="page"] { background: var(--surface-2); color: var(--text); font-weight: 700; }
 .rail-status { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0 12px; }
 .rail-status .stamp { font-size: 12px; font-variant-numeric: tabular-nums; }
+/* the status line: the stream's dot and word (ui/stream.js stDot: Live · Quiet · Polling), then the clock */
+.rail-stat { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.st-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--dim); white-space: nowrap; }
+.st-dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.st-dot[data-st="connected"] { color: var(--up); }
+.st-dot[data-st="connected"]::before { background: var(--up); }
+.st-dot[data-st="stale"] { color: var(--warn-text); }
+.st-dot[data-st="stale"]::before { background: var(--warn); }
+/* under Agents: how many there are */
+.rail-sub { display: block; padding: 0 12px 0 46px; margin-top: -6px; font-size: 12px; color: var(--dim); }
+.rail-sub:empty { display: none; }
+/* THE RAIL'S WATCH (ui/rail.js): the markets starred, a row each — the avatar, the name and where it is priced, the price and the 24h move
+   at the right, a bell with the alerts on it — the block taking the rail's spare height and scrolling inside it, so the Account stays at the
+   foot; and the books, a line each */
+.rail-watch { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; }
+.rl-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 4px; font-size: 12px; font-weight: 600; color: var(--dim); }
+.rl-h .link { font-size: 12px; font-weight: 500; }
+.rl-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; grid-template-areas: "av name px" "av where chg"; column-gap: 8px; row-gap: 1px; align-items: center; width: 100%; min-height: 44px; padding: 4px 8px; border: 0; border-radius: var(--radius-s); background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.rl-row:hover { background: var(--hover); }
+.rl-row .av { grid-area: av; }
+.rl-name { grid-area: name; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-name .mk-opt { font-weight: 400; color: var(--dim); }
+.rl-where { grid-area: where; min-width: 0; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rl-px { grid-area: px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.rl-chg { grid-area: chg; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.rl-bell { display: inline-flex; align-items: center; gap: 2px; flex: none; font-size: 11px; font-weight: 600; color: var(--dim); }
+.rl-bell .ico { width: 12px; height: 12px; }
+.rl-bell.warm { color: var(--warn-text); }
+.rl-empty { margin: 0; padding: 0 8px; font-size: 12px; line-height: 1.45; color: var(--dim); }
+.rail-books { display: flex; flex-direction: column; gap: 2px; }
+.rail-books[hidden] { display: none; }
+.rl-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: var(--radius-s); color: var(--dim); font-size: 13px; text-decoration: none; }
+.rl-line:hover { background: var(--hover); color: var(--text); }
+.rl-line .rl-v { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rl-line b { font-weight: 600; color: var(--text); }
 .note-s { font-size: 12px; color: var(--dim); line-height: 1.4; }
 /* a status in a word or two (Trading on · Read-only): a small pill on the second surface */
 .pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: var(--radius-pill); padding: 3px 10px; white-space: nowrap; color: var(--dim); background: var(--surface-2); }
@@ -499,7 +534,8 @@ dialog { color: var(--text); }
   .rail-nav a { padding: 0 10px; flex: none; }
   /* the strip scrolls sideways: the ring just inside each link, so it is not cut */
   .rail-nav a:focus-visible { outline-offset: -2px; }
-  /* the strip keeps the Account: its wallet button, without the clock */
+  /* the strip keeps the Account: its wallet button, without the clock, the watch or the books */
+  .rail-watch, .rail-books, .rail-sub { display: none; }
   .rail-links { flex-direction: row; }
   .rail-links button { width: auto; padding: 0 10px; }
   .rail-foot { margin: 0 0 0 auto; flex-direction: row; }

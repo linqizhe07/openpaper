@@ -84,9 +84,13 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     </div>
     <div class="rail-links">
       <button type="button" id="open-agents"><svg class="ico" aria-hidden="true"><use href="#i-agent"></use></svg>Agents<span class="count" id="count-agents" hidden></span></button>
+      <span class="rail-sub" id="rail-agents-sub"></span>
     </div>
+    <!-- the rail's watch (ui/rail.js): the markets starred, priced fresh from any tab; the books in a line each. The narrow strip hides both -->
+    <section class="rail-watch" id="rail-watch" aria-label="Watching"></section>
+    <section class="rail-books" id="rail-books" aria-label="On the books" hidden></section>
     <div class="rail-foot">
-      <div class="rail-status"><div id="reach" hidden></div><div class="dim stamp" id="stamp"></div></div>
+      <div class="rail-status"><div id="reach" hidden></div><div class="rail-stat"><span class="st-dot" data-st-dot></span><span class="dim stamp" id="stamp"></span></div></div>
       <!-- the Account at the rail's foot: Portfolio · Venues · Memory open from here (round 7, F5) -->
       <a class="rail-wallet" href="#/portfolio" id="rail-wallet"><svg class="ico" aria-hidden="true"><use href="#i-purse"></use></svg><span class="rw"><span class="rw-h">Account<span class="count" id="count-portfolio" hidden></span></span><span class="rw-sub" id="rail-worth">&nbsp;</span></span></a>
     </div>
@@ -168,6 +172,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <script defer src="/ui/superagent.js"></script>
 <script defer src="/ui/statement.js"></script>
 <script defer src="/ui/agents-mount.js"></script>
+<script defer src="/ui/rail.js"></script>
 <script defer src="/ui/shell.js"></script>
 </body>
 </html>

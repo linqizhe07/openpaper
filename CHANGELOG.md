@@ -28,6 +28,10 @@ link there.
 - Eight indicators on the chart, over the price and in panes under it, kept in the address and this browser. [#22](https://github.com/linqizhe07/openpaper/pull/22)
 - Drawings on the chart — a horizontal line, a trend line, a note — anchored to bars and prices, kept in this browser for the market. [#23](https://github.com/linqizhe07/openpaper/pull/23)
 - The page's keys in one sheet behind `?`, and from Settings. [#24](https://github.com/linqizhe07/openpaper/pull/24)
+- Three session-word tests read the same in any zone, and the site's Progress list follows the merge history rather than GitHub's merge time. [#25](https://github.com/linqizhe07/openpaper/pull/25)
+- The Progress script reads a merge subject that lost its number, by its branch. [#26](https://github.com/linqizhe07/openpaper/pull/26)
+- The page calls itself openpaper: its title, the rail's brand with the ring for a mark, and the tab's icon. [#27](https://github.com/linqizhe07/openpaper/pull/27)
+- The left rail keeps watch from any tab: the markets starred, priced fresh every five seconds; the books in a line each (open orders, positions and what they are up or down, the paper result); the stream's dot beside the clock; how many agents.
 
 ## v0.1.0 — 2026-10-22
 

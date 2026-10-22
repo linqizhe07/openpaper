@@ -108,7 +108,7 @@ describe("the account page's scripts", () => {
     // the order the contract names: the ocean right after the contract (the page's ground, drawn before any pane), then the account's push
     // channel (every pane after it listens to it), what moves money and what connects before the panes that use it, the statement and the
     // agents' mount point after them, the shell last
-    expect(named).toEqual(["/owner.js", "/ui/core.js", "/ui/ocean.js", "/ui/stream.js", "/ui/connect.js", "/ui/money.js", "/ui/asset.js", "/ui/intent.js", "/ui/live.js", "/ui/portfolio.js", "/ui/memory.js", "/ui/earn.js", "/ui/markets.js", "/ui/trade.js", "/ui/indicators.js", "/ui/chart.js", "/ui/book.js", "/ui/terminal.js", "/ui/brains.js", "/ui/desk.js", "/ui/superagent.js", "/ui/statement.js", "/ui/agents-mount.js", "/ui/shell.js"]);
+    expect(named).toEqual(["/owner.js", "/ui/core.js", "/ui/ocean.js", "/ui/stream.js", "/ui/connect.js", "/ui/money.js", "/ui/asset.js", "/ui/intent.js", "/ui/live.js", "/ui/portfolio.js", "/ui/memory.js", "/ui/earn.js", "/ui/markets.js", "/ui/trade.js", "/ui/indicators.js", "/ui/chart.js", "/ui/book.js", "/ui/terminal.js", "/ui/brains.js", "/ui/desk.js", "/ui/superagent.js", "/ui/statement.js", "/ui/agents-mount.js", "/ui/rail.js", "/ui/shell.js"]);
     // each ui script waits for the page to be parsed and runs in the order named
     for (const m of html.matchAll(/<script\b([^>]*)\bsrc="(\/ui\/[^"]+)"/g)) expect(m[1], m[2] ?? "").toMatch(/\bdefer\b/);
     // the tokens first (both backgrounds), then the shell, then what the earlier renderers still draw; the classic page's sheet is not needed
@@ -199,7 +199,7 @@ describe("the account page's scripts", () => {
     const contract = ["render", "load", "own", "cancelOrder", "api", "forget", "refusalOf", "toast", "openSheet", "closeSheet", "openDrawer", "closeDrawer", "confirmSheet", "pickSheet", "whatYouSign", "quoteDialog", "paint", "go", "onRoute", "routed", "lensNow", "inLens", "chg", "avatar", "icon", "table", "seg", "field", "select", "formFields", "setOptions", "debounce", "thenLoad", "download", "copyText", "esc", "money", "fine", "px", "usd", "cents", "short", "qtyOf", "typeText", "isLive", "byOf", "readOnlyWords", "owns", "writesOn", "canTrade", "canMove", "isAgentWallet", "modeOf", "dollarsOf", "isDollar", "networksOf", "bridgeChainsOf", "walletFor", "mined"];
     const mine = ["openStatement", "renderStatement", "openAgents", "openSettings", "openMode", "renderAgents", "renderDevices", "renderDial", "setMode", "setTheme", "drawThemeToggle", "toggleTheme", "copySetup", "shSearchesOf", "shSearchRemember", "shSearchesClear", "shPaletteRows", "shPaletteNext", "shPaletteDraw", "shPaletteRead", "shPaletteClose", "shPaletteChoose", "downloadBalances", "lensMenu", "drawPane", "tradeModeLast", "setTradeMode", "openShortcuts"];
     // what the other parts already define, and the shell calls
-    const there = ["openPicker", "openConnect", "connectVia", "keyHowFor", "openLiveMove", "openAmend", "renderWallets", "openClose", "declineAsk"];
+    const there = ["openPicker", "openConnect", "connectVia", "keyHowFor", "openLiveMove", "openAmend", "renderWallets", "openClose", "declineAsk", "rlDraw", "rlStart"];
     const all = [...contract, ...mine, ...there];
     expect(b.run(`[${all.join(", ")}].map((f) => typeof f)`), all.join(" ")).toEqual(Array(all.length).fill("function"));
     // what the panes are to define: a function when it is there, and nothing else under that name
