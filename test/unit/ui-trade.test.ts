@@ -956,14 +956,16 @@ describe("the six kinds, as the page runs them", () => {
     const held = "the US stock market is closed: Alpaca holds an order and sends it when the market opens (2026-10-07 09:30 New York time). Until then no market order is placed here: it would fill at the opening price, which can be well away from this one. A limit, stop or stop-limit order waits for the open with its limit";
     const night = { symbol: "AAPL", kind: "stock", base: "AAPL", quote: "USD", open: true, session: { open: false, opensAt: "2026-10-07T13:30:00.000Z", closesAt: "2026-10-07T20:00:00.000Z" }, note: held, qtyStep: 1, types: ["limit", "stop", "stop_limit"] };
     const aapl = kb("stocks", night, null, null);
-    expect(aapl).toContain(`<div><b>Closed</b> · opens Wed 7 Oct, 09:30 New York · ${held}</div>`);
+    // the viewer's own time after New York's where the viewer's clock is not New York's (core.js yourTime): the same words in any zone
+    const yt = (iso: string) => p.out<string>(`yourTime(${JSON.stringify(iso)})`);
+    expect(aapl).toContain(`<div><b>Closed</b> · opens Wed 7 Oct, 09:30 New York${yt("2026-10-07T13:30:00.000Z")} · ${held}</div>`);
     expect(aapl).not.toContain("Open now");
     expect(aapl).toContain("Whole shares only here.");
     // in session: open now, and when it closes, in New York time (an early close as the venue's clock says it)
     const day = kb("stocks", { ...night, session: { open: true, opensAt: "2026-10-07T13:30:00.000Z", closesAt: "2026-10-06T20:00:00.000Z" }, note: undefined, qtyStep: 0.001, types: ["market", "limit"] }, null, null);
-    expect(day).toContain("<div><b>Open now</b> · closes 16:00 New York</div>");
+    expect(day).toContain(`<div><b>Open now</b> · closes 16:00 New York${yt("2026-10-06T20:00:00.000Z")}</div>`);
     expect(day).not.toContain("Whole shares only here.");
-    expect(kb("stocks", { ...night, session: { open: true, closesAt: "2026-11-27T18:00:00.000Z" }, note: undefined }, null, null)).toContain("<b>Open now</b> · closes 13:00 New York");
+    expect(kb("stocks", { ...night, session: { open: true, closesAt: "2026-11-27T18:00:00.000Z" }, note: undefined }, null, null)).toContain(`<b>Open now</b> · closes 13:00 New York${yt("2026-11-27T18:00:00.000Z")}`);
     // no session said (Alpaca's clock did not answer): no Open or Closed word at all, only the venue's own words
     const words = "Alpaca's market clock did not answer, so no market order is placed here: outside market hours Alpaca holds an order until the market opens, and a market order would fill at the opening price";
     const unknown = kb("stocks", { ...night, session: undefined, note: words }, null, null);

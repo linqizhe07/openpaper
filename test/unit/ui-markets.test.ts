@@ -1402,6 +1402,9 @@ describe("a stock out of its session", () => {
   const NIGHT = { open: false, opensAt: "2026-10-06T13:30:00.000Z", closesAt: "2026-10-06T20:00:00.000Z" };
   const DAY = { open: true, opensAt: "2026-10-07T13:30:00.000Z", closesAt: "2026-10-06T20:00:00.000Z" };
   const HELD = "the US stock market is closed: Broker holds an order and sends it when the market opens (2026-10-06 09:30 New York time)";
+  /* the viewer's own time after New York's, as the page adds it where the viewer's clock is not New York's (core.js yourTime): nothing on
+     a New York machine, " (13:30 your time)" on a UTC runner — so these read the same wherever the tests run */
+  const yt = (p: { run: <T>(code: string) => T }, iso: string) => p.run<string>(`yourTime(${JSON.stringify(iso)})`);
   const aapl = (session?: unknown) => ({
     key: "stock:AAPL",
     kind: "stock",
@@ -1420,7 +1423,7 @@ describe("a stock out of its session", () => {
     p.set("A", withBroker());
     p.set("ITEMS", { night: aapl(NIGHT), day: aapl(DAY), unknown: aapl() });
     const night = p.run<string>("MKT.reg = []; mkTable([ITEMS.night], '')");
-    expect(night).toContain('<span class="tag" title="Opens Tue 6 Oct, 09:30 New York">Closed</span> <span data-q="broker|AAPL" data-fmt="usd">$255.12</span>');
+    expect(night).toContain(`<span class="tag" title="Opens Tue 6 Oct, 09:30 New York${yt(p, NIGHT.opensAt)}">Closed</span> <span data-q="broker|AAPL" data-fmt="usd">$255.12</span>`);
     // still traded: a broker holds the order for the open, and the drawer says so in its words
     expect(night).toContain('data-act="trade"');
     // in session, and where no venue says a session: no tag (never read from `open`)
@@ -1430,7 +1433,7 @@ describe("a stock out of its session", () => {
     p.run(`MKT.quotes.set("broker|AAPL", { at: ${NOW}, market: { price: 256, session: ${JSON.stringify(DAY)} } })`);
     expect(p.run<string>("mkTable([ITEMS.night], '')")).not.toContain(">Closed<");
     p.run(`MKT.quotes.set("broker|AAPL", { at: ${NOW}, market: { price: 256, session: ${JSON.stringify(NIGHT)} } })`);
-    expect(p.run<string>("mkTable([ITEMS.unknown], '')")).toContain('title="Opens Tue 6 Oct, 09:30 New York">Closed</span>');
+    expect(p.run<string>("mkTable([ITEMS.unknown], '')")).toContain(`title="Opens Tue 6 Oct, 09:30 New York${yt(p, NIGHT.opensAt)}">Closed</span>`);
     // a coin has no session, whatever a line carries
     expect(p.run<string>(`mkTable([{ ...${JSON.stringify(btc)}, session: ${JSON.stringify(NIGHT)} }], '')`)).not.toContain(">Closed<");
   });
@@ -1440,16 +1443,16 @@ describe("a stock out of its session", () => {
     p.set("A", withBroker());
     p.set("ITEMS", { night: aapl(NIGHT), day: aapl(DAY), unknown: aapl() });
     const night = p.run<string>('mkDrawerHtml({ item: ITEMS.night, interval: "1h", ipo: [] })');
-    expect(night).toContain("<dt>Session</dt><dd>Closed · opens Tue 6 Oct, 09:30 New York</dd>");
+    expect(night).toContain(`<dt>Session</dt><dd>Closed · opens Tue 6 Oct, 09:30 New York${yt(p, NIGHT.opensAt)}</dd>`);
     // Buy stays: the broker takes the order and holds it for the open
     expect(night).toContain('data-act="trade" data-fk="d-buy"');
-    expect(p.run<string>('mkDrawerHtml({ item: ITEMS.day, interval: "1h", ipo: [] })')).toContain("<dt>Session</dt><dd>Open · closes 16:00 New York</dd>");
+    expect(p.run<string>('mkDrawerHtml({ item: ITEMS.day, interval: "1h", ipo: [] })')).toContain(`<dt>Session</dt><dd>Open · closes 16:00 New York${yt(p, DAY.closesAt)}</dd>`);
     expect(p.run<string>('mkDrawerHtml({ item: ITEMS.unknown, interval: "1h", ipo: [] })')).not.toContain("<dt>Session</dt>");
     // the Watching tab's row says it too
     p.set("A", { ...withBroker(), watch: [{ venue: "broker", symbol: "AAPL", at: "2026-10-06T04:00:00.000Z" }] });
     const read = { ...explore, items: [aapl(NIGHT)] };
     p.run(`MKT.got.set(${JSON.stringify("/api/account/explore?limit=200")}, { at: ${NOW}, body: ${JSON.stringify(read)}, good: ${JSON.stringify(read)}, goodAt: ${NOW} })`);
-    expect(p.run<string>("MKT.reg = []; mkWatchingHtml(lensNow())")).toContain('title="Opens Tue 6 Oct, 09:30 New York">Closed</span>');
+    expect(p.run<string>("MKT.reg = []; mkWatchingHtml(lensNow())")).toContain(`title="Opens Tue 6 Oct, 09:30 New York${yt(p, NIGHT.opensAt)}">Closed</span>`);
   });
 });
 
