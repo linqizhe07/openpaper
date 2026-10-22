@@ -740,6 +740,38 @@ function mkPulseHtml(body) {
   return `<section class="mk-pulse" aria-label="Pulse">${session ? `<p class="mk-sess-line">${session}</p>` : ""}${tiles.length ? `<div class="mk-tiles">${tiles.map(tile).join("")}</div>` : ""}</section>`;
 }
 
+// ---- as of: one line over the list — when it was read, how it reaches the page, and whose prices these are -----------------------------
+
+/** THE AS-OF LINE: the read's time (the account's asOf) and its age, whether prices reach the page pushed on the account's channel or
+ * polled every few seconds while on screen, then the venues behind the rows in groups — the owner's connected venues, the paper accounts,
+ * the public lists (venues read without a key), the US stocks' sources in their own words ("where marked" once there is more than one, since
+ * each price says its own) and the event venues. Only the groups the rows have, at most four names each. "" without a read */
+function mkAsOfHtml(body) {
+  if (!body || !body.asOf) return "";
+  const legs = mkRows(body).flatMap((x) => (x.at || []).map((a) => ({ ...a, kind: x.kind, quoteFrom: a.quoteFrom || x.quoteFrom })));
+  const few = (list) => {
+    const seen = [];
+    for (const n of list) if (n && !seen.includes(n)) seen.push(n);
+    return seen.length > 4 ? `${seen.slice(0, 4).join(", ")} +${seen.length - 4}` : seen.join(", ");
+  };
+  const stock = (a) => a.kind === "stock";
+  const event = (a) => a.kind === "event";
+  const sources = new Set(legs.filter((a) => stock(a) && a.quoteFrom).map((a) => a.quoteFrom));
+  const groups = [
+    ["your venues", few(legs.filter((a) => a.connected && !a.paper).map((a) => a.venueName))],
+    ["paper", few(legs.filter((a) => a.paper).map((a) => a.venueName))],
+    ["public lists", few(legs.filter((a) => a.public && !a.connected && !stock(a) && !event(a)).map((a) => a.venueName))],
+    ["US stocks", `${few([...sources])}${sources.size > 1 ? " where marked" : ""}`],
+    ["predictions", few(legs.filter((a) => event(a) && !a.connected).map((a) => a.venueName))],
+  ].filter(([, v]) => v && v !== " where marked");
+  const at = Date.parse(body.asOf);
+  const age = Number.isFinite(at) ? ageWords(at) : "";
+  const when = Number.isFinite(at) ? `Prices read ${nyTime(at)} New York${age ? ` (${age})` : ""}` : "Prices read";
+  const how = typeof stHealth === "function" && stHealth() === "connected" ? "pushed live" : `polled every ${Math.round(MKT_POLL_MS / 1000)} s while on screen`;
+  const line = [when, how, ...groups.map(([k, v]) => `${k}: ${v}`)].join(" · ");
+  return `<p class="mk-asof" title="${esc(line)}">${esc(line)}</p>`;
+}
+
 // ---- the pane ----------------------------------------------------------------------------------------
 
 /* the route's tab, search and sort, as the pane reads them: an unknown tab is All (All results while searching), a legacy one (now, venues)
@@ -827,7 +859,9 @@ function renderMarkets(ctx) {
       // rows keep the places (data-i) they have always had; the tiles take the places after them
       const list = mkListHtml(p, got, ctx.lens);
       const pulse = p.tab === "all" && !p.q ? mkPulseHtml(got) : "";
-      body = `${pulse}${list}${failed ? `<p class="mk-missing">Couldn't read the markets again just now: ${esc(mkSaid(failed))}. This is what was read at ${esc(nyTime(g.goodAt))}.</p>` : ""}`;
+      // one line first: when these prices were read and whose they are (mkAsOfHtml)
+      const asOf = mkAsOfHtml(got);
+      body = `${asOf}${pulse}${list}${failed ? `<p class="mk-missing">Couldn't read the markets again just now: ${esc(mkSaid(failed))}. This is what was read at ${esc(nyTime(g.goodAt))}.</p>` : ""}`;
       foot = mkFootHtml(got);
     } else if (failed) body = `<div class="mk-fail"><div class="msg no">Couldn't read the markets: ${esc(mkSaid(failed))}.</div><button type="button" class="btn btn-sm" data-act="retry" data-fk="retry">Try again</button></div>`;
     else body = mkSkel();

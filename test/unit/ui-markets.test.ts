@@ -211,6 +211,33 @@ describe("the Markets pane", () => {
     expect(p.run('mkFmt({ price: 101.5, bid: 101.4 }, "bid")')).toBe("$101.40");
   });
 
+  it("says, in one line over the list, when the prices were read, how they reach the page, and whose they are, group by group", () => {
+    const p = page(() => ({}));
+    const leg = (venue: string, venueName: string, more: Record<string, unknown> = {}) => ({ venue, venueName, symbol: "X", connected: false, public: true, canTrade: false, ...more });
+    const body = {
+      asOf: new Date(NOW - 12_000).toISOString(),
+      items: [
+        { key: "btc", kind: "coin", name: "BTC", at: [leg("ex", "Stand-in Exchange", { connected: true, public: false, canTrade: true }), leg("kraken", "Kraken"), leg("okx", "OKX")] },
+        { key: "paper", kind: "coin", name: "ETH", at: [leg("paper-1", "Momentum", { connected: true, public: false, paper: true })] },
+        { key: "nvda", kind: "stock", name: "NVIDIA", quoteFrom: "Robinhood · real time", at: [leg("us", "US stocks", { quoteFrom: "Robinhood · real time" })] },
+        { key: "aapl", kind: "stock", name: "Apple", quoteFrom: "Cboe · 15 min delayed", at: [leg("us", "US stocks")] },
+        { key: "fed", kind: "event", name: "Fed?", at: [leg("kalshi", "Kalshi"), leg("poly", "Polymarket")] },
+      ],
+    };
+    p.set("BODY", body);
+    const when = p.run<string>(`nyTime(${NOW - 12_000})`);
+    const html = p.run<string>("mkAsOfHtml(BODY)");
+    expect(html).toContain(`Prices read ${when} New York (12 s old) · polled every 5 s while on screen · your venues: Stand-in Exchange · paper: Momentum · public lists: Kraken, OKX · US stocks: Robinhood · real time, Cboe · 15 min delayed where marked · predictions: Kalshi, Polymarket`);
+    expect(html).toMatch(/^<p class="mk-asof" title="/);
+    // on the push channel the line says so; with one stock source nothing is "where marked"; more than four names are counted
+    p.run("stHealth = () => 'connected'");
+    expect(p.run<string>("mkAsOfHtml({ asOf: BODY.asOf, items: [BODY.items[2]] })")).toContain("pushed live · US stocks: Robinhood · real time</p>");
+    expect(p.run<string>("mkAsOfHtml({ asOf: BODY.asOf, items: [{ key: 'x', kind: 'coin', name: 'X', at: ['A', 'B', 'C', 'D', 'E', 'F'].map((n) => ({ venue: n, venueName: n, symbol: 'X', connected: false, public: true, canTrade: false })) }] })")).toContain("public lists: A, B, C, D +2");
+    // nothing without a read
+    expect(p.run<string>("mkAsOfHtml(null)")).toBe("");
+    expect(p.run<string>("mkAsOfHtml({ items: [] })")).toBe("");
+  });
+
   it("sends a Buy to the venue that takes the order, to the connection where only public prices list it, else says why in the venue's words", () => {
     const p = page(() => ({}));
     p.set("A", account());
