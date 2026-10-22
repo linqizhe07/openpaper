@@ -68,7 +68,7 @@ The superagent needs an AI model to think with. Paste a key from any of Anthropi
 
 **Account → Venues → Connect an account**: 93 exchanges by API key (Coinbase, Kraken, OKX, Binance and more); Alpaca and Robinhood for US stocks; Kalshi and Polymarket; Hyperliquid; MetaMask and other wallets.
 
-- Venue API keys go in files on your computer (`~/.buyer-agent-demo/`): the page tells you where, and the key never passes through the page or the log. An AI key you paste on the page is saved in the same folder.
+- Venue API keys go in files on your computer (`~/.openpaper/`; an older `~/.buyer-agent-demo/` is still read): the page tells you where, and the key never passes through the page or the log. An AI key you paste on the page is saved in the same folder.
 - Real trading is on, with a cap on every order and movement ($100 unless you start with `--live-cap`); `--read-only` turns trading off. The options are [below](#options-and-environment).
 
 ## Stay in control
@@ -137,7 +137,7 @@ The same page with stand-in venues at http://127.0.0.1:4821 — no network, no m
 | Option | What it does | Default |
 |---|---|---|
 | `--port <number>` | The port the page and the API listen on, on 127.0.0.1 only | 4820 |
-| `--home <dir>` | The home directory: ledgers, key files, paper books, seats | `$BUYER_HOME`, else `~/.buyer-agent-demo` |
+| `--home <dir>` | The home directory: ledgers, key files, paper books, seats | `$OPENPAPER_HOME` (or `$BUYER_HOME`), else `~/.openpaper`; an older `~/.buyer-agent-demo` is still read |
 | `--live-cap <dollars>` | The most one order or movement may be worth when the server starts; from Settings the owner signs another figure, which a restart keeps | 100 |
 | `--read-only` | Place no order and move no money: the account reads only | off |
 | `--fresh` | Start the account from nothing instead of continuing its earlier runs | off |
@@ -149,7 +149,8 @@ The environment variables the account reads, and whether `account:service instal
 
 | Variable | What it does | Read by | Travels with the service? |
 |---|---|---|---|
-| `BUYER_HOME` | The home directory when `--home` is not given | `home.ts` | Yes |
+| `OPENPAPER_HOME` | The home directory when `--home` is not given (the new name) | `home.ts` | Yes |
+| `BUYER_HOME` | The home directory when neither `--home` nor `OPENPAPER_HOME` is given (the older name, still read) | `home.ts` | Yes |
 | `SEC_CONTACT` | Your email address: the SEC asks every EDGAR reader to send one; without it a US share's Financials are off | `live/edgar.ts` | Yes |
 | `PORTFOLIO_RPC_ETHEREUM`, `…_OPTIMISM`, `…_BNB`, `…_POLYGON`, `…_BASE`, `…_ARBITRUM`, `…_ROBINHOOD` | Your own RPC endpoint per chain | `live/chain.ts` | Yes |
 | `PORTFOLIO_MM_BIN` | The `mm` command for the MetaMask Agent Wallet | `live/metamask.ts` | Yes |
