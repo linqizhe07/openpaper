@@ -1,18 +1,20 @@
-/** AN ATTACK THAT MUST FAIL (found by an independent review on 2026-10-04, written as it succeeded then, and run with `it.fails`:
- * this test passes only while the attack below does NOT go through) — attacker A, an agent inside an ordinary `venues` approval with a refill window.
+/** THE HOLE (found by an independent review on 2026-10-04) — attacker A, an agent inside an ordinary `venues` approval with a refill window.
  *
- * "A card's approval … is re-judged." When a transfer card is released, `move()` judges it with `covers()`, which answers with the FIRST
+ * "A card's approval … is re-judged." When a transfer card was released, `move()` judged it with `covers()`, which answers with the FIRST
  * limit that says no: recipient, per-payment, budget, then the window ("the same destination may be refilled once per window"). A waiting
- * card always trips the budget line when the rest of the budget has been used (its own share is still set aside), and `afterRelease()`
- * then clears that budget refusal — without going on to the window check behind it, or to the source check. So whether a released card
- * respects the window depends on whether the budget happened to be tight:
- *   budget $1,000: card $600, then $400 sent → approving the card sends a SECOND refill inside the 24 h window;
- *   budget $2,000: the very same steps → the card is refused, E_MANDATE_RATE. */
+ * card always tripped the budget line when the rest of the budget had been used (its own share is still set aside), and `afterRelease()`
+ * then cleared that budget refusal — without going on to the window check behind it, or to the source check. So whether a released card
+ * respected the window depended on whether the budget happened to be tight:
+ *   budget $1,000: card $600, then $400 sent → approving the card sent a SECOND refill inside the 24 h window;
+ *   budget $2,000: the very same steps → the card was refused, E_MANDATE_RATE.
+ *
+ * THE REFUSAL: a released card is judged by every line, not only the one its own share tripped. With either budget the card is refused,
+ * E_MANDATE_RATE, its share goes back to the approval, and the one refill inside the window is the $400 that went at once. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { isRefusal } from "../../src/core/errors.ts";
+import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { cardHash, type Outcome } from "../../src/portfolio/account/exchange.ts";
 import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
 import { PortfolioService } from "../../src/portfolio/service.ts";
@@ -33,24 +35,28 @@ async function run(budget: string) {
   const svc = await PortfolioService.create({ home, now: () => new Date(START).toISOString(), venues: "frontline", account: { owners: [{ id: owner.address, kind: "eoa", label: "owner", addedAt: new Date(START).toISOString() }] } });
   const own = async (a: Record<string, unknown>) => svc.exchange(await signOwner(owner, { ...a, nonce: START + ++n } as OwnerAction));
   const transfer = async (amount: string) => svc.exchange(await signAgent(cc, { type: "agentSendAsset", destination: "self", sourceDex: "okx", destinationDex: "hyperliquid", token: "USDC", amount, fromSubAccount: "", maxFee: "5", nonce: START + ++n } as AgentAction));
-  await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: START + 30 * DAY });
-  await own({ type: "approveSpend", agent: cc.address, scope: "venues", allow: "okx,metamask,hyperliquid", perPayment: "600", budget, windowHours: 24, validUntil: START + 30 * DAY });
+  expect(code(await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: START + 30 * DAY }))).toBe("account");
+  expect(code(await own({ type: "approveSpend", agent: cc.address, scope: "venues", allow: "okx,metamask,hyperliquid", perPayment: "600", budget, windowHours: 24, validUntil: START + 30 * DAY }))).toBe("account");
   svc.setMode("guard");
+  const spend = () => svc.account!.state.spends.find((s) => s.scope === "venues" && s.revokedAt === undefined)!;
   const first = await transfer("600");
   if (isRefusal(first) || first.kind !== "card") throw new Error(`expected a card, got ${code(first)}`);
-  const second = await transfer("400");
+  expect([spend().spentMicro, spend().reservedMicro]).toEqual([0, 600_000_000]);
+  expect(code(await transfer("400"))).toBe("payment");
+  expect([spend().spentMicro, spend().reservedMicro]).toEqual([400_000_000, 600_000_000]);
   const released = await own({ type: "approveCard", card: first.card.id, action: cardHash(first.card), decision: "approve" });
   const refillsInsideTheWindow = svc.account!.payments.filter((p) => p.to === "hyperliquid" && p.authority === "agent" && p.status !== "failed").length;
-  return { second: code(second), released: code(released), refillsInsideTheWindow };
+  return { released, refillsInsideTheWindow, spent: spend().spentMicro, reserved: spend().reservedMicro };
 }
 
 describe("A · a released card and the approval's refill window", () => {
-  it.fails("with a tight budget the window is not asked: two refills inside 24 hours; with a roomy one it is", async () => {
-    const tight = await run("1000");
-    expect(tight).toEqual({ second: "payment", released: "payment", refillsInsideTheWindow: 2 });
-    const roomy = await run("2000");
-    expect(roomy).toEqual({ second: "payment", released: "E_MANDATE_RATE", refillsInsideTheWindow: 1 });
-    const windowSkippedOnRelease = tight.refillsInsideTheWindow > 1;
-    expect(windowSkippedOnRelease).toBe(true);
+  it("a released card is judged by the window whether the budget is tight or roomy: one refill inside 24 hours", async () => {
+    for (const budget of ["1000", "2000"]) {
+      const x = await run(budget);
+      expect(code(x.released)).toBe("E_MANDATE_RATE");
+      expect((x.released as Refusal).message).toMatch(/the approval allows one every 24 h/);
+      // the $400 that went at once is the window's one refill; the card's $600 share went back to the approval
+      expect([x.refillsInsideTheWindow, x.spent, x.reserved]).toEqual([1, 400_000_000, 0]);
+    }
   });
 });
