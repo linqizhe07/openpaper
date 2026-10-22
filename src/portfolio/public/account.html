@@ -106,7 +106,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
           <button type="button" class="btn btn-sm" id="open-settings">Settings</button>
           <button type="button" class="btn btn-sm btn-ghost" id="sign-out" hidden title="This browser stops signing for the account, and its key is deleted here">Sign out</button>
         </div>
-        <form class="search" id="search-form" role="search" data-live data-only="trading"><svg class="ico" aria-hidden="true"><use href="#i-search"></use></svg><label class="sr" for="search">Search markets, assets, agents</label><input type="search" id="search" placeholder="Search markets, assets, agents" autocomplete="off" spellcheck="false" /><kbd aria-hidden="true">/</kbd></form>
+        <form class="search" id="search-form" role="search" data-live data-only="trading"><svg class="ico" aria-hidden="true"><use href="#i-search"></use></svg><label class="sr" for="search">Search markets, assets, agents</label><input type="search" id="search" role="combobox" aria-expanded="false" aria-controls="search-menu" aria-autocomplete="list" placeholder="Search markets, assets, agents" autocomplete="off" spellcheck="false" /><kbd aria-hidden="true">/</kbd></form>
+        <div class="menu search-menu" id="search-menu" role="listbox" aria-label="Search results" hidden></div>
         <button type="button" class="icon-btn" id="open-statement" aria-label="Statement" title="Statement"><svg class="ico lg" aria-hidden="true"><use href="#i-clock"></use></svg></button>
       </div>
     </header>

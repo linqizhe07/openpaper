@@ -360,13 +360,182 @@ const searchFor = (q, now) => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => go("markets", { ...(ROUTE.tab === "markets" ? ROUTE.params : {}), q: q.trim() }, { replace: ROUTE.tab === "markets" }), now ? 0 : 250);
 };
-$("search").addEventListener("input", () => searchFor($("search").value));
-$("search").addEventListener("blur", () => {
+$("search").addEventListener("input", () => {
+  searchFor($("search").value);
+  shPaletteRead($("search").value);
+});
+$("search").addEventListener("blur", (e) => {
+  // the focus going into the palette (↓ to a row) is not a leaving: the menu stays; anywhere else, it closes
+  const m = $("search-menu");
+  if (!(e.relatedTarget && m && m.contains && m.contains(e.relatedTarget))) shPaletteClose();
   if (ROUTE.tab !== "markets") $("search").value = "";
 });
 $("search-form").addEventListener("submit", (e) => {
   e.preventDefault();
+  shSearchRemember($("search").value);
+  shPaletteClose();
   searchFor($("search").value, true);
+});
+
+/* THE SEARCH PALETTE (⌘K): the top matches under the box as it is typed — eight rows at most, each a market as Markets names it (its
+   avatar, its short name, what it is, the first venue listing it) with its price and 24 hours, read through the same explore read Markets
+   uses (the account keeps an answer thirty seconds) — ↓ from the box into them, ↑ ↓ Home End along them, Enter or a click opens the
+   market's drawer, Escape closes; with the box empty, the recent searches kept in this browser (account.searches). Enter in the box keeps
+   its meaning: the Markets list filtered by what was typed */
+const SH_PAL_MAX = 8;
+const SH_RECENT = "account.searches";
+let palTimer = 0;
+let palBody = null;
+let palQ = "";
+const shSearchesOf = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(SH_RECENT) || "[]");
+    return Array.isArray(v) ? v.filter((s) => typeof s === "string" && s.trim()).slice(0, SH_PAL_MAX) : [];
+  } catch {
+    return [];
+  }
+};
+/* a search kept: newest first, once (case apart), eight at most, sixty characters at most; a window with storage off keeps none */
+function shSearchRemember(q) {
+  const s = String(q || "").trim().slice(0, 60);
+  if (!s) return;
+  const list = [s, ...shSearchesOf().filter((x) => x.toLowerCase() !== s.toLowerCase())].slice(0, SH_PAL_MAX);
+  try {
+    localStorage.setItem(SH_RECENT, JSON.stringify(list));
+  } catch {
+    // a private window: nothing kept
+  }
+}
+function shSearchesClear() {
+  try {
+    localStorage.removeItem(SH_RECENT);
+  } catch {
+    // ditto
+  }
+}
+/* the rows: the matches, or the recent searches while the box is empty, or a word on where the read stands */
+function shPaletteRows(body, q) {
+  if (!q) {
+    const recent = shSearchesOf();
+    if (!recent.length) return '<div class="menu-h" role="presentation">Type to search markets · ↓ to the matches · Enter filters the Markets list</div>';
+    return `<div class="menu-h" role="presentation">Recent</div>${recent.map((s) => `<button type="button" role="option" data-pal-q="${esc(s)}">${icon("clock")}<span>${esc(s)}</span></button>`).join("")}<button type="button" class="pal-clear" data-pal-clear>Clear</button>`;
+  }
+  const items = body && Array.isArray(body.items) ? body.items.filter((x) => x && Array.isArray(x.at)).slice(0, SH_PAL_MAX) : [];
+  if (!items.length) return `<div class="menu-h" role="presentation">${body ? `Nothing matches “${esc(q)}”` : "Looking…"}</div>`;
+  const av = typeof mkAv === "function" ? mkAv : () => "";
+  const name = typeof mkShortHtml === "function" ? mkShortHtml : (x) => esc(String(x.name || ""));
+  const sub = typeof mkSub === "function" ? mkSub : () => "";
+  const price = (x) => (x.kind === "event" ? (typeof mkCents === "function" ? mkCents(x.outcomes && x.outcomes[0] ? x.outcomes[0].price : x.price) : "") : typeof mkUsd === "function" ? mkUsd(x.price) : "");
+  const move = (x) => (x.kind === "event" ? "" : typeof chg === "function" ? chg(x.changePct24h) : "");
+  return items.map((x, i) => `<button type="button" role="option" data-pal-i="${i}">${av(x)}<span class="pal-name"><b>${name(x)}</b><span class="dim">${esc([sub(x), x.at[0] && x.at[0].venueName].filter(Boolean).join(" · "))}</span></span><span class="pal-px">${price(x)}${move(x)}</span></button>`).join("");
+}
+/* where a key goes: ↓ from the box to the first row; ↑ ↓ along the rows, ↑ from the first back to the box; Home and End to the ends. A row
+   index, "input", or null for a key that is not the palette's */
+function shPaletteNext(key, rows, at, fromInput) {
+  if (fromInput) return key === "ArrowDown" && rows > 0 ? 0 : null;
+  if (at < 0) return null;
+  if (key === "ArrowDown") return Math.min(rows - 1, at + 1);
+  if (key === "ArrowUp") return at === 0 ? "input" : at - 1;
+  if (key === "Home") return 0;
+  if (key === "End") return rows - 1;
+  return null;
+}
+function shPaletteDraw() {
+  const m = $("search-menu");
+  if (!m) return;
+  m.innerHTML = shPaletteRows(palBody, palQ);
+  m.hidden = false;
+  $("search").setAttribute("aria-expanded", "true");
+  // under the box, wherever the top bar put it: placed from the box's own box, as the lens's menu is
+  const f = $("search-form");
+  if (f && m.style && Number.isFinite(f.offsetLeft)) {
+    m.style.left = `${f.offsetLeft}px`;
+    m.style.top = `${f.offsetTop + f.offsetHeight + 4}px`;
+    m.style.width = `${Math.max(320, f.offsetWidth || 0)}px`;
+  }
+}
+/* what was typed: the recent searches at once while it is empty, else the matches after a quarter second, the latest typing winning */
+function shPaletteRead(q) {
+  palQ = String(q || "").trim();
+  clearTimeout(palTimer);
+  if (!palQ) {
+    palBody = null;
+    return void shPaletteDraw();
+  }
+  shPaletteDraw();
+  palTimer = setTimeout(async () => {
+    const asked = palQ;
+    const body = await api(`/api/account/explore?q=${encodeURIComponent(asked)}&limit=${SH_PAL_MAX}`, { ttl: 20_000 });
+    if (asked !== palQ) return;
+    palBody = body && body.ok !== false && Array.isArray(body.items) ? body : { items: [] };
+    shPaletteDraw();
+  }, 250);
+}
+function shPaletteClose() {
+  const m = $("search-menu");
+  if (!m || m.hidden) return;
+  m.hidden = true;
+  $("search").setAttribute("aria-expanded", "false");
+}
+/* a row chosen: the market's drawer, and the search remembered; a recent search typed back into the box; Clear */
+function shPaletteChoose(b) {
+  if (!b || !b.dataset) return;
+  if (b.dataset.palClear !== undefined) {
+    shSearchesClear();
+    return void shPaletteDraw();
+  }
+  if (b.dataset.palQ !== undefined) {
+    $("search").value = b.dataset.palQ;
+    searchFor(b.dataset.palQ, true);
+    shPaletteRead(b.dataset.palQ);
+    return void $("search").focus();
+  }
+  const item = palBody && Array.isArray(palBody.items) ? palBody.items[Number(b.dataset.palI)] : null;
+  if (!item) return;
+  shSearchRemember(palQ);
+  shPaletteClose();
+  if (typeof openMarket === "function") openMarket(item);
+}
+$("search").addEventListener("focus", () => shPaletteRead($("search").value));
+$("search").addEventListener("keydown", (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const m = $("search-menu");
+  if (e.key === "Escape") {
+    if (m && !m.hidden) {
+      e.preventDefault();
+      shPaletteClose();
+    }
+    return;
+  }
+  const rows = m && !m.hidden ? [...m.querySelectorAll("button[role='option']")] : [];
+  const to = shPaletteNext(e.key, rows.length, -1, true);
+  if (to === null) return;
+  e.preventDefault();
+  rows[to].focus();
+});
+/* the menu keeps the box's focus on a press (so a click on a row is not a blur first), closes when the focus leaves it for anywhere but
+   the box, and takes its own keys */
+$("search-menu").addEventListener("pointerdown", (e) => e.preventDefault());
+$("search-menu").addEventListener("focusout", (e) => {
+  const m = $("search-menu");
+  if (e.relatedTarget && (e.relatedTarget === $("search") || (m.contains && m.contains(e.relatedTarget)))) return;
+  shPaletteClose();
+});
+$("search-menu").addEventListener("click", (e) => shPaletteChoose(e.target && e.target.closest && e.target.closest("button")));
+$("search-menu").addEventListener("keydown", (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  const rows = [...$("search-menu").querySelectorAll("button[role='option']")];
+  if (e.key === "Escape" || e.key === "Tab") {
+    if (e.key === "Escape") e.preventDefault();
+    shPaletteClose();
+    if (e.key === "Escape") $("search").focus();
+    return;
+  }
+  const to = shPaletteNext(e.key, rows.length, rows.indexOf(document.activeElement), false);
+  if (to === null) return;
+  e.preventDefault();
+  if (to === "input") $("search").focus();
+  else rows[to].focus();
 });
 
 /* the command that connects an agent's MCP seat to this account, as the account gives it (A.agentSetup { command, url }: the path to its MCP
