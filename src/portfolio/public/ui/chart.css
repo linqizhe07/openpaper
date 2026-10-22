@@ -42,7 +42,17 @@ html[data-chart-full] { overflow: hidden; }
 .ch-fulli { display: block; }
 /* the indicators' button (the first of the head's right-hand group) and its menu under the head (chart.js chIndPopHtml) */
 .ch-indb { margin-left: auto; }
-.ch-indb ~ .ch-log, .ch-indb ~ .ch-fullb { margin-left: 0; }
+.ch-indb ~ .ch-log, .ch-indb ~ .ch-fullb, .ch-indb ~ .ch-drawb { margin-left: 0; }
+/* the drawings' button (pressed while a tool is chosen) and its menu: a button a tool */
+.ch-drawb { margin-left: auto; }
+.ch-drawb ~ .ch-log, .ch-drawb ~ .ch-fullb { margin-left: 0; }
+.ch-drawb[aria-expanded="true"] { background: var(--hl-inset); }
+.ch-draw-pop { width: min(260px, calc(100% - 16px)); }
+.ch-draw-b { display: block; width: 100%; min-height: 32px; padding: 0 6px; border: 0; border-top: 1px solid var(--hl-grid); border-radius: 0; background: transparent; color: var(--hl-text); font: 400 12px var(--font-sans); text-align: left; cursor: pointer; }
+.ch-draw-b[aria-pressed="true"] { color: var(--hl-accent-soft); }
+@media (hover: hover) {
+  .ch-draw-b:hover { background: var(--hl-inset); }
+}
 .ch-indb[aria-expanded="true"] { background: var(--hl-inset); }
 .ch-ind-pop { position: absolute; top: 40px; right: 8px; z-index: 6; width: min(440px, calc(100% - 16px)); max-height: calc(100% - 48px); overflow: auto; padding: 8px 10px; border-radius: var(--hl-r-pop); background: var(--hl-panel); box-shadow: inset 0 0 0 1px var(--card-border), 0 8px 24px rgba(0, 0, 0, 0.18); color: var(--hl-text); font: 400 12px/1.4 var(--font-sans); }
 .ch-ind-pop[hidden] { display: none; }
@@ -129,6 +139,27 @@ html[data-chart-full] { overflow: hidden; }
 .ch-ohlc .ch-v.in-c { color: var(--hl-muted); }
 .ch-ohlc .ch-v.in-d { color: var(--hl-text-2); }
 .ch-ohlc .ch-v.in-hist { color: var(--hl-text); }
+
+/* the drawings (chart.js chUserSvg, chUserLines): a horizontal line in ink, dashed long, with the account's lines; a trend line in ink, the
+   selected one thicker with its handles, a draft dashed; a note as a small tag at its bar and price; the plot's cursor while a tool is
+   chosen; the note's field laid where it was clicked */
+.ch-user { position: absolute; inset: 0; pointer-events: none; }
+.ch-ln.user .ch-lnl { stroke: var(--hl-text); stroke-dasharray: 6 3; }
+.ch-ln.user .ch-lnr { fill: var(--hl-text); }
+.ch-ln.user.sel .ch-lnl { stroke-width: 2; }
+.ch-usr-t { stroke: var(--hl-text); stroke-width: 1.2; stroke-linecap: round; }
+.ch-usr.sel .ch-usr-t { stroke-width: 2.2; }
+.ch-usr.draft .ch-usr-t { stroke-dasharray: 4 3; }
+.ch-usr-h { fill: var(--hl-panel); stroke: var(--hl-text); stroke-width: 1.2; }
+.ch-usr-nd { fill: var(--hl-text); }
+.ch-usr-n rect { fill: var(--hl-inset); stroke: var(--hl-text); stroke-width: 1; }
+.ch-usr-n.sel rect { stroke-width: 2; }
+.ch-svg .ch-usr-n text { fill: var(--hl-text); font-size: 11px; }
+.ch-plot.ch-tool { cursor: cell; }
+.ch-note { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.ch-note:empty { display: none; }
+.ch-note-in { position: absolute; width: 208px; min-height: 26px; height: 26px; padding: 0 8px; border: 1px solid var(--hl-accent-soft); border-radius: 4px; background: var(--hl-panel); color: var(--hl-text); font: 400 12px var(--font-sans); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18); pointer-events: auto; }
+.ch-note-in:focus { outline: none; border-color: var(--hl-accent); }
 
 /* the account's own lines (chart.js chLines): an order resting, a position's entry, its take-profit and stop-loss, its liquidation price —
    dashed across the price pane in their kind's colour, their words in a tag at the left, their price in a tag on the axis. A line the owner

@@ -19,6 +19,13 @@
    their own each frame (chIndSvg), their values at the bar under the pointer after the bar's own in the readout. The list on is the page's
    to keep (s.onIndicators: terminal.js writes it in the address and this browser's storage).
 
+   DRAWINGS. The head's Draw menu offers a horizontal line, a trend line and a note: a line is placed with a click, a trend line drawn
+   with a drag, a note typed where it is clicked (chDown, chMove, chUp, the note's field). Each is anchored to a bar's TIME and a price,
+   not to pixels, so it stays where it was through every range, bar size and scroll; one whose bar is not loaded is simply not drawn. A
+   click on a drawing selects it (Delete or Backspace removes it; Esc lets it go); Esc also cancels a tool. Kept in this browser alone
+   (localStorage account.chart.drawings, by venue and symbol: at most 40 a market, 50 markets, the oldest let go first) — nothing is
+   signed, nothing reaches the account or an agent: a drawing moves no money.
+
    MOVING THROUGH TIME. The first view fits the range: every bar it brought, side by side, as wide as fits (at most CH_MAX_SLOT pixels a
    bar, so a short history sits at the right). A drag moves it (the mouse, or a finger left and right: up and down still scrolls the page),
    the wheel zooms around the pointer (sideways it moves), a pinch zooms around its middle, and + and − zoom from the keyboard; a double
@@ -925,6 +932,13 @@ function chMount(el, opts = {}) {
     indKey: "",
     indOpen: false,
     onIndicators: typeof opts.onIndicators === "function" ? opts.onIndicators : null,
+    // the drawings (see the head of this file): the ones kept for this market, the tool chosen ("" none; "h" a horizontal line, "t" a
+    // trend line, "n" a note), a trend line being dragged or a note being typed (the draft), the drawing selected, the menu open
+    draw: [],
+    tool: "",
+    draft: null,
+    sel: null,
+    drawOpen: false,
     // the range asked, the bar size asked (the range's own, or the owner's pick), the bar size the bars came in (a source may draw a range
     // in a coarser one), and the price scale
     range,
@@ -1004,10 +1018,11 @@ function chMount(el, opts = {}) {
     // the desk's trades over the plot (chMarks)
     marks: [],
   };
+  s.draw = chDrawingsLoad(s.venue, s.symbol);
   CH.set(el, s);
   paint(el, chShell(s));
   const q = (sel) => el.querySelector(sel);
-  s.parts = { head: q(".ch-head"), pop: q(".ch-ind-pop"), ohlc: q(".ch-ohlc"), plot: q(".ch-plot"), draw: q(".ch-draw"), live: q(".ch-live"), ind: q(".ch-ind"), lines: q(".ch-lines"), hint: q(".ch-hint"), now: q(".ch-now"), cross: q(".ch-cross"), foot: q(".ch-foot") };
+  s.parts = { head: q(".ch-head"), pop: q(".ch-ind-pop"), dpop: q(".ch-draw-pop"), ohlc: q(".ch-ohlc"), plot: q(".ch-plot"), draw: q(".ch-draw"), live: q(".ch-live"), ind: q(".ch-ind"), user: q(".ch-user"), lines: q(".ch-lines"), note: q(".ch-note"), hint: q(".ch-hint"), now: q(".ch-now"), cross: q(".ch-cross"), foot: q(".ch-foot") };
   if (!s.parts.plot || !s.parts.draw) return;
   if (!s.venue || !s.symbol) return void paint(s.parts.draw, '<p class="ch-msg">No market to chart.</p>');
   s.shown = chLaidOut(s);
@@ -1095,7 +1110,8 @@ function chLineAt(s, y) {
  * its words in a tag at the left and its price in a tag on the axis; a line being pulled at the price it would go to, its words saying so
  * ("→ 61,250"). A line out of the pane's range is not drawn (the scale is the bars') */
 function chLinesSvg(s, L) {
-  if (!L || !Array.isArray(s.lines) || !s.lines.length) return "";
+  const all = [...(Array.isArray(s.lines) ? s.lines : []), ...(Array.isArray(s.draw) ? chUserLines(s) : [])];
+  if (!L || !all.length) return "";
   const { sc, plotW, axisW, W, H, fmt } = L;
   // the last price's own tag on the axis is never covered: a line's price tag that would sit on it is left out (its words at the left say it)
   const B = s.bars || [];
@@ -1103,7 +1119,7 @@ function chLinesSvg(s, L) {
   // a narrow plot says each line by its kind and size alone (its `short`), the whole of it on the row it stands for
   const narrow = plotW < CH_LINES_NARROW_W;
   const items = [];
-  for (const l of s.lines) {
+  for (const l of all) {
     const pulled = s.lineDrag && s.lineDrag.moved && s.lineDrag.line.id === l.id ? s.lineDrag.price : null;
     const price = pulled !== null ? pulled : l.price;
     const y = Math.round(sc.y(price));
@@ -1233,7 +1249,7 @@ function chMarksSvg(s, L) {
    their words never change a box's size */
 function chShell(s) {
   const how = `Price chart of ${s.symbol}: point at a bar, or use the arrow keys, to read it; drag or scroll sideways to move through time, and the wheel, a pinch, or the plus and minus keys to zoom; double-click to fit the range again`;
-  return `<div class="ch" data-k="ch:${esc(s.venue)}|${esc(s.symbol)}"><div class="ch-head">${chHeadHtml(s)}</div><div class="ch-ind-pop" data-ch-pop role="dialog" aria-label="Indicators" hidden></div><div class="ch-plot" tabindex="0" role="group" aria-label="${esc(how)}"><div class="ch-draw"></div><div class="ch-live"></div><div class="ch-ind"></div><div class="ch-lines"></div><div class="ch-ohlc"></div><p class="ch-hint" aria-live="polite"></p><button type="button" class="ch-now" data-ch-now hidden aria-label="Back to the newest bar">Now →</button><div class="ch-cross" aria-hidden="true"></div></div><p class="ch-foot"></p></div>`;
+  return `<div class="ch" data-k="ch:${esc(s.venue)}|${esc(s.symbol)}"><div class="ch-head">${chHeadHtml(s)}</div><div class="ch-ind-pop" data-ch-pop role="dialog" aria-label="Indicators" hidden></div><div class="ch-ind-pop ch-draw-pop" data-ch-dpop role="dialog" aria-label="Draw" hidden></div><div class="ch-plot" tabindex="0" role="group" aria-label="${esc(how)}"><div class="ch-draw"></div><div class="ch-live"></div><div class="ch-ind"></div><div class="ch-user"></div><div class="ch-lines"></div><div class="ch-note"></div><div class="ch-ohlc"></div><p class="ch-hint" aria-live="polite"></p><button type="button" class="ch-now" data-ch-now hidden aria-label="Back to the newest bar">Now →</button><div class="ch-cross" aria-hidden="true"></div></div><p class="ch-foot"></p></div>`;
 }
 /* the head: the ranges, the bar sizes' menu (the size the bars are drawn in), the log switch (not for an event contract's cents, which are
    0 to 100) */
@@ -1247,9 +1263,11 @@ function chHeadHtml(s) {
   // the indicators' menu, with how many are on
   const nInd = Array.isArray(s.ind) ? s.ind.length : 0;
   const ind = typeof inCompute === "function" ? `<button type="button" class="ch-iv ch-indb" data-ch-ind aria-expanded="${!!s.indOpen}" aria-haspopup="dialog" data-fk="ch-ind" title="Indicators: moving averages, Bollinger bands, VWAP, RSI, MACD, the stochastic, ATR">Indicators${nInd ? ` · ${nInd}` : ""}</button>` : "";
+  // the drawings' menu, the tool chosen pressed
+  const draw = `<button type="button" class="ch-iv ch-drawb" data-ch-draw aria-expanded="${!!s.drawOpen}" aria-haspopup="dialog" aria-pressed="${!!s.tool}" data-fk="ch-draw" title="Draw: a horizontal line, a trend line, a note — kept in this browser">Draw${s.tool ? ` · ${CH_TOOLS[s.tool].name}` : ""}</button>`;
   // the window-filling view, where the page asked for it: the corners point out, or back in while the chart fills the window
   const full = s.fullscreen ? `<button type="button" class="ch-iv ch-fullb" data-ch-full aria-pressed="${s.full}" data-fk="ch-full" aria-label="${s.full ? "Back to the page" : "Fill the window"}" title="${s.full ? "Back to the page (Esc, or F)" : "Fill the window with the chart (F)"}"><svg class="ch-fulli" viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${s.full ? "M5 1.5V5H1.5M9 1.5V5h3.5M12.5 9H9v3.5M5 12.5V9H1.5" : "M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9"}"/></svg></button>` : "";
-  return `<div class="ch-rs" role="group" aria-label="Range">${ranges}</div><span class="ch-hsep" aria-hidden="true"></span><span class="ch-ivw"><select class="ch-ivsel" data-ch-ivsel aria-label="Bar size" data-fk="ch-ivsel">${sizes}</select></span>${ind}${log}${full}`;
+  return `<div class="ch-rs" role="group" aria-label="Range">${ranges}</div><span class="ch-hsep" aria-hidden="true"></span><span class="ch-ivw"><select class="ch-ivsel" data-ch-ivsel aria-label="Bar size" data-fk="ch-ivsel">${sizes}</select></span>${ind}${draw}${log}${full}`;
 }
 /* the head drawn again (a range, a bar size or the scale picked; a source that drew a range coarser), its menu set to the size shown */
 function chHeadAgain(s) {
@@ -1306,6 +1324,7 @@ function chIndPopHtml(s) {
 function chIndPop(s, on) {
   const pop = s.parts && s.parts.pop;
   if (!pop || typeof inCompute !== "function") return;
+  if (on && s.drawOpen) chDrawPop(s, false);
   s.indOpen = !!on;
   if (s.indOpen) paint(pop, chIndPopHtml(s));
   pop.hidden = !s.indOpen;
@@ -1332,6 +1351,210 @@ function chIndicators(el, text) {
   return typeof inString === "function" ? inString(s.ind) : "";
 }
 
+/* THE DRAWINGS (see the head of this file) */
+const CH_TOOLS = {
+  h: { name: "Line", hint: "Click where the horizontal line goes · Esc cancels" },
+  t: { name: "Trend line", hint: "Drag from one bar to another · Esc cancels" },
+  n: { name: "Note", hint: "Click where the note goes, then type it · Enter keeps it, Esc cancels" },
+};
+const CH_DRAW_KEY = "account.chart.drawings";
+const CH_DRAW_MOST = 40;
+const CH_DRAW_MARKETS = 50;
+const CH_NOTE_MAX = 80;
+/* how near the pointer must be to a drawing to select it, in pixels */
+const CH_DRAW_GRAB = 5;
+let chDrawSeq = 0;
+/* everything kept, by market ("venue|symbol"), from this browser's storage; nothing where it refuses or holds junk */
+function chDrawingsAll() {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(CH_DRAW_KEY) : null;
+    const all = raw ? JSON.parse(raw) : null;
+    return all && typeof all === "object" && !Array.isArray(all) ? all : {};
+  } catch {
+    return {};
+  }
+}
+/* a drawing as kept: its kind and anchors sound, its words cut to CH_NOTE_MAX */
+function chDrawingOk(d) {
+  if (!d || typeof d !== "object" || !CH_TOOLS[d.kind] || !d.a || !Number.isFinite(Number(d.a.p))) return null;
+  const pt = (x) => ({ ...(Number.isFinite(Number(x.t)) ? { t: Number(x.t) } : {}), p: Number(x.p) });
+  if (d.kind !== "h" && !Number.isFinite(Number(d.a.t))) return null;
+  if (d.kind === "t" && (!d.b || !Number.isFinite(Number(d.b.t)) || !Number.isFinite(Number(d.b.p)))) return null;
+  return { id: String(d.id || `d${(chDrawSeq++).toString(36)}`), kind: d.kind, a: pt(d.a), ...(d.kind === "t" ? { b: pt(d.b) } : {}), ...(d.kind === "n" ? { text: String(d.text || "").slice(0, CH_NOTE_MAX) } : {}), at: Number.isFinite(Number(d.at)) ? Number(d.at) : 0 };
+}
+/** the drawings kept for a market */
+function chDrawingsLoad(venue, symbol) {
+  const list = chDrawingsAll()[`${venue}|${symbol}`];
+  return Array.isArray(list) ? list.map(chDrawingOk).filter(Boolean).slice(-CH_DRAW_MOST) : [];
+}
+/* this market's drawings written with the rest: at most CH_DRAW_MOST a market (the oldest let go), CH_DRAW_MARKETS markets (the ones
+   drawn on longest ago let go). A browser that refuses its storage keeps nothing, and nothing is thrown: the drawings last the page's life */
+function chDrawingsSave(s) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    const all = chDrawingsAll();
+    const key = `${s.venue}|${s.symbol}`;
+    const list = s.draw.slice().sort((a, b) => a.at - b.at).slice(-CH_DRAW_MOST);
+    if (list.length) all[key] = list;
+    else delete all[key];
+    const keys = Object.keys(all);
+    if (keys.length > CH_DRAW_MARKETS) {
+      const newest = (k) => Math.max(0, ...(Array.isArray(all[k]) ? all[k] : []).map((d) => Number(d.at) || 0));
+      for (const k of keys.sort((x, y) => newest(x) - newest(y)).slice(0, keys.length - CH_DRAW_MARKETS)) delete all[k];
+    }
+    localStorage.setItem(CH_DRAW_KEY, JSON.stringify(all));
+  } catch {
+    // a browser that refuses its storage (a private window, its quota gone): the drawings last the page's life
+  }
+}
+/* the Draw menu: the three tools, Clear all */
+function chDrawPopHtml(s) {
+  const tool = (k) => `<button type="button" class="ch-draw-b" data-draw-tool="${k}" aria-pressed="${s.tool === k}">${esc(CH_TOOLS[k].name)}</button>`;
+  return `<div class="ch-ind-h"><span>Draw</span><button type="button" class="ch-iv ch-ind-clear" data-draw-clear${s.draw.length ? "" : " disabled"}>Clear all</button></div>${tool("h")}${tool("t")}${tool("n")}<p class="ch-ind-note">Kept in this browser, for this market. Click a drawing to select it; Delete removes it. Nothing here is signed or seen by an agent.</p>`;
+}
+function chDrawPop(s, on) {
+  const pop = s.parts && s.parts.dpop;
+  if (!pop) return;
+  if (on && s.indOpen) chIndPop(s, false);
+  s.drawOpen = !!on;
+  if (s.drawOpen) paint(pop, chDrawPopHtml(s));
+  pop.hidden = !s.drawOpen;
+  chHeadAgain(s);
+}
+/* a tool chosen (or none): the plot says what to do, its cursor says a drawing is coming, the menu closes */
+function chSetTool(s, tool) {
+  s.tool = CH_TOOLS[tool] ? tool : "";
+  s.draft = null;
+  if (s.parts.note) paint(s.parts.note, "");
+  if (s.parts.plot.classList) s.parts.plot.classList.toggle("ch-tool", !!s.tool);
+  if (s.drawOpen) chDrawPop(s, false);
+  else chHeadAgain(s);
+  chHintAgain(s);
+  if (s.tool && s.parts.plot && typeof s.parts.plot.focus === "function") s.parts.plot.focus();
+  chSoon(s);
+}
+/* a drawing kept: added, written, drawn, selected */
+function chDrawingAdd(s, d) {
+  const ok = chDrawingOk({ ...d, id: `d${Date.now().toString(36)}${(chDrawSeq++).toString(36)}`, at: Date.now() });
+  if (!ok) return;
+  s.draw = [...s.draw, ok].slice(-CH_DRAW_MOST);
+  s.sel = ok.id;
+  chDrawingsSave(s);
+  if (s.drawOpen) paint(s.parts.dpop, chDrawPopHtml(s));
+  chSoon(s);
+}
+/* one removed (the selected), or all */
+function chDrawingsRemove(s, id) {
+  const before = s.draw.length;
+  s.draw = id === undefined ? [] : s.draw.filter((d) => d.id !== id);
+  if (s.draw.length === before) return;
+  if (s.sel && !s.draw.some((d) => d.id === s.sel)) s.sel = null;
+  chDrawingsSave(s);
+  if (s.drawOpen) paint(s.parts.dpop, chDrawPopHtml(s));
+  chSoon(s);
+}
+/* the bar a point of the plot stands on: its time, and the price at its row on the market's step */
+function chAnchorAt(s, at) {
+  const L = s.L;
+  const i = L.sc.at(Math.min(at.x, L.sc.usable));
+  return { t: s.bars[i].t, p: chSnap(L.sc.price(Math.max(0, Math.min(L.sc.bottom, at.y))), s.step) };
+}
+/* where a drawing's anchors stand on this layout, in pixels — null where its bar is not among the bars loaded (before the first, after the
+   last), so it is not drawn: never guessed into a place */
+function chDrawingXY(s, L, pt) {
+  const B = s.bars;
+  if (!B.length || !Number.isFinite(pt.t)) return null;
+  if (pt.t < B[0].t || pt.t > B[B.length - 1].t + (CH_MS[s.biv] || 0)) return null;
+  const i = chIndexAt(B, pt.t);
+  const y = L.sc.y(pt.p);
+  return Number.isFinite(y) ? { x: L.sc.cx(i) + 0.5, y: Math.round(y) + 0.5 } : null;
+}
+/* the note's words as the tag draws them, and the tag's width */
+const chNoteW = (text) => Math.ceil(String(text).length * 6.4) + 16;
+/* the drawing under the pointer (within CH_DRAW_GRAB pixels; the nearest), or null */
+function chDrawingAt(s, at) {
+  const L = s.L;
+  if (!L || !s.draw.length) return null;
+  let best = null;
+  let d = CH_DRAW_GRAB + 0.5;
+  const near = (dd, dr) => {
+    if (dd < d) {
+      d = dd;
+      best = dr;
+    }
+  };
+  for (const dr of s.draw) {
+    if (dr.kind === "h") {
+      const y = L.sc.y(dr.a.p);
+      if (Number.isFinite(y) && y >= 0 && y <= L.sc.bottom) near(Math.abs(y - at.y), dr);
+    } else if (dr.kind === "t") {
+      const a = chDrawingXY(s, L, dr.a);
+      const b = chDrawingXY(s, L, dr.b);
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      const u = len2 ? Math.max(0, Math.min(1, ((at.x - a.x) * dx + (at.y - a.y) * dy) / len2)) : 0;
+      near(Math.hypot(at.x - (a.x + u * dx), at.y - (a.y + u * dy)), dr);
+    } else if (dr.kind === "n") {
+      const a = chDrawingXY(s, L, dr.a);
+      if (!a) continue;
+      const w = chNoteW(dr.text);
+      if (at.x >= a.x - 4 && at.x <= a.x + w + 4 && at.y >= a.y - 22 && at.y <= a.y + 4) near(0, dr);
+    }
+  }
+  return best;
+}
+/* the horizontal lines, as the account's lines' layer draws them (chLinesSvg): dashed across the price pane, their price on the axis */
+const chUserLines = (s) => s.draw.filter((d) => d.kind === "h").map((d) => ({ id: `d:${d.id}`, price: d.a.p, label: "Line", short: "Line", kind: `user${s.sel === d.id ? " sel" : ""}`, drag: false }));
+/* THE DRAWINGS' LAYER: the trend lines (the draft dashed, the selected one with its handles) and the notes (a tag at their bar and price)
+   in view, clipped to the price pane */
+function chUserSvg(s, L) {
+  if (!L || !s.bars || !s.bars.length) return "";
+  const { sc, plotW, W, H } = L;
+  let out = "";
+  const lines = [...s.draw.filter((d) => d.kind !== "h"), ...(s.draft && s.draft.kind === "t" ? [{ ...s.draft, id: "draft", draft: true }] : [])];
+  for (const d of lines) {
+    const a = chDrawingXY(s, L, d.a);
+    if (!a) continue;
+    const sel = s.sel === d.id;
+    if (d.kind === "t") {
+      const b = chDrawingXY(s, L, d.b);
+      if (!b) continue;
+      out += `<g class="ch-usr${sel ? " sel" : ""}${d.draft ? " draft" : ""}" data-dr="${esc(d.id)}"><line class="ch-usr-t" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>${sel ? `<circle class="ch-usr-h" cx="${a.x}" cy="${a.y}" r="3.5"/><circle class="ch-usr-h" cx="${b.x}" cy="${b.y}" r="3.5"/>` : ""}</g>`;
+    } else if (d.kind === "n") {
+      const w = chNoteW(d.text);
+      const x = Math.round(Math.min(plotW - w - 2, Math.max(2, a.x)));
+      out += `<g class="ch-usr ch-usr-n${sel ? " sel" : ""}" data-dr="${esc(d.id)}"><circle class="ch-usr-nd" cx="${a.x}" cy="${a.y}" r="2.5"/><rect x="${x}" y="${a.y - 22}" width="${w}" height="18" rx="3"/><text x="${x + 8}" y="${a.y - 9}">${esc(d.text)}</text></g>`;
+    }
+  }
+  return out ? `<svg class="ch-svg ch-usvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" focusable="false"><svg x="0" y="0" width="${plotW}" height="${Math.max(1, Math.round(sc.bottom))}">${out}</svg></svg>` : "";
+}
+/* the note's field, laid at the point clicked: Enter keeps the words (none keeps nothing), Esc cancels */
+function chNoteOpen(s, at) {
+  const P = s.parts;
+  if (!P.note) return;
+  s.draft = { kind: "n", a: chAnchorAt(s, at) };
+  const left = Math.round(Math.max(2, Math.min((s.L ? s.L.plotW : 240) - 210, at.x)));
+  const top = Math.round(Math.max(2, at.y - 30));
+  paint(P.note, `<input class="ch-note-in" type="text" maxlength="${CH_NOTE_MAX}" placeholder="A note (Enter keeps it)" aria-label="Note" style="left:${left}px;top:${top}px">`);
+  const inp = typeof P.note.querySelector === "function" ? P.note.querySelector("input") : null;
+  if (inp && typeof inp.focus === "function") inp.focus();
+}
+function chNoteKey(s, e) {
+  if (!s.draft || s.draft.kind !== "n") return;
+  if (e.key === "Escape") {
+    if (typeof e.stopPropagation === "function") e.stopPropagation();
+    return void chSetTool(s, "");
+  }
+  if (e.key !== "Enter") return;
+  if (typeof e.preventDefault === "function") e.preventDefault();
+  const text = String(e.target && e.target.value !== undefined ? e.target.value : "").trim().slice(0, CH_NOTE_MAX);
+  const a = s.draft.a;
+  chSetTool(s, "");
+  if (text) chDrawingAdd(s, { kind: "n", a, text });
+}
+
 /* a listener kept with the chart, so release takes it away */
 function chOn(s, target, type, fn, opts) {
   if (!target || typeof target.addEventListener !== "function") return;
@@ -1345,14 +1568,18 @@ function chOn(s, target, type, fn, opts) {
 function chWire(s) {
   const P = s.parts;
   chOn(s, s.el, "click", (e) => {
-    const b = e.target && typeof e.target.closest === "function" ? e.target.closest("[data-ch-r], [data-ch-log], [data-ch-full], [data-ch-ind], [data-ind-clear]") : null;
+    const b = e.target && typeof e.target.closest === "function" ? e.target.closest("[data-ch-r], [data-ch-log], [data-ch-full], [data-ch-ind], [data-ind-clear], [data-ch-draw], [data-draw-tool], [data-draw-clear]") : null;
     if (!b || (typeof s.el.contains === "function" && !s.el.contains(b))) return;
     if (b.dataset.chR !== undefined) chSetRange(s, b.dataset.chR);
     else if (b.dataset.chLog !== undefined) chSetLog(s, !s.log);
     else if (b.dataset.chFull !== undefined) chSetFull(s, !s.full);
     else if (b.dataset.chInd !== undefined) chIndPop(s, !s.indOpen);
     else if (b.dataset.indClear !== undefined) chSetIndicators(s, []);
+    else if (b.dataset.chDraw !== undefined) chDrawPop(s, !s.drawOpen);
+    else if (b.dataset.drawTool !== undefined) chSetTool(s, s.tool === b.dataset.drawTool ? "" : b.dataset.drawTool);
+    else if (b.dataset.drawClear !== undefined) chDrawingsRemove(s);
   });
+  if (P.note) chOn(s, P.note, "keydown", (e) => chNoteKey(s, e));
   chOn(s, s.el, "change", (e) => {
     const t = e.target;
     if (!t || !t.dataset) return;
@@ -1413,8 +1640,10 @@ function chWire(s) {
   if (typeof document !== "undefined")
     chOn(s, document, "keydown", (e) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      // the indicators' menu first
+      // the menus first, then a tool or a draft
       if (s.indOpen) return void chIndPop(s, false);
+      if (s.drawOpen) return void chDrawPop(s, false);
+      if (s.tool || s.draft) return void chSetTool(s, "");
       if (!s.full) return;
       const inDialog = e.target && typeof e.target.closest === "function" && e.target.closest("dialog");
       if (inDialog || (typeof document.querySelector === "function" && document.querySelector("dialog[open]"))) return;
@@ -1423,10 +1652,12 @@ function chWire(s) {
   // a click outside the indicators' menu closes it
   if (typeof document !== "undefined")
     chOn(s, document, "click", (e) => {
-      if (!s.indOpen) return;
+      if (!s.indOpen && !s.drawOpen) return;
       const t = e.target;
-      const inside = t && typeof t.closest === "function" && (t.closest("[data-ch-pop]") || t.closest("[data-ch-ind]"));
-      if (!inside) chIndPop(s, false);
+      const inside = t && typeof t.closest === "function" && (t.closest("[data-ch-pop]") || t.closest("[data-ch-ind]") || t.closest("[data-ch-dpop]") || t.closest("[data-ch-draw]"));
+      if (inside) return;
+      if (s.indOpen) chIndPop(s, false);
+      if (s.drawOpen) chDrawPop(s, false);
     });
 }
 
@@ -2034,6 +2265,32 @@ function chDown(s, e, at) {
   // a press on a line that drags (an order of the owner's that changes in place): that line is pulled, the view does not move. A mouse's or
   // a pen's only: the plot leaves up and down to the page (touch-action: pan-y), so a finger on a line is the page's scroll — the browser
   // takes it (pointercancel) and a line would never follow it; on a phone an order is changed from its row (Change)
+  // a tool chosen: the press places (a line), starts (a trend line's drag) or opens (a note's field) — the view does not move
+  if (s.tool && at.x <= s.L.plotW && s.bars && s.bars.length) {
+    if (s.tool === "h") {
+      const p = chSnap(s.L.sc.price(Math.max(0, Math.min(s.L.sc.bottom, at.y))), s.step);
+      chSetTool(s, "");
+      if (Number.isFinite(p)) chDrawingAdd(s, { kind: "h", a: { p } });
+    } else if (s.tool === "t") {
+      const a = chAnchorAt(s, at);
+      s.draft = { kind: "t", a, b: a, id: e.pointerId, x0: at.x, y0: at.y, moved: false };
+      try {
+        if (typeof s.parts.plot.setPointerCapture === "function" && e.pointerId !== undefined) s.parts.plot.setPointerCapture(e.pointerId);
+      } catch {
+        // a pointer the browser already let go of
+      }
+    } else if (s.tool === "n") chNoteOpen(s, at);
+    return;
+  }
+  // no tool: a press on a drawing selects it (and starts no drag); one elsewhere lets the selection go
+  if (s.ptrs.size === 0 && at.x <= s.L.plotW) {
+    const dr = chDrawingAt(s, at);
+    if (dr || s.sel) {
+      s.sel = dr ? dr.id : null;
+      chSoon(s);
+      if (dr) return;
+    }
+  }
   const ln = e.pointerType !== "touch" && s.ptrs.size === 0 && at.x <= s.L.plotW ? chLineAt(s, at.y) : null;
   if (ln) {
     s.lineDrag = { id: e.pointerId, line: ln, y0: at.y, price: ln.price, moved: false };
@@ -2064,6 +2321,14 @@ function chMove(s, e, at) {
   const L = s.L;
   // a line being pulled: the price under the pointer, on the market's step, drawn in the next frame (the line and its tag say where it would
   // go); a move of less than CH_DRAG_PX is still a press
+  // a trend line being dragged: its far end follows the pointer, drawn in the next frame
+  const dr = s.draft;
+  if (dr && dr.kind === "t" && dr.id === e.pointerId) {
+    if (!dr.moved && Math.hypot(at.x - dr.x0, at.y - dr.y0) < CH_DRAG_PX) return;
+    dr.moved = true;
+    if (L) dr.b = chAnchorAt(s, at);
+    return void chSoon(s);
+  }
   const ld = s.lineDrag;
   if (ld && ld.id === e.pointerId) {
     if (!ld.moved && Math.abs(at.y - ld.y0) < CH_DRAG_PX) return;
@@ -2102,6 +2367,16 @@ function chMove(s, e, at) {
 function chUp(s, e, cancel = false) {
   // a line let go after it was pulled: handed to the page at the price it was pulled to (to be signed there); it is drawn back at its own.
   // One the browser took (cancel) is only drawn back: nothing was let go there
+  // a trend line let go: kept where it was dragged to (a press that never moved keeps nothing, the tool stays for the next)
+  const dr = s.draft;
+  if (dr && dr.kind === "t" && dr.id === e.pointerId) {
+    s.draft = null;
+    if (!cancel && dr.moved && (dr.a.t !== dr.b.t || dr.a.p !== dr.b.p)) {
+      chSetTool(s, "");
+      chDrawingAdd(s, { kind: "t", a: dr.a, b: dr.b });
+    } else chSoon(s);
+    return;
+  }
   const ld = s.lineDrag;
   if (ld && ld.id === e.pointerId) {
     s.lineDrag = null;
@@ -2165,6 +2440,7 @@ function chDraw(s) {
     paint(P.foot, "");
     paint(P.live, "");
     if (P.ind) paint(P.ind, "");
+    if (P.user) paint(P.user, "");
     if (P.lines) paint(P.lines, "");
     paint(P.hint, "");
     paint(P.draw, html);
@@ -2183,6 +2459,7 @@ function chDraw(s) {
   paint(P.live, chLiveSvg(s, L));
   // the indicators over the price and under it, then the account's own lines and the desk's trades over them
   if (P.ind) paint(P.ind, chIndSvg(s, L));
+  if (P.user) paint(P.user, chUserSvg(s, L));
   if (P.lines) paint(P.lines, chLinesSvg(s, L) + chMarksSvg(s, L));
   // the readout's box: over the price pane's corner, as wide as the pane (its words wrap inside it; nothing outside it moves)
   if (P.ohlc.style) P.ohlc.style.width = `${Math.max(40, L.plotW - CH_RO_LEFT - 4)}px`;
@@ -2253,6 +2530,7 @@ function chFootHtml(s) {
    reach its range's start — and else what the source said of the size it drew the range in (a coarser one than asked, and why) */
 function chHintWords(s) {
   const L = s.L;
+  if (s.tool && CH_TOOLS[s.tool]) return { words: CH_TOOLS[s.tool].hint };
   const oldest = !!L && L.sc.from === 0;
   if (s.paging.busy) return { words: `Loading older ${CH_IV_WORDS[s.biv] || s.biv} bars…`, busy: true };
   if (oldest && s.paging.said) return { words: s.paging.said };
@@ -2756,10 +3034,21 @@ function chKey(s, e) {
     if (typeof e.preventDefault === "function") e.preventDefault();
     return void chSetFull(s, !s.full);
   }
+  // the selected drawing removed; Esc lets it go (a tool or a draft is cancelled by the page's own Esc: chWire)
+  if ((e.key === "Delete" || e.key === "Backspace") && s.sel) {
+    if (typeof e.preventDefault === "function") e.preventDefault();
+    return void chDrawingsRemove(s, s.sel);
+  }
   const L = s.L;
   if (!L || !s.bars || !s.bars.length) return;
   const sc = L.sc;
-  if (e.key === "Escape") return void (s.hover && chLeave(s));
+  if (e.key === "Escape") {
+    if (s.sel) {
+      s.sel = null;
+      chSoon(s);
+    }
+    return void (s.hover && chLeave(s));
+  }
   if (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_" || e.key === "−") {
     if (typeof e.preventDefault === "function") e.preventDefault();
     const at = s.hover && s.hover.key ? sc.cx(Math.max(sc.from, Math.min(sc.to - 1, s.hover.i))) : s.hover ? s.hover.x : undefined;
