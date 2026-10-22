@@ -75,7 +75,7 @@ alias seat='npx tsx examples/account/agent-seat.ts'
 **交易所**（OKX、Kraken、Coinbase、Bybit、Binance，或 "Another exchange" 从统一接口库用 API 钥匙接的 93 家里挑；Binance.US、OKX US 也在里面，连不了的那家旁边会直接多一张它的卡）：
 
 1. 点卡片，弹窗里三步。第一步 "open its API page" 打开交易所自己建 key 的页面，建一把**能交易、不能提币**的 key。下面一行用这家自己的话写要勾什么，例如 OKX：Read 和 Trade（要在资金和交易账户之间划转再勾 Transfer），Withdraw 不勾，绑本机 IP（不绑 IP 的交易 key 闲置 14 天会被删）；Coinbase：签名算法选 ECDSA，权限 View 和 Trade；Binance：系统生成的 key 不绑 IP 只能读，要交易就绑 IP，或者用自己生成的 Ed25519 key。
-2. 第二步给出它要的文件路径（默认 `~/.buyer-agent-demo/credentials/okx/api-key.json`）和字段（`apiKey`、`secret`，OKX（含 OKX US）、KuCoin、Bitget 还要建 key 时设的 `password`）。"Copy" 复制路径；"Copy setup command" 复制一条命令：建目录、写一个空模板（文件已经在就不动它）、`chmod 600`、用 `nano` 打开，你把值填进去存盘。
+2. 第二步给出它要的文件路径（默认 `~/.openpaper/credentials/okx/api-key.json`）和字段（`apiKey`、`secret`，OKX（含 OKX US）、KuCoin、Bitget 还要建 key 时设的 `password`）。"Copy" 复制路径；"Copy setup command" 复制一条命令：建目录、写一个空模板（文件已经在就不动它）、`chmod 600`、用 `nano` 打开，你把值填进去存盘。
 3. 第三步每两秒自己检查一次，只看字段名，不读值：`Waiting for the file…` → `Missing: password.` → `Others on this machine can read it.`（旁边 "Copy fix" 复制 `chmod 600`）→ `Ready.`
 4. 点 "Connect"。
 
@@ -89,7 +89,7 @@ OKX connected live · $1,000.00 there now · the venue says this credential can 
 
 **Hyperliquid**：卡片 "Hyperliquid" 是 API 钱包连接：在 app.hyperliquid.xyz → More → API 里起个名、Generate、Authorize API Wallet（最长 180 天），把它的私钥放进 `privateKey`、你账户自己的地址放进 `walletAddress`（`credentials/hyperliquid-trade/api-key.json`）。API 钱包只能下单、不能提币；账户自己的私钥拒收。接上以后永续、现货、HIP-3（含 io:ANTH 这类 pre-IPO）都在 Trade 里下，每一单、每次改杠杆之前按它条款 §1.6 查你此刻所在的地方。只想看，用 "Hyperliquid · by address"。要先演练，用 "Hyperliquid · paper"：同一个连接接它的测试网——在 app.hyperliquid-testnet.xyz → More → API 批一个 API 钱包（主网批的在测试网不算），私钥和账户地址放进 `credentials/hyperliquid-paper/api-key.json`；mock USDC 从它的水龙头领（app.hyperliquid-testnet.xyz/drip：1,000 个，要求同一地址在主网存过款）。这是真接口、假钱：Accounts 那一行标 Paper，余额不进净值和可用现金；下单走同一扇门（你的签名或 agent 的额度、Guard / Beast），只是不受 `--live-cap`；Markets 里它排在真场所后面、不定行价，比价不比它；对账单的那几行标 Paper。§1.6 照样查你所在的地方——测试网也是 Hyperliquid 的 Interface，纸上账户不是绕开它的办法。
 
-**Alpaca · paper**：Alpaca 自己的 paper 账户，真接口、假钱，任何人用邮箱就能开（它的 paper-trading 页写的；不看你在哪）。在 Alpaca 的 dashboard 左上角切到 Paper，Generate New Keys，`keyId` 和 `secret` 放进 `~/.buyer-agent-demo/credentials/alpaca-paper/api-key.json`（Connect 里 "Alpaca · paper" 卡片上有现成的命令），接上以后 Accounts 那一行标 Paper，余额不进净值；美股、ETF、加密都在 Trade 里下，走同一扇门，不受 `--live-cap`，成交由 Alpaca 按真实 NBBO 模拟。**在香港、新加坡用它**：美股常规时段是你的夜里，但 Alpaca 的隔夜时段（纽约 20:00–04:00，交易日前夜，周日晚到周五晨，Blue Ocean ATS）正好是你的白天——这时 Trade 里一只股票的第一行写 "Overnight session · until 04:00 New York (16:00 your time) · a limit order with extended hours trades now"，下单票上的 "Extended hours" 开关（就在 Reduce only 旁边，不收在 Advanced 里）已经勾上、单子默认成了限价单，开关下一行写着此刻是哪一段、到几点、这张单会怎样：限价单当场在隔夜时段成交（只有 Alpaca 标为隔夜可交易的股票；盘前 04:00–09:30 和盘后 16:00–20:00 每只都行）；不勾，或者下市价单、止损单，Alpaca 把单子留到 09:30。Desk 雇在它上面也一样：常规时段之外，Sniper 的进场和 Exit 的平仓都发成当日有效、带 extended hours 的限价单，比买一 / 卖一让半个百分点，房间里会写明。北美用户在白天就是常规时段，和以前一样。
+**Alpaca · paper**：Alpaca 自己的 paper 账户，真接口、假钱，任何人用邮箱就能开（它的 paper-trading 页写的；不看你在哪）。在 Alpaca 的 dashboard 左上角切到 Paper，Generate New Keys，`keyId` 和 `secret` 放进 `~/.openpaper/credentials/alpaca-paper/api-key.json`（Connect 里 "Alpaca · paper" 卡片上有现成的命令），接上以后 Accounts 那一行标 Paper，余额不进净值；美股、ETF、加密都在 Trade 里下，走同一扇门，不受 `--live-cap`，成交由 Alpaca 按真实 NBBO 模拟。**在香港、新加坡用它**：美股常规时段是你的夜里，但 Alpaca 的隔夜时段（纽约 20:00–04:00，交易日前夜，周日晚到周五晨，Blue Ocean ATS）正好是你的白天——这时 Trade 里一只股票的第一行写 "Overnight session · until 04:00 New York (16:00 your time) · a limit order with extended hours trades now"，下单票上的 "Extended hours" 开关（就在 Reduce only 旁边，不收在 Advanced 里）已经勾上、单子默认成了限价单，开关下一行写着此刻是哪一段、到几点、这张单会怎样：限价单当场在隔夜时段成交（只有 Alpaca 标为隔夜可交易的股票；盘前 04:00–09:30 和盘后 16:00–20:00 每只都行）；不勾，或者下市价单、止损单，Alpaca 把单子留到 09:30。Desk 雇在它上面也一样：常规时段之外，Sniper 的进场和 Exit 的平仓都发成当日有效、带 extended hours 的限价单，比买一 / 卖一让半个百分点，房间里会写明。北美用户在白天就是常规时段，和以前一样。
 
 **Robinhood**：
 - 投资账户：卡片 "Robinhood" → "Sign in at Robinhood…"，在 Robinhood 自己的页面登录、批准，回来点 "Connect"。读各账户的现金和股票持仓；下单只在 Robinhood 的 Agentic 账户里，整股。令牌只在服务的内存里，重启要重新登录。
@@ -195,7 +195,7 @@ trading limit: every venue on the account now · up to $25 an order · $100 of o
 - **每个 agent 每一样只有一份**：新签的替换旧的（Hand to agent 附的额度也一样，签之前页面会说）。
 - agent 请求更大的额度（`portfolio_ask {kind: "limit"}`）时，Waiting for you 里那条请求的 "Grant…" 打开一张 "Give a limit"：从它现在那份额度和它问到的场所勾起，从不自己扩到所有账户（它问的场所做不了这件事时什么都不多勾，并写明）；签了，那条请求自己关掉。
 
-**agent 的钥匙是它自己的**：席位第一次运行时在 `~/.buyer-agent-demo/seats/<名字>.json` 生成一把，权限 600，以后一直用这把。不再从名字推出来，所以知道名字的人拿不到它（`PORTFOLIO_SEAT_KEYS=sim` 才回到从名字推，只给测试和演示用）。MCP 席位同理（`PORTFOLIO_AGENT` 定名字），工具 `portfolio_account` 返回它的地址、有没有被授权、额度还剩多少。
+**agent 的钥匙是它自己的**：席位第一次运行时在 `~/.openpaper/seats/<名字>.json` 生成一把，权限 600，以后一直用这把。不再从名字推出来，所以知道名字的人拿不到它（`PORTFOLIO_SEAT_KEYS=sim` 才回到从名字推，只给测试和演示用）。MCP 席位同理（`PORTFOLIO_AGENT` 定名字），工具 `portfolio_account` 返回它的地址、有没有被授权、额度还剩多少。
 
 会被拒：没点名 `E_MANDATE_RECIPIENT` · 超每单 `E_MANDATE_PER_ORDER_CAP` · 超总额 `E_MANDATE_BUDGET` · 窗口内的第二单 `E_MANDATE_RATE` · 到期 `E_MANDATE_EXPIRED` · 没有额度 `E_MANDATE_NONE` · 额度写了一个不存在、已过期或不是给这个 agent 的意图 `E_ACCOUNT_BAD_ACTION`。
 
@@ -222,7 +222,7 @@ Cycle 1 (the clock): 1 lead scanned, 1 cleared, 1 placed, 0 waiting for you, 1 o
 - **花费**：每轮至多三次调用（Exit 有在手线索时、Search、Risk 有线索时），晚报和周评各一次；按 API 返回的 token 数和模型标价算，写在 Brain 卡里（估算）。
 - **哪些是真的**：线索来自账户自己的 Markets 列表（`/api/account/explore`），清算的硬检查来自场所的报价（`/api/account/market`），每一单从门走（`agentLiveOrder` / `agentLiveClose`），成交从账户的订单读回来，权益 = 会话开始时场所的权益 + 已实现 + 在手线索按最新价的未实现。房间里"brain"标的句子是脑子说的，其余是账户的数。
 - **会被拒**：目标里的场所没接上或不能交易 `E_ACCOUNT_BAD_ACTION`；没有 Head 不能雇；Flow / Sentiment 不能由房里坐；不是席位的钥匙 `portfolio_desk_say` 是 `E_ACCOUNT_OWNER_ONLY`；没额度的席位下单是 `E_MANDATE_NONE`——这就是"章程变成额度"。
-- 文件：`~/.buyer-agent-demo/desk/desk.json`、`desk/room.jsonl`（600）；席位钥匙 `seats/desk-<role>.json`。重启继续。
+- 文件：`~/.openpaper/desk/desk.json`、`desk/room.jsonl`（600）；席位钥匙 `seats/desk-<role>.json`。重启继续。
 
 **单笔上限也在这里改**：头上的 "Trading on · $20 a move" 点开 Settings，"Change the cap" 一次签名（`setPolicy cap`），升降都行，立刻生效，重启按最后一次签的恢复；启动参数 `--live-cap` 只是起点。纸上账户不受它。
 
@@ -402,7 +402,7 @@ agent 只能撤自己下的单；你能撤任何单（撤单从不出卡；你�
 
 **Paper account（什么都不用接）**
 
-- 开：Connect an account → "Paper account"（Portfolio 空着的时候那句 "start a paper account" 也是它）→ 起个名（Momentum）、写一笔起始资金（空着是 $10,000）→ Connect（一次签名，不问任何场所）。可以开好几个，各有各的名字和账本：`~/.buyer-agent-demo/paper/<id>/book.json`，id 是 `paper-<名字>`（没起名就是 `paper-1`、`paper-2`）；同一个 id 再接是接着记，不是重开；重启照旧。
+- 开：Connect an account → "Paper account"（Portfolio 空着的时候那句 "start a paper account" 也是它）→ 起个名（Momentum）、写一笔起始资金（空着是 $10,000）→ Connect（一次签名，不问任何场所）。可以开好几个，各有各的名字和账本：`~/.openpaper/paper/<id>/book.json`，id 是 `paper-<名字>`（没起名就是 `paper-1`、`paper-2`）；同一个 id 再接是接着记，不是重开；重启照旧。
 - 它交易什么：Markets 不带钥匙读到的全部公开行情，四类都有——**美股**（实时报价：Robinhood 公开的 194 只股票的买一卖一、其余从 Nasdaq 的实时报价读，都读不到才退回 Cboe 的 15 分钟延迟报价；行上写着价格是谁给的、晚多少）、**crypto**（Kraken、Coinbase、OKX、Binance、Bybit 的现货，Hyperliquid 的永续，pre-IPO 永续）、**RWA**（Robinhood 的 Stock Tokens，Gate 上的 xStocks，Ondo 的股票代币按 LI.FI 的报价）、**预测市场**（Kalshi、Polymarket、Polymarket US 的事件合约；Polymarket 搜任何市场都能搜到——Gamma 的全站搜索）。市场的写法是那家公开源自己的（Cboe 的 `AAPL`、Kraken 的 `BTC/USD`、Hyperliquid 的 `BTC-PERP`、Gate 的 `AAPLX/USDT`、Kalshi 的 ticker、Polymarket 的 `<slug>:Yes`）；两家都列的同一个符号，排在前面的那家说了算。
 - 成交规则是账户自己定的，票上、Details 里、MCP 答复里都写着：市价单按公开报价的卖一（买）/ 买一（卖）整单成交，受门给的最差价约束；限价单下单时就穿过的按当时报价成交（比限价好就按好的），挂着的等报价碰到时按限价成交；止损单在卖单的买一 / 买单的卖一碰到止损价时触发、按报价成交，止损限价触发后变成限价单，追踪止损跟着下单后的最好价走、回撤到设定的百分比或价差时触发；开仓单带止盈止损的，成交那一刻挂上两个退出单，一个成交另一个撤掉。挂单、止损、到期、资金费、强平由服务每 5 秒自己看一遍（读余额、查单、看持仓、页面刷新也会看）；IOC / FOK 当场成交不了就撤（没有部分成交，两者一样）；DAY 单随那个市场的时段结束（盘前盘后单到 20:00）；手续费：美股不收，其他 0.10%；不模拟深度、部分成交和滑点；挂单不冻结资金，成交时钱不够就拒。**美股**只按时间戳落在可交易时段里的报价成交：常规时段任何单，盘前（04:00–09:30）、盘后（16:00–20:00）、隔夜（20:00–04:00，只限 Robinhood 有报价的那些股票）只成交勾了 extended hours 的限价单；时段外的市价单排队等开盘，止损只在常规时段触发；报价比它的源声明的延迟再旧 15 分钟就不成交（报价停了不算数）；而且只按实时报价（Robinhood / Nasdaq）成交，Cboe 晚 15 分钟的报价从不成交：只有它时市价单当场被拒（写明唯一的报价是 15 分钟前的，请用限价单），限价单挂着等实时报价，挂着的单只按至多 60 秒旧的实时报价判。有人在看的股票由后台读取器按 Robinhood 每 15 秒的写入读、Nasdaq 每 5 秒同时问，读到就判、就推到页面。现货、代币、股票、事件合约只能卖持有的。**永续**是逐仓：杠杆按市场设（`portfolio_live_leverage` / 票上的 Leverage，1 倍起、最多到那家源公布的上限），名义额除以杠杆作保证金、按报价标记未实现盈亏、只减仓或反向单平仓（超过仓位的反向单拒掉，不翻仓）；**资金费**每整小时按那家源当时显示的费率、按标记价的名义额从保证金里扣（Hyperliquid 的费率按小时，别家是 8 小时一期，按八分之一算；多头在费率为正时付、空头收）；**强平**：保证金减亏损减已付资金费跌到维持保证金（标记价名义额除以两倍最大杠杆，即最大杠杆下初始保证金的一半）就按标记价平掉，剩下的扣掉手续费退回现金，成交记录写 "liquidated"（1 倍多头永远不会被强平，1 倍空头涨三分之一会）。**事件合约**按价格标记，场所结算后按场所付的钱付掉（赢的一边每张 $1、输的 $0，Polymarket 看 Gamma 的 resolved 和 outcomePrices，Kalshi 看 result，Polymarket US 看它的 settlement 接口；每十分钟问一次，截止后每分钟一次），合约从账本里拿掉；截止了还没结算的标 "waiting for its settlement"。
 - 页面：Venues 一行标 Paper，余额不进净值（标题写 "paper account not counted"）；Trade 的 Where 里它排在真场所后面，公开行照样给 "Connect to trade"；只有它一家有的市场整行标 Paper、按钮写 "Paper trade"；Statement 标 Paper。
@@ -413,7 +413,7 @@ agent 只能撤自己下的单；你能撤任何单（撤单从不出卡；你�
 1. 打开 app.hyperliquid-testnet.xyz，用你的钱包连上。邮箱（Privy）登录在测试网是另一个地址：它的文档说把主网的邮箱钱包导出、装进 MetaMask 或 Rabby，再用那个钱包连测试网。
 2. 水龙头 app.hyperliquid-testnet.xyz/drip 领 1,000 个 mock USDC。它的要求是**同一个地址在主网存过款**（多少都行）。
 3. More → API：起个名、Generate、复制 API 钱包的私钥，再 Authorize API Wallet。主网批过的在测试网不算，要在测试网再批一次；最长 180 天。
-4. 钥匙文件 `~/.buyer-agent-demo/credentials/hyperliquid-paper/api-key.json`：`{"walletAddress": "你账户自己的地址", "privateKey": "API 钱包的私钥"}`，`chmod 600`。Connect an account 的卡片上有一条现成的命令（建目录、空模板、权限、打开编辑器）。账户自己的私钥会被拒收——它能提币。
+4. 钥匙文件 `~/.openpaper/credentials/hyperliquid-paper/api-key.json`：`{"walletAddress": "你账户自己的地址", "privateKey": "API 钱包的私钥"}`，`chmod 600`。Connect an account 的卡片上有一条现成的命令（建目录、空模板、权限、打开编辑器）。账户自己的私钥会被拒收——它能提币。
 5. 接入：Connect an account → "Hyperliquid · paper" → 钥匙文件路径 → Connect。接的顺序和真的一样：先按它条款 §1.6 查你此刻所在的地方（测试网也是它的 Interface、同一份条款，美国、安大略、受制裁地区不服务，和真的一个答案），再问测试网这把 API 钱包批给的是不是这个账户、有没有过期，最后读余额。
 
 **自己下单**：Trade → Perps（现货在 Crypto，事件在 Predictions）→ 搜 BTC → Where 里选纸上账户那一行（标 Paper）→ 金额 → Sign and place。签名的那句话以 "PAPER · " 开头，上限那一句不出现（`--live-cap` 管的是真钱）；`--read-only` 起的服务照样不下。Statement 里那几行标 Paper，合计不算它们，CSV 多一列 `paper`。比价（Where 的 Best、`portfolio_live_compare`）不比纸上账户。
@@ -471,7 +471,7 @@ seat move bridge wallet wallet 25 USDC Arbitrum Base   # agent 请求（MCP 的 
 
 ## 7b · agent 付钱给别人：agent 钱包
 
-agent 付 API 调用、按次计费的服务，用的是一个 **agent 钱包**：账户在本机替它生成一个钱包（钥匙在 `~/.buyer-agent-demo/agent-wallets/<名字>.json`，600，agent 拿不到），你往里放一笔备用金，agent 在你签的付款额度内自己付。最坏情况损失的是这笔备用金。
+agent 付 API 调用、按次计费的服务，用的是一个 **agent 钱包**：账户在本机替它生成一个钱包（钥匙在 `~/.openpaper/agent-wallets/<名字>.json`，600，agent 拿不到），你往里放一笔备用金，agent 在你签的付款额度内自己付。最坏情况损失的是这笔备用金。
 
 1. **建**：Agents 弹层的 Agent wallets 里填 Name、选 For agent、Keep up to（打算放多少），点 "Make it"（一次签名）；agent 请求充值（`portfolio_ask {kind: "topup"}`）时，Waiting for you 里那条请求的 "Grant…"：它还没有钱包就打开建钱包的表，有了就打开充值。它出现在 Portfolio › Accounts 里，"Agent wallet · research"，余额从链上读（`/api/account` 的 `subAccounts[].balanceUsd` 就是这个数）。它没有 "Disconnect"：账户握着它的钥匙和钱，要收走用第 5 步的 "Take back…"。
 2. **充值**："Top up…"，选从哪个账户出（交易所提币或钱包发），目的地就是这个 agent 钱包。或者直接往它的地址打 USDC（账户公布的 `networks` 里的任何一条链）。
@@ -619,7 +619,7 @@ seat order okx buy BTC/USDT '$5'
 curl -s http://127.0.0.1:4820/api/overview | python3 -c "import json,sys; o=json.load(sys.stdin); print(o['chain'], o['ledgerPath'])"
 ```
 
-- 文件在 `$BUYER_HOME/portfolio/`（默认 `~/.buyer-agent-demo`），每次启动一个新文件，第一行写着它接着哪个文件。Statement 只读账户自己的运行链和带运行标记的账本：demo、测试或别的程序写在同一个 home 里的账本不算（两个终端 demo 每次用一个新的临时 home，`$BUYER_HOME` 它们不读，只认 `--home`）。
+- 文件在 `$OPENPAPER_HOME/portfolio/`（默认 `~/.openpaper`），每次启动一个新文件，第一行写着它接着哪个文件。Statement 只读账户自己的运行链和带运行标记的账本：demo、测试或别的程序写在同一个 home 里的账本不算（两个终端 demo 每次用一个新的临时 home，`$OPENPAPER_HOME` 它们不读，只认 `--home`）。
 - 重启以后账户从这条账本链重建（第 10 条）。以前收过的指令不会再收第二次；发给场所的客户端编号每次启动都不同，不会撞上以前的单。
 
 ## 10 · 随时在线：后台服务，重启不丢
@@ -647,7 +647,7 @@ npm run account:service -- install --live-cap 20
 
 | 命令 | 做什么 |
 |---|---|
-| `npm run account:service -- install <参数>` | 登录后自动跑 `npm run account -- <参数>`，进程意外退出 30 秒后拉起；日志在 `~/.buyer-agent-demo/logs/`，只有你能读 |
+| `npm run account:service -- install <参数>` | 登录后自动跑 `npm run account -- <参数>`，进程意外退出 30 秒后拉起；日志在 `~/.openpaper/logs/`，只有你能读 |
 | `npm run account:service -- status` | 在不在跑，有没有应答 |
 | `npm run account:service -- restart` | 重启（改了代码之后），状态接着来 |
 | `npm run account:service -- logs` | 最后几十行日志 |

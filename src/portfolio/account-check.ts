@@ -8,7 +8,7 @@
  *   npm run account:check -- --keys          also opens each connection whose key file is in the home, read-only — what the venue says the
  *                                            key may do, the balances it reads, its markets, its earn products — and nothing else: no order,
  *                                            no movement, nothing written to the account's ledger
- *   npm run account:check -- --home <dir>    the home whose key files --keys reads (default $BUYER_HOME or ~/.buyer-agent-demo)
+ *   npm run account:check -- --home <dir>    the home whose key files --keys reads (default $OPENPAPER_HOME or ~/.openpaper)
  *   npm run account:check -- --json          the same, as JSON
  *   npm run account:check -- --help          these options; a misspelt one is refused
  *

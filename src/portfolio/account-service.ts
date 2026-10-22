@@ -23,7 +23,9 @@ import { fileURLToPath } from "node:url";
 import { defaultHome } from "./home.ts";
 import { checkServerArgs, SERVICE_COMMANDS, serviceUsage } from "./cli.ts";
 
-export const LABEL = "com.buyer-agent-demo.account";
+export const LABEL = "com.openpaper.account";
+/** the labels earlier versions installed under: taken out when this one is installed or uninstalled, so one service runs, not two */
+export const OLD_LABELS: readonly string[] = ["com.buyer-agent-demo.account"];
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 export interface ServicePlan {
@@ -73,7 +75,7 @@ function parts(serverArgs: string[], o: PlanOptions) {
   // what travels with the service: the home, the SEC contact, the RPC endpoints, and the MetaMask Agent Wallet's command and its own switch
   // for real transfers (PORTFOLIO_MM_WRITES=1; without it mm transfers were silently off under the service). Never a model key from the
   // shell (ANTHROPIC_*, OPENAI_*): the plist is a 0644 file, and a key belongs in the home's key files, which the page writes 0600
-  const keep = Object.fromEntries(Object.entries({ PATH: path, HOME: env.HOME ?? homedir(), BUYER_HOME: env.BUYER_HOME, SEC_CONTACT: env.SEC_CONTACT, PORTFOLIO_MM_BIN: env.PORTFOLIO_MM_BIN, PORTFOLIO_MM_WRITES: env.PORTFOLIO_MM_WRITES, ...Object.fromEntries(Object.entries(env).filter(([k]) => k.startsWith("PORTFOLIO_RPC_"))) }).filter(([, v]) => typeof v === "string" && v !== "")) as Record<string, string>;
+  const keep = Object.fromEntries(Object.entries({ PATH: path, HOME: env.HOME ?? homedir(), OPENPAPER_HOME: env.OPENPAPER_HOME, BUYER_HOME: env.BUYER_HOME, SEC_CONTACT: env.SEC_CONTACT, PORTFOLIO_MM_BIN: env.PORTFOLIO_MM_BIN, PORTFOLIO_MM_WRITES: env.PORTFOLIO_MM_WRITES, ...Object.fromEntries(Object.entries(env).filter(([k]) => k.startsWith("PORTFOLIO_RPC_"))) }).filter(([, v]) => typeof v === "string" && v !== "")) as Record<string, string>;
   return { env, node, root, home, log, errLog, args, keep };
 }
 
@@ -293,8 +295,8 @@ export interface Manager {
   install(p: ServicePlan): void;
   uninstall(p: ServicePlan): void;
   restart(): void;
-  /** is it installed, and its state and pid when it runs */
-  status(): { installed: boolean; state?: string; pid?: string };
+  /** is it installed, and its state and pid when it runs; `oldName` when only an earlier version's service is there */
+  status(): { installed: boolean; state?: string; pid?: string; oldName?: boolean };
   /** the server's options in the installed plan */
   installed(): { args: string[] } | undefined;
 }
@@ -307,6 +309,10 @@ const launchd: Manager = {
     mkdirSync(dirname(p.path), { recursive: true });
     // a running copy of an earlier install is taken out first: one service, one port — and waited for, since launchd answers bootout
     // before the copy has left (untilGone): a bootstrap inside that moment fails with "Input/output error", and is then tried again
+    for (const old of OLD_LABELS) {
+      launchctl(["bootout", `${domain()}/${old}`], true);
+      rmSync(join(dirname(p.path), `${old}.plist`), { force: true });
+    }
     launchctl(["bootout", `${domain()}/${LABEL}`], true);
     if (!untilGone(loaded)) throw new Error(`the running copy of ${LABEL} has not stopped in 30 s: npm run account:service -- status, and install again once it has`);
     rotateLogs([p.log, p.errLog]);
@@ -315,6 +321,10 @@ const launchd: Manager = {
     launchctl(["enable", `${domain()}/${LABEL}`], true);
   },
   uninstall(p) {
+    for (const old of OLD_LABELS) {
+      launchctl(["bootout", `${domain()}/${old}`], true);
+      rmSync(join(dirname(p.path), `${old}.plist`), { force: true });
+    }
     launchctl(["bootout", `${domain()}/${LABEL}`], true);
     rmSync(p.path, { force: true });
   },
@@ -325,7 +335,7 @@ const launchd: Manager = {
   },
   status() {
     const info = launchctl(["print", `${domain()}/${LABEL}`], true);
-    if (!info) return { installed: false };
+    if (!info) return { installed: false, ...(OLD_LABELS.some((old) => existsSync(join(dirname(plan([]).path), `${old}.plist`))) ? { oldName: true } : {}) };
     return { installed: true, ...(/state = (\w+)/.exec(info)?.[1] ? { state: /state = (\w+)/.exec(info)![1]! } : {}), ...(/pid = (\d+)/.exec(info)?.[1] ? { pid: /pid = (\d+)/.exec(info)![1]! } : {}) };
   },
   installed,
@@ -347,6 +357,10 @@ const systemd: Manager = {
   install(p) {
     mkdirSync(dirname(p.log), { recursive: true, mode: 0o700 });
     mkdirSync(dirname(p.path), { recursive: true });
+    for (const old of OLD_LABELS) {
+      systemctl(["disable", "--now", `${old}.service`], true);
+      rmSync(join(dirname(p.path), `${old}.service`), { force: true });
+    }
     systemctl(["disable", "--now", unit], true);
     rotateLogs([p.log, p.errLog]);
     writeFileSync(p.path, p.text, { mode: 0o644 });
@@ -354,6 +368,10 @@ const systemd: Manager = {
     systemctl(["enable", "--now", unit]);
   },
   uninstall(p) {
+    for (const old of OLD_LABELS) {
+      systemctl(["disable", "--now", `${old}.service`], true);
+      rmSync(join(dirname(p.path), `${old}.service`), { force: true });
+    }
     systemctl(["disable", "--now", unit], true);
     rmSync(p.path, { force: true });
     systemctl(["daemon-reload"], true);
@@ -366,7 +384,7 @@ const systemd: Manager = {
   status() {
     const out = systemctl(["show", "-p", "LoadState", "-p", "ActiveState", "-p", "MainPID", unit], true);
     const get = (k: string) => new RegExp(`^${k}=(.*)$`, "m").exec(out)?.[1];
-    if (!out || get("LoadState") !== "loaded") return { installed: false };
+    if (!out || get("LoadState") !== "loaded") return { installed: false, ...(OLD_LABELS.some((old) => existsSync(join(dirname(planSystemd([]).path), `${old}.service`))) ? { oldName: true } : {}) };
     const pid = get("MainPID");
     const state = get("ActiveState");
     return { installed: true, ...(state ? { state } : {}), ...(pid && pid !== "0" ? { pid } : {}) };
@@ -432,6 +450,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     const args = m.installed()?.args ?? rest;
     const port = portOf(args);
     const up = await answers(port);
-    console.log(st.installed ? `${LABEL}: ${st.state ?? "loaded"}${st.pid ? ` (pid ${st.pid})` : ""} · ${up.ok ? `answering at http://127.0.0.1:${port}${up.version ? ` · ${up.version}` : ""}` : `not answering on ${port} yet`}` : `${LABEL}: not installed (npm run account:service -- install --live-cap 20)`);
+    console.log(st.installed ? `${LABEL}: ${st.state ?? "loaded"}${st.pid ? ` (pid ${st.pid})` : ""} · ${up.ok ? `answering at http://127.0.0.1:${port}${up.version ? ` · ${up.version}` : ""}` : `not answering on ${port} yet`}` : st.oldName ? `${LABEL}: installed under an earlier name (${OLD_LABELS.join(", ")}): run npm run account:service -- install again, and it takes the old one out` : `${LABEL}: not installed (npm run account:service -- install --live-cap 20)`);
   }
 }
