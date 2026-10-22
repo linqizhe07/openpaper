@@ -3,6 +3,20 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 26,
+      "title": "The Progress script reads a merge subject that lost its number, by its branch",
+      "mergedAt": "2026-10-22T20:24:26Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/26",
+      "branch": "fix/progress-merge-subject-without-number"
+    },
+    {
+      "number": 25,
+      "title": "The session-word tests read the same in any zone, and the site's Progress list follows the merge history rather than GitHub's merge time",
+      "mergedAt": "2026-10-22T20:20:53Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/25",
+      "branch": "fix/zone-free-session-tests-and-progress-order"
+    },
+    {
       "number": 24,
       "title": "The page's keys are listed in one sheet behind ?, from Settings too, and written in one place the sheet and the tests read",
       "mergedAt": "2026-10-22T20:12:59Z",
