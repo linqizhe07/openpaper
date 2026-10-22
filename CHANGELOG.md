@@ -12,6 +12,22 @@ link there.
 - The ledger is written for the user alone (0600 in a 0700 directory, an older one tightened on its first write), and a seat's key file is read on Windows whatever its mode bits say. [#3](https://github.com/linqizhe07/openpaper/pull/3)
 - `npm run account -- --help` lists every option with its default and every environment variable; a misspelt option, a wrong value or a stray word is refused with the list instead of ignored, on the server, `account:check` and `account:service`. [#4](https://github.com/linqizhe07/openpaper/pull/4)
 - A version: this file, `version` in package.json, the commit and version in `/api/now`, in Settings, in the service's `status` and on the server's first line. [#5](https://github.com/linqizhe07/openpaper/pull/5)
+- A code of conduct, issue forms for a bug and for a venue to add, a pull request template, and a private way to report a security problem. [#6](https://github.com/linqizhe07/openpaper/pull/6)
+- The background service carries `PORTFOLIO_MM_BIN` and `PORTFOLIO_MM_WRITES` (never an AI key), and `.env` files are ignored by git. [#7](https://github.com/linqizhe07/openpaper/pull/7)
+- `npm run site:progress` refreshes the site's list of merged pull requests from GitHub, and its `--check` keeps the Pages build from shipping a stale one. [#8](https://github.com/linqizhe07/openpaper/pull/8)
+- The README in English: what the account does, the page, what has and has not been tested, every option and environment variable, the project's structure and scripts. [#9](https://github.com/linqizhe07/openpaper/pull/9)
+- The background service on Linux (a systemd user unit), its logs rotated at five megabytes, and `npm run account:backup` for a 0600 archive of the home. [#10](https://github.com/linqizhe07/openpaper/pull/10)
+- The home is `~/.openpaper` (`OPENPAPER_HOME`); an older `~/.buyer-agent-demo` is still read and said on the first line; the service's label is `com.openpaper.account`, the old one booted out on install. [#11](https://github.com/linqizhe07/openpaper/pull/11)
+- A Light / Black switch in the top bar, on every tab. [#12](https://github.com/linqizhe07/openpaper/pull/12)
+- The attack tests assert the refusal they expect instead of `it.fails`: an environment that breaks no longer passes them. [#13](https://github.com/linqizhe07/openpaper/pull/13) [#14](https://github.com/linqizhe07/openpaper/pull/14) [#16](https://github.com/linqizhe07/openpaper/pull/16) [#17](https://github.com/linqizhe07/openpaper/pull/17)
+- Markets says in one line where its prices come from and how they reach the page. [#15](https://github.com/linqizhe07/openpaper/pull/15)
+- Three lists over All: the biggest moves, the most traded, what closes soonest. [#18](https://github.com/linqizhe07/openpaper/pull/18)
+- The search shows its results under the field, with the arrow keys and the recent searches. [#19](https://github.com/linqizhe07/openpaper/pull/19)
+- A US share's drawer carries the company's own record and its newest filings from the SEC, and agents read both over `portfolio_financials`. [#20](https://github.com/linqizhe07/openpaper/pull/20)
+- The chart fills the window (its head's last button, or F), and a market's drawer opens the Trade page's own chart of it. [#21](https://github.com/linqizhe07/openpaper/pull/21)
+- Eight indicators on the chart, over the price and in panes under it, kept in the address and this browser. [#22](https://github.com/linqizhe07/openpaper/pull/22)
+- Drawings on the chart — a horizontal line, a trend line, a note — anchored to bars and prices, kept in this browser for the market. [#23](https://github.com/linqizhe07/openpaper/pull/23)
+- The page's keys in one sheet behind `?`, and from Settings. [#24](https://github.com/linqizhe07/openpaper/pull/24)
 
 ## v0.1.0 — 2026-10-22
 
