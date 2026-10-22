@@ -151,12 +151,15 @@ const portOf = (args: string[]): number => {
   return i >= 0 ? Number(args[i + 1]) : 4820;
 };
 
-async function answers(port: number): Promise<boolean> {
+/** does the account answer on `port`, and which openpaper it is (`/api/now`) */
+async function answers(port: number): Promise<{ ok: boolean; version?: string }> {
   try {
     const r = await fetch(`http://127.0.0.1:${port}/api/now`, { signal: AbortSignal.timeout(2_000) });
-    return r.ok;
+    if (!r.ok) return { ok: false };
+    const b = (await r.json()) as { version?: string; commit?: string };
+    return { ok: true, ...(b.version ? { version: `v${b.version}${b.commit ? ` (${b.commit})` : ""}` } : {}) };
   } catch {
-    return false;
+    return { ok: false };
   }
 }
 
@@ -223,6 +226,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     const pid = /pid = (\d+)/.exec(info)?.[1];
     const args = installed()?.args ?? rest;
     const port = portOf(args);
-    console.log(info ? `${LABEL}: ${state ?? "loaded"}${pid ? ` (pid ${pid})` : ""} · ${(await answers(port)) ? `answering at http://127.0.0.1:${port}` : `not answering on ${port} yet`}` : `${LABEL}: not installed (npm run account:service -- install --live-cap 20)`);
+    const up = await answers(port);
+    console.log(info ? `${LABEL}: ${state ?? "loaded"}${pid ? ` (pid ${pid})` : ""} · ${up.ok ? `answering at http://127.0.0.1:${port}${up.version ? ` · ${up.version}` : ""}` : `not answering on ${port} yet`}` : `${LABEL}: not installed (npm run account:service -- install --live-cap 20)`);
   }
 }
