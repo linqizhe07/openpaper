@@ -4,7 +4,7 @@
  *
  *   npm run account:backup                        writes ~/openpaper-backup-<today>.tgz, readable by you alone (0600)
  *   npm run account:backup -- --out <file>        writes it there instead
- *   npm run account:backup -- --home <dir>        the home to archive (default $BUYER_HOME or ~/.buyer-agent-demo)
+ *   npm run account:backup -- --home <dir>        the home to archive (default $OPENPAPER_HOME or ~/.openpaper)
  *
  * To restore: unpack it somewhere and start the account there — `npm run account -- --home <that folder>` — or, with the account and its
  * service stopped, unpack it over the home. The archive holds your venue keys: keep it where only you can read it, and off shared drives.
@@ -18,7 +18,7 @@ import { type Flag, parseFlags } from "./cli.ts";
 import { defaultHome } from "./home.ts";
 
 export const BACKUP_FLAGS: readonly Flag[] = [
-  { name: "home", value: "dir", help: "the home to archive", default: "$BUYER_HOME, else ~/.buyer-agent-demo" },
+  { name: "home", value: "dir", help: "the home to archive", default: "$OPENPAPER_HOME, else ~/.openpaper" },
   { name: "out", value: "dir", help: "the archive to write", default: "~/openpaper-backup-<today>.tgz" },
   { name: "help", help: "this list" },
 ];

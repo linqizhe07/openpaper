@@ -186,7 +186,7 @@ import { parseEventSymbol } from "./events.ts";
 import { sessionFrom } from "./openness.ts";
 import type { OrderPlan } from "./router.ts";
 import { isPending, loadOpenness, PortfolioService } from "./service.ts";
-import { defaultHome } from "./home.ts";
+import { defaultHome, homeNote } from "./home.ts";
 import { DEFAULT_CAP_USD, DEFAULT_PORT, parseFlags, SERVER_FLAGS, SERVER_USAGE } from "./cli.ts";
 import { commit as commitSha, VERSION, versionLine } from "./version.ts";
 import { pairingCode } from "./account/pairing.ts";
@@ -1181,7 +1181,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   // a real account continues its earlier runs — the owner's device, the venues, the agents and their limits come back (account/restore.ts);
   // --fresh starts it from nothing
   const fresh = opts.has("fresh");
-  const service = await PortfolioService.create({ home: opts.get("home") ?? defaultHome(), live, fresh, ...(liveWrites ? { liveWrites } : {}), ...(code ? { pairingCode: code } : {}), ...(classic ? {} : { venues: "frontline" as const, real: true, openness }) });
+  const home = opts.get("home") ?? defaultHome();
+  // an earlier version's folder name: the account goes on using it, and says how to move it
+  const note = homeNote(home);
+  if (note) console.log(note);
+  const service = await PortfolioService.create({ home, live, fresh, ...(liveWrites ? { liveWrites } : {}), ...(code ? { pairingCode: code } : {}), ...(classic ? {} : { venues: "frontline" as const, real: true, openness }) });
   const srv = await startPortfolioServer({ port, service }).catch((e: NodeJS.ErrnoException) => {
     if (e.code !== "EADDRINUSE") throw e;
     // the usual reason: this server is already running in another terminal

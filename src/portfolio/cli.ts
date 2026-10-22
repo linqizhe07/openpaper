@@ -15,7 +15,7 @@ export interface Flag {
   default?: string;
 }
 
-const HOME_DEFAULT = "$BUYER_HOME, else ~/.buyer-agent-demo";
+const HOME_DEFAULT = "$OPENPAPER_HOME, else ~/.openpaper (an earlier version's ~/.buyer-agent-demo is kept in use)";
 
 /** `npm run account -- …` (src/portfolio/server.ts) */
 export const SERVER_FLAGS: readonly Flag[] = [
@@ -60,7 +60,8 @@ export interface EnvVar {
 
 /** every environment variable the account reads, with where */
 export const ENV_VARS: readonly EnvVar[] = [
-  { name: "BUYER_HOME", help: "the home directory when --home is not given", where: "home.ts", service: true },
+  { name: "OPENPAPER_HOME", help: "the home directory when --home is not given", where: "home.ts", service: true },
+  { name: "BUYER_HOME", help: "the earlier name of OPENPAPER_HOME, still honoured", where: "home.ts", service: true },
   { name: "SEC_CONTACT", help: "your email address: the SEC asks every EDGAR reader to send one; without it a US share's Financials are off", where: "live/edgar.ts", service: true },
   { name: "PORTFOLIO_URL", help: "where an MCP seat finds the account (default http://127.0.0.1:4820)", where: "mcp.ts", service: false },
   { name: "PORTFOLIO_AGENT", help: "the seat's name when the MCP client sends none", where: "mcp.ts", service: false },

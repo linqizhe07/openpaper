@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeLine, LABEL, manager, plan, planSystemd, quoteUnit, rotateLogs, stillLeaving, tryAgain, unquoteUnit, untilGone } from "../../src/portfolio/account-service.ts";
+import { codeLine, LABEL, manager, OLD_LABELS, plan, planSystemd, quoteUnit, rotateLogs, stillLeaving, tryAgain, unquoteUnit, untilGone } from "../../src/portfolio/account-service.ts";
 
 /** The LaunchAgent that keeps the account up for agents: what launchd is told to run, and what it is not given */
 describe("the account as a background service", () => {
@@ -181,5 +181,21 @@ describe("log rotation", () => {
     expect(rotateLogs(["/l/account.log", "/l/account.err.log", "/l/none.log"], { maxBytes: 5_000_000, keep: 3, fs: f.fs })).toEqual(["/l/account.log"]);
     expect(f.moves).toEqual(["rm /l/account.log.3", "/l/account.log.2 → /l/account.log.3", "/l/account.log.1 → /l/account.log.2", "/l/account.log → /l/account.log.1"]);
     expect(f.files).toEqual({ "/l/account.log.1": 6_000_000, "/l/account.log.2": 10, "/l/account.log.3": 20, "/l/account.err.log": 100 });
+  });
+});
+
+/** The service's name followed the project's: the earlier label is still known, so install and uninstall take an earlier version's service out */
+describe("the service's name", () => {
+  it("is com.openpaper.account, with the earlier label kept for taking an old install out", () => {
+    expect(LABEL).toBe("com.openpaper.account");
+    expect(OLD_LABELS).toEqual(["com.buyer-agent-demo.account"]);
+    expect(plan([], { node: "/n", root: "/r", home: "/h", env: {} }).path).toMatch(/\/Library\/LaunchAgents\/com\.openpaper\.account\.plist$/);
+    expect(planSystemd([], { node: "/n", root: "/r", home: "/h", env: { HOME: "/home/me" } }).path).toBe("/home/me/.config/systemd/user/com.openpaper.account.service");
+  });
+
+  it("carries OPENPAPER_HOME as it carries BUYER_HOME", () => {
+    const p = plan([], { node: "/n", root: "/r", home: "/h", env: { OPENPAPER_HOME: "/h2", BUYER_HOME: "/h1" } });
+    expect(p.plist).toContain("<key>OPENPAPER_HOME</key><string>/h2</string>");
+    expect(p.plist).toContain("<key>BUYER_HOME</key><string>/h1</string>");
   });
 });
