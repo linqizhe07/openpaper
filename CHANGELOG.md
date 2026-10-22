@@ -33,6 +33,7 @@ link there.
 - The page calls itself openpaper: its title, the rail's brand with the ring for a mark, and the tab's icon. [#27](https://github.com/linqizhe07/openpaper/pull/27)
 - The left rail keeps watch from any tab: the markets starred, priced fresh every five seconds; the books in a line each (open orders, positions and what they are up or down, the paper result); the stream's dot beside the clock; how many agents. [#28](https://github.com/linqizhe07/openpaper/pull/28)
 - One hand of motion and bolder colour for a move: a price's tick fades, a press is felt, menus and toasts arrive, a 24h move is a chip in its colour, the live dot breathes; a move too small for its figures reads flat. [#30](https://github.com/linqizhe07/openpaper/pull/30)
+- Why beside every trade of the superagent's: Search's thesis and Risk's reason under each entry in What it did, on the banners, in the chart's marks, in a Why column of the positions and on the cards, and the fill line says bought or sold; on paper a seat's trading limit is the whole balance an order and fifty balances a day, and the form's risk per lead starts at 10%. [#31](https://github.com/linqizhe07/openpaper/pull/31)
 
 ## v0.1.0 — 2026-10-22
 
