@@ -1,84 +1,84 @@
 {
   "asOf": "2026-10-11",
-  "source": "https://api.github.com/repos/linqizhe07/buyer-agent-demo/pulls?state=closed",
+  "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
       "number": 15,
       "title": "Markets: a row is one line — a market's short name, the rest in its hover card",
       "mergedAt": "2026-10-10T20:48:11Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/15"
+      "url": "https://github.com/linqizhe07/account/pull/15"
     },
     {
       "number": 14,
       "title": "Order ticket: list the venues that answer this network, say nothing of the rest",
       "mergedAt": "2026-10-10T19:40:06Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/14"
+      "url": "https://github.com/linqizhe07/account/pull/14"
     },
     {
       "number": 13,
       "title": "Connect an account, and after: a venue's answer to this network never decides the account's structure, and is a state, not an error",
       "mergedAt": "2026-10-10T19:39:54Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/13"
+      "url": "https://github.com/linqizhe07/account/pull/13"
     },
     {
       "number": 10,
       "title": "Account: round 7's look, and Memory as the canvas's F13",
       "mergedAt": "2026-10-10T13:38:27Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/10"
+      "url": "https://github.com/linqizhe07/account/pull/10"
     },
     {
       "number": 11,
       "title": "Account: what the user's own network, IP and place do to it — the IP audit's 125 findings fixed",
       "mergedAt": "2026-10-10T13:34:52Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/11"
+      "url": "https://github.com/linqizhe07/account/pull/11"
     },
     {
       "number": 9,
       "title": "README and COOKBOOK: after the location-neutral Account",
       "mergedAt": "2026-10-09T19:40:58Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/9"
+      "url": "https://github.com/linqizhe07/account/pull/9"
     },
     {
       "number": 8,
       "title": "Location-neutral Account: each user gets every venue that serves them, detected from their own network",
       "mergedAt": "2026-10-08T22:32:42Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/8"
+      "url": "https://github.com/linqizhe07/account/pull/8"
     },
     {
       "number": 7,
       "title": "Connect an account: say which venues refuse this location before a key is made",
       "mergedAt": "2026-10-07T19:47:54Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/7"
+      "url": "https://github.com/linqizhe07/account/pull/7"
     },
     {
       "number": 6,
       "title": "Account: always on for agents, and a desktop wallet (Portfolio · Markets · Trade)",
       "mergedAt": "2026-10-07T17:12:51Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/6"
+      "url": "https://github.com/linqizhe07/account/pull/6"
     },
     {
       "number": 5,
       "title": "Account: real trading at every connected venue, cross-chain moves, price comparison, statement",
       "mergedAt": "2026-10-05T21:36:59Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/5"
+      "url": "https://github.com/linqizhe07/account/pull/5"
     },
     {
       "number": 4,
       "title": "Account layer: live venues follow the key's own permissions; Robinhood connected",
       "mergedAt": "2026-10-05T16:18:18Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/4"
+      "url": "https://github.com/linqizhe07/account/pull/4"
     },
     {
       "number": 3,
       "title": "Account layer: signed instructions on ten venues, four agent payment protocols, plug-and-play exchange wallets",
       "mergedAt": "2026-10-05T15:03:35Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/3"
+      "url": "https://github.com/linqizhe07/account/pull/3"
     },
     {
       "number": 2,
       "title": "Portfolio manager: DEX venues, order splitting, prediction markets, English UI",
       "mergedAt": "2026-10-03T23:02:19Z",
-      "url": "https://github.com/linqizhe07/buyer-agent-demo/pull/2"
+      "url": "https://github.com/linqizhe07/account/pull/2"
     }
   ]
 }

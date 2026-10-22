@@ -38,7 +38,7 @@ describe("npm run demo (headless)", () => {
   let code: number | null = null;
 
   beforeAll(async () => {
-    home = mkdtempSync(join(tmpdir(), "buyer-agent-demo-"));
+    home = mkdtempSync(join(tmpdir(), "openpaper-"));
     await new Promise<void>((resolve) => {
       const child = spawn("npx", ["tsx", "src/runner/run-demo.ts", "--home", home], {
         cwd: ROOT,

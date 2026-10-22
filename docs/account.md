@@ -241,7 +241,7 @@ Robinhood 的三条线都是它自己发布的接口（2026-10-05 读）：股�
 
 ## 页面和 agent 面
 
-公开介绍页在仓库的 `site/`（GitHub Pages：https://linqizhe07.github.io/buyer-agent-demo/ ），见 [README.zh.md](README.zh.md)「网站」；它的数字从仓库算出，行情由访客浏览器自己读。
+公开介绍页在仓库的 `site/`（GitHub Pages：https://linqizhe07.github.io/openpaper/ ），见 [README.zh.md](README.zh.md)「网站」；它的数字从仓库算出，行情由访客浏览器自己读。
 
 `/`（`/account` 也跳到这里）就是 Account：一个桌面钱包，左边一条 rail，右边是当前的那一屏。
 

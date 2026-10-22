@@ -1,4 +1,4 @@
-/* Gravit — Hyperliquid's page grammar: a light ground, deep-green instruments and bands, mint for what is live or pressed, a serif
+/* openpaper — Hyperliquid's page grammar: a light ground, deep-green instruments and bands, mint for what is live or pressed, a serif
    for what is said, mono for readouts. Every colour is a token below. What moves runs on one frame loop in main.js and stops under
    prefers-reduced-motion. */
 
@@ -219,16 +219,6 @@ h2.on-deep { color: var(--on-deep); }
 @media (max-width: 860px) { .three { grid-template-columns: 1fr; } }
 
 /* ---- rows ---- */
-.rows { border-top: 1px solid var(--line); }
-.row { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 18px; padding: 18px 8px; border-bottom: 1px solid var(--line); transition: background-color 120ms ease-out; }
-.row:hover { background: var(--white); }
-.row .ava { width: 36px; height: 36px; border-radius: 10px; background: var(--surface); display: grid; place-items: center; font: 700 14px/1 var(--sans); color: var(--ink); }
-.row .ava.mint { background: var(--mint); }
-.row .name { font: 600 16px/1.2 var(--sans); letter-spacing: -0.01em; }
-.row .what { font-size: 14px; color: var(--ink-70); margin-top: 3px; }
-.row .path { font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-45); }
-.row .arr { color: var(--green); font-weight: 600; }
-@media (max-width: 640px) { .row { grid-template-columns: 1fr auto; } .row .ava { display: none; } }
 
 /* ---- progress (timeline) ---- */
 .timeline { border-left: 1px solid var(--line); margin-left: 6px; }
@@ -252,7 +242,7 @@ h2.on-deep { color: var(--on-deep); }
 .faq details p { padding: 0 0 18px; font-size: 15px; line-height: 1.55; color: var(--ink-70); max-width: 70ch; }
 
 /* ---- footer ---- */
-.wordmark { width: min(var(--wrap), 100% - 2 * var(--gutter)); margin: 0 auto; padding: clamp(24px, 4vw, 48px) 0 0; font: 400 clamp(84px, 19vw, 268px)/0.82 var(--serif); letter-spacing: -0.045em; color: var(--ink); white-space: nowrap; overflow: hidden; }
+.wordmark { width: min(var(--wrap), 100% - 2 * var(--gutter)); margin: 0 auto; padding: clamp(24px, 4vw, 48px) 0 0; font: 400 clamp(64px, 13.5vw, 196px)/0.82 var(--serif); letter-spacing: -0.045em; color: var(--ink); white-space: nowrap; overflow: hidden; }
 .wordmark i { font-style: italic; color: var(--green); }
 .foot { background: var(--deep); color: var(--on-deep); padding: clamp(40px, 6vw, 64px) 0 32px; }
 .foot .top { display: grid; grid-template-columns: 1fr auto auto auto; gap: clamp(28px, 6vw, 96px); }

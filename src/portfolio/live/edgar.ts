@@ -51,7 +51,7 @@ export const SEC_CONTACT_WORDS = "The SEC asks every reader of EDGAR to say who 
  * asked then) */
 export function secUserAgent(env: Record<string, string | undefined> = process.env): string | undefined {
   const contact = (env.SEC_CONTACT ?? "").trim();
-  return EMAIL.test(contact) ? `Gravit buyer-agent-demo ${contact}` : undefined;
+  return EMAIL.test(contact) ? `openpaper ${contact}` : undefined;
 }
 
 /** one period as a filing reports it, with the figures the three concepts give for it (each only where the filing tagged one) */

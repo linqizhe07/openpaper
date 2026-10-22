@@ -1,4 +1,4 @@
-/** WHAT EACH AGENT REMEMBERS ABOUT YOU, kept by the account — the Demo v2 canvas's F13 ("Account › Memory: what Gravit remembers about
+/** WHAT EACH AGENT REMEMBERS ABOUT YOU, kept by the account — the Demo v2 canvas's F13 ("Account › Memory: what openpaper remembers about
  * you"). An agent that comes back (a new session, a restart, another program holding the same seat) reads it again; the owner reads every
  * word of it on the page, changes it, forgets it, and decides with three switches what an agent may add.
  *

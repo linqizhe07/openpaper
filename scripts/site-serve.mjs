@@ -1,12 +1,12 @@
-// Local preview of site/ the way GitHub Pages serves it: under /buyer-agent-demo/, 404.html for a miss. `npm run site`, then open
-// http://127.0.0.1:4870/buyer-agent-demo/ (a file:// page has a null origin, which the public quote APIs refuse).
+// Local preview of site/ the way GitHub Pages serves it: under /openpaper/, 404.html for a miss. `npm run site`, then open
+// http://127.0.0.1:4870/openpaper/ (a file:// page has a null origin, which the public quote APIs refuse).
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SITE = fileURLToPath(new URL("../site/", import.meta.url));
-const BASE = "/buyer-agent-demo/";
+const BASE = "/openpaper/";
 const PORT = Number(process.env.PORT ?? 4870);
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".webp": "image/webp", ".png": "image/png", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".ico": "image/x-icon" };
 

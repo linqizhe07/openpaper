@@ -236,7 +236,7 @@ function landsOf(p: PaymentLite): Record<string, unknown> {
   return p.live.tool && typeof eta === "number" && eta > 0 ? { etaSec: eta, expectedBy: new Date(Date.parse(p.at) + eta * 1000).toISOString() } : {};
 }
 
-const server = new McpServer({ name: "agent-portfolio-manager", version: "0.1.0" });
+const server = new McpServer({ name: "openpaper", version: "0.1.0" });
 /** whether the service holds real accounts only: learnt once, before the tools are registered, so the simulation's are not offered there */
 const REAL = await real();
 
@@ -1205,4 +1205,4 @@ if (!REAL) {
 }
 
 await server.connect(new StdioServerTransport());
-process.stderr.write(`[agent-portfolio-manager] up (stdio) → ${BASE} · this seat signs with ${process.env.PORTFOLIO_SEAT_KEYS === "sim" ? "a key derived from its name (agent:<name>, PORTFOLIO_SEAT_KEYS=sim)" : "its own key, kept in <home>/seats"}; the owner authorises it on the Account page\n`);
+process.stderr.write(`[openpaper] up (stdio) → ${BASE} · this seat signs with ${process.env.PORTFOLIO_SEAT_KEYS === "sim" ? "a key derived from its name (agent:<name>, PORTFOLIO_SEAT_KEYS=sim)" : "its own key, kept in <home>/seats"}; the owner authorises it on the Account page\n`);
