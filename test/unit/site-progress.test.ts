@@ -1,21 +1,25 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isFresh, mergedInHistory, mergedOrder, newestMerge, orderByHistory, PROGRESS_FILE, REPO, type Merged, type Progress } from "../../scripts/site-progress.ts";
+import { historyRank, isFresh, mergedOrder, mergeRef, newestMerge, orderByHistory, PROGRESS_FILE, REPO, type Merged, type Progress } from "../../scripts/site-progress.ts";
 
 /** The site's baked Progress list: the check that keeps it fresh reads the newest merge commit, number and branch, and no network. */
 describe("the site's progress file", () => {
   const log = "Merge pull request #2 from linqizhe07/ci/typecheck-and-tests\nMerge pull request #1 from linqizhe07/chore/rename-openpaper\nMerge pull request #45 from linqizhe07/fix/from-zero-beta\n";
 
-  it("reads the newest merge's number and branch from the log, and nothing from a log without merges", () => {
+  it("reads the newest merge's number and branch from the log — the branch alone where a hand-written subject has no number — and nothing from a log without merges", () => {
     expect(newestMerge(log)).toEqual({ number: 2, branch: "ci/typecheck-and-tests" });
+    expect(newestMerge("Merge pull request # from linqizhe07/fix/by-hand\n" + log)).toEqual({ branch: "fix/by-hand" });
+    expect(mergeRef("The project is openpaper")).toBeUndefined();
     expect(newestMerge("The project is openpaper\nA changelog and a version\n")).toBeUndefined();
     expect(newestMerge("")).toBeUndefined();
   });
 
-  it("names every merge in the log by number and branch, newest first, so the earlier home's list is kept to what this history merged", () => {
-    expect(mergedOrder(log)).toEqual(["2|ci/typecheck-and-tests", "1|chore/rename-openpaper", "45|fix/from-zero-beta"]);
-    expect(mergedInHistory(log)).toEqual(new Set(["2|ci/typecheck-and-tests", "1|chore/rename-openpaper", "45|fix/from-zero-beta"]));
-    expect(mergedInHistory("nothing merged\n").size).toBe(0);
+  it("names every merge in the log, newest first, so the earlier home's list is kept to what this history merged — by branch and number, by branch alone where the subject has none, by number alone for an entry baked without a branch", () => {
+    expect(mergedOrder(log)).toEqual([{ number: 2, branch: "ci/typecheck-and-tests" }, { number: 1, branch: "chore/rename-openpaper" }, { number: 45, branch: "fix/from-zero-beta" }]);
+    expect(mergedOrder("nothing merged\n")).toEqual([]);
+    const order = mergedOrder("Merge pull request # from linqizhe07/fix/by-hand\n" + log);
+    const e = (number: number, branch?: string): Merged => ({ number, title: "t", mergedAt: "2026-10-22T00:00:00Z", url: "u", ...(branch ? { branch } : {}) });
+    expect([historyRank(e(26, "fix/by-hand"), order), historyRank(e(2, "ci/typecheck-and-tests"), order), historyRank(e(2), order), historyRank(e(2, "fix/other"), order), historyRank(e(7, "feat/elsewhere"), order), historyRank(e(26), order)]).toEqual([0, 1, 1, 4, 4, 4]);
   });
 
   it("orders the list as the history merged them — not by GitHub's merge time, which is one time for a batch pushed at once — the ones the history does not name last, by their time", () => {
@@ -43,6 +47,10 @@ describe("the site's progress file", () => {
     expect(isFresh(file(entry(2)), newest)).toBe(true);
     expect(isFresh(file(), newest)).toBe(false);
     expect(isFresh(file(), undefined)).toBe(true);
+    // a merge whose subject lost its number: its branch decides, and an entry without a branch cannot match it
+    expect(isFresh(file(entry(25, "fix/by-hand")), { branch: "fix/by-hand" })).toBe(true);
+    expect(isFresh(file(entry(24, "feat/shortcuts-sheet")), { branch: "fix/by-hand" })).toBe(false);
+    expect(isFresh(file(entry(25)), { branch: "fix/by-hand" })).toBe(false);
   });
 
   it("the committed file has the shape the page reads, newest first, and its source is this repository", () => {
