@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,6 +18,21 @@ describe("Ledger", () => {
     const reloaded = new Ledger(file, () => "t");
     expect(reloaded.verifyChain()).toEqual({ ok: true, rows: 2 });
     expect(reloaded.all()[1]!.prev).toBe(reloaded.all()[0]!.hash);
+  });
+
+  it("keeps the file for the user alone: made 0600 in a 0700 directory, and one made earlier with wider bits is tightened on the first write", () => {
+    if (process.platform === "win32") return;
+    const file = join(dir, "portfolio", "ledger.jsonl");
+    new Ledger(file, () => "t").append({ kind: "intent", venue: "v", intentId: "i1" });
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, "portfolio")).mode & 0o777).toBe(0o700);
+    // a ledger an earlier version wrote with the process's default bits
+    const old = join(dir, "old.jsonl");
+    writeFileSync(old, "", { mode: 0o644 });
+    chmodSync(old, 0o644);
+    expect(statSync(old).mode & 0o777).toBe(0o644);
+    new Ledger(old, () => "t").append({ kind: "intent", venue: "v", intentId: "i2" });
+    expect(statSync(old).mode & 0o777).toBe(0o600);
   });
 
   it("detects a tampered row", () => {

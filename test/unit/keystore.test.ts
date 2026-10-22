@@ -37,6 +37,25 @@ describe("the keys this machine keeps", () => {
     expect(!isRefusal(other) && other.address).not.toBe(k.address);
   });
 
+  it("on Windows, where a file's mode bits mean nothing, reads its own key file whatever they say (as live/credentials.ts does)", () => {
+    const h = home();
+    const made = seatKey(h, "Windows seat");
+    if (isRefusal(made)) throw new Error(made.message);
+    const path = seatKeyPath(h, "Windows seat");
+    chmodSync(path, 0o644);
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+    try {
+      const again = seatKey(h, "Windows seat");
+      if (isRefusal(again)) throw new Error(again.message);
+      expect(again.address).toBe(made.address);
+    } finally {
+      Object.defineProperty(process, "platform", platform);
+    }
+    // and here, with the bits as they are, it is still refused
+    expect(isRefusal(seatKey(h, "Windows seat"))).toBe(true);
+  });
+
   it("does not sign with a key file others can read, or one it did not write — and does not quietly replace it either", () => {
     const h = home();
     const k = agentWalletKey(h, "research");
