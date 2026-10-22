@@ -197,7 +197,7 @@ describe("the account page's scripts", () => {
     expect(b.stored).toEqual(["account.theme"]);
     // the shell and the contract it gives the panes
     const contract = ["render", "load", "own", "cancelOrder", "api", "forget", "refusalOf", "toast", "openSheet", "closeSheet", "openDrawer", "closeDrawer", "confirmSheet", "pickSheet", "whatYouSign", "quoteDialog", "paint", "go", "onRoute", "routed", "lensNow", "inLens", "chg", "avatar", "icon", "table", "seg", "field", "select", "formFields", "setOptions", "debounce", "thenLoad", "download", "copyText", "esc", "money", "fine", "px", "usd", "cents", "short", "qtyOf", "typeText", "isLive", "byOf", "readOnlyWords", "owns", "writesOn", "canTrade", "canMove", "isAgentWallet", "modeOf", "dollarsOf", "isDollar", "networksOf", "bridgeChainsOf", "walletFor", "mined"];
-    const mine = ["openStatement", "renderStatement", "openAgents", "openSettings", "openMode", "renderAgents", "renderDevices", "renderDial", "setMode", "setTheme", "drawThemeToggle", "toggleTheme", "copySetup", "downloadBalances", "lensMenu", "drawPane", "tradeModeLast", "setTradeMode"];
+    const mine = ["openStatement", "renderStatement", "openAgents", "openSettings", "openMode", "renderAgents", "renderDevices", "renderDial", "setMode", "setTheme", "drawThemeToggle", "toggleTheme", "copySetup", "shSearchesOf", "shSearchRemember", "shSearchesClear", "shPaletteRows", "shPaletteNext", "shPaletteDraw", "shPaletteRead", "shPaletteClose", "shPaletteChoose", "downloadBalances", "lensMenu", "drawPane", "tradeModeLast", "setTradeMode"];
     // what the other parts already define, and the shell calls
     const there = ["openPicker", "openConnect", "connectVia", "keyHowFor", "openLiveMove", "openAmend", "renderWallets", "openClose", "declineAsk"];
     const all = [...contract, ...mine, ...there];
@@ -222,6 +222,43 @@ describe("the account page's scripts", () => {
     // storage is off in this window: the choice held for the visit, and nothing threw
     expect(b.stored.filter((k) => k === "account.theme").length).toBeGreaterThan(1);
     expect(html).toMatch(/<button type="button" class="icon-btn" id="theme-toggle" aria-pressed="false" aria-label="Switch to the Black background"/);
+  });
+
+  it("the search palette: the matches as rows under the box, the recent searches while it is empty, and the keys that walk them", () => {
+    const b = browser();
+    // the matches, as Markets names a market, escaped; an event in cents; eight at most
+    const item = (i: number, extra: Record<string, unknown> = {}) => ({ key: `coin:X${i}`, kind: "coin", name: `Coin <${i}>`, base: `X${i}`, price: 10 + i, changePct24h: 1.5, at: [{ venue: "ex", venueName: "Exchange X", symbol: `X${i}/USDT`, connected: true, public: false, canTrade: true }], ...extra });
+    b.run(`var BODY = ${JSON.stringify({ ok: true, items: [...Array(10).keys()].map((i) => item(i)) })}`);
+    const rows = String(b.run('shPaletteRows(BODY, "x")'));
+    expect(rows.match(/<button type="button" role="option" data-pal-i="\d+">/g)).toHaveLength(8);
+    expect(rows).toContain("<b>Coin &lt;0&gt;</b>");
+    expect(rows).toContain("Exchange X");
+    expect(rows).toContain("$10.00");
+    expect(rows).not.toContain("<1>");
+    const ev = String(b.run(`shPaletteRows({ ok: true, items: [${JSON.stringify(item(0, { kind: "event", name: "Fed cuts?", outcomes: [{ label: "YES", price: 0.62, at: [] }] }))}] }, "fed")`));
+    expect(ev).toContain("62¢");
+    // nothing, and a read on its way
+    expect(b.run('shPaletteRows({ ok: true, items: [] }, "zzz")')).toContain("Nothing matches “zzz”");
+    expect(b.run('shPaletteRows(null, "zzz")')).toContain("Looking…");
+    // the box empty: a hint while nothing is remembered (storage is off in this window, and remembering throws nothing)
+    expect(b.run("shSearchRemember('btc'); shPaletteRows(null, '')")).toContain("Type to search markets");
+    // with storage: newest first, once whatever the case, eight at most, sixty characters at most; Clear forgets them
+    b.run("var STORE = {}; localStorage = { getItem: (k) => (k in STORE ? STORE[k] : null), setItem: (k, v) => { STORE[k] = v; }, removeItem: (k) => { delete STORE[k]; } }");
+    b.run("for (const q of ['BTC', 'eth', 'btc', 'sol', 'a', 'b', 'c', 'd', 'e', 'f']) shSearchRemember(q); shSearchRemember(' ' + 'x'.repeat(80) + ' ')");
+    expect(b.run("shSearchesOf()")).toEqual(["x".repeat(60), "f", "e", "d", "c", "b", "a", "sol"]);
+    expect(b.run("shSearchRemember('SOL'); shSearchesOf()[0]")).toBe("SOL");
+    expect(b.run("shSearchesOf().filter((s) => s.toLowerCase() === 'sol').length")).toBe(1);
+    const recent = String(b.run("shPaletteRows(null, '')"));
+    expect(recent).toContain('<div class="menu-h" role="presentation">Recent</div>');
+    expect(recent).toContain('data-pal-q="SOL"');
+    expect(recent).toContain("data-pal-clear");
+    expect(b.run("shSearchesClear(); shSearchesOf()")).toEqual([]);
+    // the keys: ↓ from the box to the first row; along the rows; ↑ from the first back to the box; Home and End; nothing else is the palette's
+    expect(b.run("[shPaletteNext('ArrowDown', 3, -1, true), shPaletteNext('ArrowUp', 3, -1, true), shPaletteNext('ArrowDown', 0, -1, true)]")).toEqual([0, null, null]);
+    expect(b.run("[shPaletteNext('ArrowDown', 3, 0, false), shPaletteNext('ArrowDown', 3, 2, false), shPaletteNext('ArrowUp', 3, 1, false), shPaletteNext('ArrowUp', 3, 0, false), shPaletteNext('Home', 3, 2, false), shPaletteNext('End', 3, 0, false), shPaletteNext('Enter', 3, 1, false)]")).toEqual([1, 2, 0, "input", 0, 2, null]);
+    // the page: the box is a combobox over the listbox the rows go in
+    expect(html).toMatch(/<input type="search" id="search" role="combobox" aria-expanded="false" aria-controls="search-menu" aria-autocomplete="list"/);
+    expect(html).toContain('<div class="menu search-menu" id="search-menu" role="listbox" aria-label="Search results" hidden></div>');
   });
 
   it("makes Trade one place in two modes: html[data-area] set in the area and taken away outside it, the switch pressed for the mode showing, the rail's Trade current in both, the mode kept only by the switch", () => {
