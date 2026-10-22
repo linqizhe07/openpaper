@@ -218,7 +218,7 @@ describe("the Markets pane", () => {
       asOf: new Date(NOW - 12_000).toISOString(),
       items: [
         { key: "btc", kind: "coin", name: "BTC", at: [leg("ex", "Stand-in Exchange", { connected: true, public: false, canTrade: true }), leg("kraken", "Kraken"), leg("okx", "OKX")] },
-        { key: "paper", kind: "coin", name: "ETH", at: [leg("paper-1", "Momentum", { connected: true, public: false, paper: true })] },
+        { key: "paper", kind: "coin", name: "ETH", at: [leg("paper-1", "Momentum · paper", { connected: true, public: false, paper: true })] },
         { key: "nvda", kind: "stock", name: "NVIDIA", quoteFrom: "Robinhood · real time", at: [leg("us", "US stocks", { quoteFrom: "Robinhood · real time" })] },
         { key: "aapl", kind: "stock", name: "Apple", quoteFrom: "Cboe · 15 min delayed", at: [leg("us", "US stocks")] },
         { key: "fed", kind: "event", name: "Fed?", at: [leg("kalshi", "Kalshi"), leg("poly", "Polymarket")] },
@@ -227,7 +227,7 @@ describe("the Markets pane", () => {
     p.set("BODY", body);
     const when = p.run<string>(`nyTime(${NOW - 12_000})`);
     const html = p.run<string>("mkAsOfHtml(BODY)");
-    expect(html).toContain(`Prices read ${when} New York (12 s old) · polled every 5 s while on screen · your venues: Stand-in Exchange · paper: Momentum · public lists: Kraken, OKX · US stocks: Robinhood · real time, Cboe · 15 min delayed where marked · predictions: Kalshi, Polymarket`);
+    expect(html).toContain(`Prices read ${when} New York · polled every 5 s while on screen · your venues: Stand-in Exchange · paper: Momentum · public lists: Kraken, OKX · US stocks: Robinhood · real time, Cboe · 15 min delayed where marked · predictions: Kalshi, Polymarket`);
     expect(html).toMatch(/^<p class="mk-asof" title="/);
     // on the push channel the line says so; with one stock source nothing is "where marked"; more than four names are counted
     p.run("stHealth = () => 'connected'");

@@ -742,7 +742,8 @@ function mkPulseHtml(body) {
 
 // ---- as of: one line over the list — when it was read, how it reaches the page, and whose prices these are -----------------------------
 
-/** THE AS-OF LINE: the read's time (the account's asOf) and its age, whether prices reach the page pushed on the account's channel or
+/** THE AS-OF LINE: the read's time (the account's asOf; not its age, since the line stands until the next draw), whether prices reach
+ * the page pushed on the account's channel or
  * polled every few seconds while on screen, then the venues behind the rows in groups — the owner's connected venues, the paper accounts,
  * the public lists (venues read without a key), the US stocks' sources in their own words ("where marked" once there is more than one, since
  * each price says its own) and the event venues. Only the groups the rows have, at most four names each. "" without a read */
@@ -759,14 +760,13 @@ function mkAsOfHtml(body) {
   const sources = new Set(legs.filter((a) => stock(a) && a.quoteFrom).map((a) => a.quoteFrom));
   const groups = [
     ["your venues", few(legs.filter((a) => a.connected && !a.paper).map((a) => a.venueName))],
-    ["paper", few(legs.filter((a) => a.paper).map((a) => a.venueName))],
+    ["paper", few(legs.filter((a) => a.paper).map((a) => String(a.venueName || "").replace(/ · paper$/i, "")))],
     ["public lists", few(legs.filter((a) => a.public && !a.connected && !stock(a) && !event(a)).map((a) => a.venueName))],
     ["US stocks", `${few([...sources])}${sources.size > 1 ? " where marked" : ""}`],
     ["predictions", few(legs.filter((a) => event(a) && !a.connected).map((a) => a.venueName))],
   ].filter(([, v]) => v && v !== " where marked");
   const at = Date.parse(body.asOf);
-  const age = Number.isFinite(at) ? ageWords(at) : "";
-  const when = Number.isFinite(at) ? `Prices read ${nyTime(at)} New York${age ? ` (${age})` : ""}` : "Prices read";
+  const when = Number.isFinite(at) ? `Prices read ${nyTime(at)} New York` : "Prices read";
   const how = typeof stHealth === "function" && stHealth() === "connected" ? "pushed live" : `polled every ${Math.round(MKT_POLL_MS / 1000)} s while on screen`;
   const line = [when, how, ...groups.map(([k, v]) => `${k}: ${v}`)].join(" · ");
   return `<p class="mk-asof" title="${esc(line)}">${esc(line)}</p>`;
