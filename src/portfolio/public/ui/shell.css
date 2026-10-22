@@ -498,7 +498,8 @@ dialog { color: var(--text); }
   .topbar .top-tools { display: contents; }
   .acct-h { order: 1; }
   .lens { order: 2; }
-  #open-statement { order: 3; margin-left: auto; }
+  #theme-toggle { order: 3; margin-left: auto; }
+  #open-statement { order: 3; }
   .acct-tools, .search { order: 4; flex-basis: 100%; }
   .acct-tabs { margin-top: -4px; }
   .acct-tabs .note-s { margin-left: 0; flex-basis: 100%; }
@@ -554,9 +555,9 @@ html, body { transition: background-color 0.2s ease-in-out; }
 :root[data-area="trade"] kbd { border-color: var(--hl-inset); font-weight: 400; }
 :root[data-area="trade"] .search .ico { width: 16px; height: 16px; }
 /* the Statement: HL's icon button, 32 square, an edge of the inset colour, the ground under the pointer */
-:root[data-area="trade"] #open-statement { width: 32px; height: 32px; border: 1px solid var(--hl-inset); border-radius: var(--hl-r); transition: background-color 0.1s ease-in-out; }
-:root[data-area="trade"] #open-statement .ico { width: 18px; height: 18px; }
-@media (hover: hover) { :root[data-area="trade"] #open-statement:hover:not(:disabled) { background: var(--hl-ground); } }
+:root[data-area="trade"] :is(#open-statement, #theme-toggle) { width: 32px; height: 32px; border: 1px solid var(--hl-inset); border-radius: var(--hl-r); transition: background-color 0.1s ease-in-out; }
+:root[data-area="trade"] :is(#open-statement, #theme-toggle) .ico { width: 18px; height: 18px; }
+@media (hover: hover) { :root[data-area="trade"] :is(#open-statement, #theme-toggle):hover:not(:disabled) { background: var(--hl-ground); } }
 /* pairing, a restart's notice: panels like any other */
 :root[data-area="trade"] :is(.banner, .notice) { background: var(--hl-glass); border: 0; border-radius: var(--hl-r-panel); box-shadow: inset 0 0 0 1px var(--card-border); padding: 10px 12px; font-size: 12px; line-height: 15px; -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass); }
 :root[data-area="trade"] .codeform input { height: var(--hl-h-control); border-color: var(--hl-inset); border-radius: var(--hl-r); background: transparent; font-size: 12px; }
@@ -705,7 +706,7 @@ html, body { transition: background-color 0.2s ease-in-out; }
   .btn, .icon-btn, .seg button, .seg a, .rkey, .tabs button, .rail-nav a, .rail-links button, .lens, .menu button, .picks button, .link, .t tr.click td, .tk-list button, .quick-card, .choice, .choice::after, .quick-card::after { transition: none; }
   .rail-nav.moves .rail-pill { transition: none; }
   /* the trading area: its switch cut, its menus and controls changing at once */
-  .ta-mode button, :root[data-area="trade"] :is(.lens, .search, .menu button, #open-statement), :where(:root[data-area="trade"] :is(.main, #modal, #drawer, #ask, .toast-stack)) :is(.btn, .link, .seg button, .seg a, .tabs button, .fld input, .fld select, .fld textarea) { transition: none; }
+  .ta-mode button, :root[data-area="trade"] :is(.lens, .search, .menu button, #open-statement, #theme-toggle), :where(:root[data-area="trade"] :is(.main, #modal, #drawer, #ask, .toast-stack)) :is(.btn, .link, .seg button, .seg a, .tabs button, .fld input, .fld select, .fld textarea) { transition: none; }
   /* the rail and the page behind it change colour at once as the area comes and goes */
   html, body, .rail, .rail-wallet, .rail-pill, .rail-nav.moves .rail-pill, .brand, .brand-mark, .rail .count, .rail .stamp, .rw-sub { transition: none; }
   :root[data-area="trade"] .menu { animation: none; }

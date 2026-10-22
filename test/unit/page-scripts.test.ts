@@ -197,7 +197,7 @@ describe("the account page's scripts", () => {
     expect(b.stored).toEqual(["account.theme"]);
     // the shell and the contract it gives the panes
     const contract = ["render", "load", "own", "cancelOrder", "api", "forget", "refusalOf", "toast", "openSheet", "closeSheet", "openDrawer", "closeDrawer", "confirmSheet", "pickSheet", "whatYouSign", "quoteDialog", "paint", "go", "onRoute", "routed", "lensNow", "inLens", "chg", "avatar", "icon", "table", "seg", "field", "select", "formFields", "setOptions", "debounce", "thenLoad", "download", "copyText", "esc", "money", "fine", "px", "usd", "cents", "short", "qtyOf", "typeText", "isLive", "byOf", "readOnlyWords", "owns", "writesOn", "canTrade", "canMove", "isAgentWallet", "modeOf", "dollarsOf", "isDollar", "networksOf", "bridgeChainsOf", "walletFor", "mined"];
-    const mine = ["openStatement", "renderStatement", "openAgents", "openSettings", "openMode", "renderAgents", "renderDevices", "renderDial", "setMode", "setTheme", "copySetup", "downloadBalances", "lensMenu", "drawPane", "tradeModeLast", "setTradeMode"];
+    const mine = ["openStatement", "renderStatement", "openAgents", "openSettings", "openMode", "renderAgents", "renderDevices", "renderDial", "setMode", "setTheme", "drawThemeToggle", "toggleTheme", "copySetup", "downloadBalances", "lensMenu", "drawPane", "tradeModeLast", "setTradeMode"];
     // what the other parts already define, and the shell calls
     const there = ["openPicker", "openConnect", "connectVia", "keyHowFor", "openLiveMove", "openAmend", "renderWallets", "openClose", "declineAsk"];
     const all = [...contract, ...mine, ...there];
@@ -206,6 +206,22 @@ describe("the account page's scripts", () => {
     const panes = ["renderPortfolio", "renderVenues", "renderMemory", "renderMarkets", "renderTrade", "openTicket", "openHandToAgent", "openReceive", "openAsset", "openMarket"];
     for (const p of panes) expect(["function", "undefined"], p).toContain(b.run(`typeof ${p}`));
     expect(b.run("[A, busy, flash, said, S.length, ROUTE.tab, view.lens]")).toEqual([null, false, "", "", 0, "portfolio", ""]);
+  });
+
+  it("flips the background from the top bar's toggle, which is pressed on Black and says which background a press switches to; Settings keeps the same choice", () => {
+    const b = browser();
+    b.run(`
+      var TOGGLE = { attrs: { "aria-pressed": "false" }, title: "", listeners: [], setAttribute(k, v) { this.attrs[k] = String(v); }, addEventListener(_t, fn) { this.listeners.push(fn); }, querySelector: (s) => (s === "use" ? USE : null) };
+      var USE = { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+      var real = document.getElementById;
+      document.getElementById = (id) => (id === "theme-toggle" ? TOGGLE : real(id));
+    `);
+    expect(b.run("setTheme('cream'); [document.documentElement.dataset.theme, TOGGLE.attrs['aria-pressed'], TOGGLE.attrs['aria-label'], TOGGLE.title, USE.attrs.href]")).toEqual(["cream", "false", "Switch to the Black background", "Black background", "#i-moon"]);
+    expect(b.run("toggleTheme(); [document.documentElement.dataset.theme, TOGGLE.attrs['aria-pressed'], TOGGLE.attrs['aria-label'], TOGGLE.title, USE.attrs.href]")).toEqual(["black", "true", "Switch to the Light background", "Light background", "#i-sun"]);
+    expect(b.run("toggleTheme(); document.documentElement.dataset.theme")).toBe("cream");
+    // storage is off in this window: the choice held for the visit, and nothing threw
+    expect(b.stored.filter((k) => k === "account.theme").length).toBeGreaterThan(1);
+    expect(html).toMatch(/<button type="button" class="icon-btn" id="theme-toggle" aria-pressed="false" aria-label="Switch to the Black background"/);
   });
 
   it("makes Trade one place in two modes: html[data-area] set in the area and taken away outside it, the switch pressed for the mode showing, the rail's Trade current in both, the mode kept only by the switch", () => {

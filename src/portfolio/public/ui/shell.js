@@ -386,7 +386,7 @@ $("open-statement").addEventListener("click", () => A && openStatement());
 
 // ---- the rail ---------------------------------------------------------------------------------
 
-/* the background, kept in this browser (account.html reads it before the first paint) */
+/* the background, kept in this browser (account.html reads it before the first paint); the top bar's toggle follows it */
 function setTheme(t) {
   const v = t === "black" ? "black" : "cream";
   document.documentElement.dataset.theme = v;
@@ -395,8 +395,25 @@ function setTheme(t) {
   } catch {
     // a private window: the choice holds for this visit only
   }
+  drawThemeToggle(v);
+}
+/* the top bar's sun or moon: pressed on Black, and saying which background a press switches to (Settings → Background keeps the same choice) */
+function drawThemeToggle(v) {
+  const b = $("theme-toggle");
+  if (!b) return;
+  const black = v === "black";
+  b.setAttribute("aria-pressed", String(black));
+  b.setAttribute("aria-label", black ? "Switch to the Light background" : "Switch to the Black background");
+  b.title = black ? "Light background" : "Black background";
+  const use = b.querySelector && b.querySelector("use");
+  if (use) use.setAttribute("href", black ? "#i-sun" : "#i-moon");
+}
+/* one press: the other background */
+function toggleTheme() {
+  setTheme(document.documentElement.dataset.theme === "black" ? "cream" : "black");
 }
 setTheme(document.documentElement.dataset.theme);
+$("theme-toggle").addEventListener("click", toggleTheme);
 /* the Mode sheet: what each mode does, door by door — opened from here and nowhere else */
 $("mode-more").addEventListener("click", () => A && openMode());
 /* Agents: the desk pane (ui/desk.js), where every agent is reached from — the sheet (openAgents, agents-mount.js) opens from there */

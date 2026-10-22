@@ -39,6 +39,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
   <symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3" /><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6" /></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" /></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h8" /></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
@@ -107,6 +109,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
           <button type="button" class="btn btn-sm btn-ghost" id="sign-out" hidden title="This browser stops signing for the account, and its key is deleted here">Sign out</button>
         </div>
         <form class="search" id="search-form" role="search" data-live data-only="trading"><svg class="ico" aria-hidden="true"><use href="#i-search"></use></svg><label class="sr" for="search">Search markets, assets, agents</label><input type="search" id="search" placeholder="Search markets, assets, agents" autocomplete="off" spellcheck="false" /><kbd aria-hidden="true">/</kbd></form>
+        <button type="button" class="icon-btn" id="theme-toggle" aria-pressed="false" aria-label="Switch to the Black background" title="Black background"><svg class="ico lg" aria-hidden="true"><use href="#i-moon"></use></svg></button>
         <button type="button" class="icon-btn" id="open-statement" aria-label="Statement" title="Statement"><svg class="ico lg" aria-hidden="true"><use href="#i-clock"></use></svg></button>
       </div>
     </header>
