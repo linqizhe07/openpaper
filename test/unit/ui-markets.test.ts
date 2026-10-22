@@ -927,7 +927,7 @@ describe("the one drawer", () => {
     expect(html).toContain("<dt>Volume 24h</dt><dd>$1.9B</dd>");
     expect(html).not.toContain('data-act="rekey"');
     // the parts, each in its own element, in the brief's order
-    expect([...html.matchAll(/data-sec="([a-z]+)"/g)].map((m) => m[1])).toEqual(["head", "chart", "alerts", "across", "financials", "ipo", "held", "agents", "lines"]);
+    expect([...html.matchAll(/data-sec="([a-z]+)"/g)].map((m) => m[1])).toEqual(["head", "chart", "alerts", "across", "company", "financials", "ipo", "held", "agents", "lines"]);
     expect(html.indexOf('aria-label="Across venues"')).toBeLessThan(html.indexOf('aria-label="You hold"'));
     expect(html.indexOf('aria-label="You hold"')).toBeLessThan(html.indexOf('aria-label="Agents on it"'));
     expect(html.indexOf('aria-label="Agents on it"')).toBeLessThan(html.indexOf('aria-label="On the statement"'));
@@ -1747,6 +1747,53 @@ describe("the drawer's Financials from SEC EDGAR", () => {
     parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
     expect(parts.financials).toContain('<p class="mk-quiet">The SEC asks every reader of EDGAR to say who they are and how to reach them: start the account with SEC_CONTACT set to your email address, and this reads the company&#39;s own filings.</p>');
     expect(parts.financials).not.toContain("Filings at the SEC");
+  });
+
+  it("the Company part: a US share's drawer reads the company's record once, shows the record's facts, its latest reports and its newest filings as links, and says it reads no news site", async () => {
+    const CO = {
+      ok: true, symbol: "AAPL", cik: "0000320193", name: "Apple Inc.", tickers: ["AAPL"], exchanges: ["Nasdaq"], sic: "3571", sicDescription: "Electronic Computers",
+      fiscalYearEnd: { month: 9, day: 27, words: "September 27" }, stateOfIncorporation: "CA", stateOfIncorporationWords: "CA", website: "https://www.apple.com/", investorWebsite: "https://investor.apple.com", category: "Large accelerated filer",
+      latest: { annual: { form: "10-K", filed: "2025-10-31", reportDate: "2025-09-27", description: "10-K", url: "https://www.sec.gov/Archives/edgar/data/320193/000032019325000123/aapl-20250927.htm", indexUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019325000123/" }, quarterly: { form: "10-Q", filed: "2026-07-31", description: "10-Q", url: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000081/aapl-20260627.htm", indexUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000081/" } },
+      filings: [{ form: "8-K", filed: "2026-07-30", description: "results of operations, exhibits", items: ["2.02", "9.01"], url: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000063/aapl-20260730.htm", indexUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000063/" }, { form: "4", filed: "2026-07-01", description: "FORM 4 <b>x</b>", url: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000050/x.xml", indexUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000050/" }, { form: "10-Q", filed: "2026-05-01", description: "10-Q", url: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000041/aapl-20260328.htm", indexUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000041/" }, { form: "4", filed: "2026-04-02", description: "FORM 4", url: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000030/xslF345X05/wk-form4_1.xml", indexUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000030/" }],
+      filingsUrl: "https://www.sec.gov/edgar/browse/?CIK=320193&owner=exclude", source: "SEC EDGAR · submissions", readAt: "2026-10-22T14:00:00.000Z",
+    };
+    const p = page((path) => (path.startsWith("/api/account/company") ? CO : {}));
+    p.set("A", account());
+    p.set("ITEMS", { btc, share: share() });
+    p.run("MKT.open = { item: ITEMS.share, range: '1M', interval: '1h', ipo: [], fin: undefined, co: undefined }");
+    let parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
+    expect(parts.company).toContain('<section class="sec" aria-label="Company"><div class="sec-head"><h2 class="h2">Company</h2></div>');
+    expect(parts.company).toContain("skel-rows");
+    p.run("mkDrawerLoad(MKT.open); mkDrawerLoad(MKT.open)");
+    expect(p.asked.filter((a) => a.path.startsWith("/api/account/company")).map((a) => a.path)).toEqual(["/api/account/company?symbol=AAPL"]);
+    await settle();
+    await settle();
+    // the figures, drawn from the record as the page keeps it (the other reads' redraws let the open drawer go in this stand-in browser)
+    p.run(`MKT.open = { item: ITEMS.share, range: '1M', interval: '1h', ipo: [], fin: undefined, co: ${JSON.stringify(CO)} }`);
+    parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
+    const html = parts.company!;
+    expect(html).toContain('<a class="link mk-fin-link" href="https://www.sec.gov/edgar/browse/?CIK=320193&amp;owner=exclude" target="_blank" rel="noopener noreferrer">All filings ');
+    expect(html).toContain("<dt>Listed</dt><dd>Nasdaq · AAPL</dd>");
+    expect(html).toContain('<dt>Industry</dt><dd>Electronic Computers <span class="dim">SIC 3571</span></dd>');
+    expect(html).toContain("<dt>Fiscal year ends</dt><dd>September 27</dd>");
+    expect(html).toContain("<dt>Incorporated in</dt><dd>CA</dd>");
+    expect(html).toContain("<dt>Filer</dt><dd>Large accelerated filer</dd>");
+    expect(html).toContain('<dt>Site</dt><dd><a class="link" href="https://www.apple.com/" target="_blank" rel="noopener noreferrer">apple.com</a> · <a class="link" href="https://investor.apple.com" target="_blank" rel="noopener noreferrer">investors</a></dd>');
+    expect(html).toContain('Annual report 10-K</a> filed 31 Oct 2025 · <a class="link" href="https://www.sec.gov/Archives/edgar/data/320193/000032019326000081/aapl-20260627.htm" target="_blank" rel="noopener noreferrer">Quarterly report 10-Q</a> filed 31 Jul 2026');
+    expect(html).toContain('<h3 class="label mk-fin-h">Latest filings</h3><ul class="mk-filings"><li><a class="link" href="https://www.sec.gov/Archives/edgar/data/320193/000032019326000063/aapl-20260730.htm" target="_blank" rel="noopener noreferrer"><b>8-K</b> results of operations, exhibits</a><span class="dim"> · filed 30 Jul 2026</span></li>');
+    expect(html).toContain("<b>4</b> FORM 4 &lt;b&gt;x&lt;/b&gt;</a>");
+    // a description that only repeats the form is left out
+    expect(html).toContain('<b>10-Q</b></a><span class="dim"> · filed 1 May 2026</span>');
+    expect(html).toContain('<b>4</b></a><span class="dim"> · filed 2 Apr 2026</span>');
+    expect(html).toContain("SEC EDGAR · submissions · what the company itself filed; the account reads no news site");
+    // a coin has no Company part and asks nothing; the SEC's refusal is said in its words, without a link to filings it did not give
+    p.run("MKT.open = { item: ITEMS.btc, range: '1M', interval: '1h', ipo: [], fin: undefined, co: undefined }; mkDrawerLoad(MKT.open)");
+    expect(p.run<Record<string, string>>("mkDrawerParts(MKT.open)").company).toBe("");
+    expect(p.asked.filter((a) => a.path.startsWith("/api/account/company")).length).toBe(1);
+    p.run("MKT.open = { item: ITEMS.share, range: '1M', interval: '1h', ipo: [], fin: undefined, co: { ok: false, refusal: { code: 'E_VENUE_REJECTED', message: 'SEC EDGAR lists no company under AAPL' } } }");
+    parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
+    expect(parts.company).toContain('<p class="mk-quiet">SEC EDGAR lists no company under AAPL.</p>');
+    expect(parts.company).not.toContain("All filings");
   });
 
   it("the figures: the fiscal years and the quarters as filed, each row its period and its filing, money short and signed, a dash where the filing tagged nothing, the shares, whose figures they are", () => {

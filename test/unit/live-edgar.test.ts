@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { isRefusal, type Refusal } from "../../src/core/errors.ts";
-import { FACTS_KEEP_MS, FAIL_KEEP_MS, pickFinancials, SEC_CONTACT_WORDS, SEC_HOSTS, SEC_TICKERS_URL, secFactsUrl, SecEdgar, secUserAgent, TICKERS_KEEP_MS, type Financials } from "../../src/portfolio/live/edgar.ts";
+import { COMPANY_KEEP_MS, COMPANY_SOURCE, FACTS_KEEP_MS, FAIL_KEEP_MS, pickCompany, pickFinancials, SEC_CONTACT_WORDS, SEC_HOSTS, SEC_TICKERS_URL, secFactsUrl, SecEdgar, secSubmissionsUrl, secUserAgent, TICKERS_KEEP_MS, type Company, type Financials } from "../../src/portfolio/live/edgar.ts";
 import { fixedHosts } from "../../src/portfolio/live/public-markets.ts";
 import type { Http, HttpReply } from "../../src/portfolio/live/types.ts";
 import { startPortfolioServer } from "../../src/portfolio/server.ts";
 import { PortfolioService } from "../../src/portfolio/service.ts";
-import { AAPL_FACTS, SEC_TICKERS } from "./live-edgar-fixture.ts";
+import { AAPL_FACTS, AAPL_SUBMISSIONS, SEC_TICKERS } from "./live-edgar-fixture.ts";
 import { json, type Rec } from "./live-public-markets-fixtures.ts";
 
 /** SEC EDGAR, KEYLESS (live/edgar.ts): a US company's own filed figures for the stock drawer — the fiscal years and quarters as filed, with
@@ -234,5 +234,85 @@ describe("GET /api/account/financials", () => {
     } finally {
       await srv2.close();
     }
+  });
+});
+
+const refusalC = (r: Company | Refusal): Refusal => {
+  if (!isRefusal(r)) throw new Error(`expected a refusal, got ${r.name}`);
+  return r;
+};
+
+describe("the company's record picked from the SEC's submissions file (pickCompany)", () => {
+  const c = (() => {
+    const r = pickCompany(AAPL_SUBMISSIONS, "AAPL", new Date(START).toISOString());
+    if (isRefusal(r)) throw new Error(`${r.code}: ${r.message}`);
+    return r;
+  })();
+
+  it("who the company is, as the record says: name, tickers, exchange, its SIC and what it means, its fiscal year end in words, where it is incorporated, its sites", () => {
+    expect([c.symbol, c.cik, c.name, c.tickers, c.exchanges, c.sic, c.sicDescription, c.category]).toEqual(["AAPL", AAPL_CIK, "Apple Inc.", ["AAPL"], ["Nasdaq"], "3571", "Electronic Computers", "Large accelerated filer"]);
+    expect(c.fiscalYearEnd).toEqual({ month: 9, day: 27, words: "September 27" });
+    expect([c.stateOfIncorporation, c.stateOfIncorporationWords, c.website, c.investorWebsite]).toEqual(["CA", "CA", "https://www.apple.com", "https://investor.apple.com"]);
+    expect([c.source, c.filingsUrl, c.readAt]).toEqual([COMPANY_SOURCE, "https://www.sec.gov/edgar/browse/?CIK=320193&owner=exclude", new Date(START).toISOString()]);
+  });
+
+  it("the latest annual and quarterly reports, found past the ten newest filings if need be, each with its document on the SEC's site", () => {
+    expect(c.latest.annual).toEqual({ form: "10-K", filed: "2025-10-31", reportDate: "2025-09-27", description: "10-K", url: "https://www.sec.gov/Archives/edgar/data/320193/000032019325000123/aapl-20250927.htm", indexUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019325000123/" });
+    expect(c.latest.quarterly).toMatchObject({ form: "10-Q", filed: "2026-07-31", reportDate: "2026-06-27" });
+  });
+
+  it("the ten newest filings, newest first — an 8-K said by its items in plain words where the record gives no description, a form by its name", () => {
+    expect(c.filings).toHaveLength(10);
+    expect(c.filings.map((f) => f.form)).toEqual(["8-K", "4", "SC 13G/A", "10-Q", "8-K", "10-Q", "10-Q", "10-K", "8-K", "4"]);
+    expect(c.filings[0]).toMatchObject({ form: "8-K", filed: "2026-10-15", description: "8-K", items: ["5.02", "9.01"] });
+    expect(c.filings[4]).toMatchObject({ form: "8-K", filed: "2026-07-30", description: "results of operations, exhibits", items: ["2.02", "9.01"] });
+    expect(c.filings[2]).toMatchObject({ form: "SC 13G/A", description: "SC 13G/A" });
+    expect(c.filings[2]!.reportDate).toBe("2026-08-18");
+    expect(c.filings[1]!.reportDate).toBeUndefined();
+    for (const f of c.filings) {
+      expect(f.url).toMatch(/^https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/320193\/\d{18}\/.+$/);
+      expect(f.indexUrl).toMatch(/^https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/320193\/\d{18}\/$/);
+    }
+  });
+
+  it("a foreign filer's 20-F is its annual report; a record with no filings is still a record; a site that is not a web address is left out; junk is a refusal", () => {
+    const foreign = pickCompany({ ...AAPL_SUBMISSIONS, name: "Nestlé S.A.", filings: { recent: { accessionNumber: ["0001-26-1"], filingDate: ["2026-03-10"], reportDate: ["2025-12-31"], form: ["20-F"], items: [""], primaryDocument: ["nsrgy-20251231.htm"], primaryDocDescription: ["20-F"] } } }, "NSRGY", "t");
+    if (isRefusal(foreign)) throw new Error(foreign.message);
+    expect(foreign.latest.annual?.form).toBe("20-F");
+    expect(foreign.latest.quarterly).toBeUndefined();
+    const bare = pickCompany({ cik: 1, name: "New Co", website: "www.newco.example", fiscalYearEnd: "1301" }, "NEWCO", "t");
+    if (isRefusal(bare)) throw new Error(bare.message);
+    expect([bare.cik, bare.filings, bare.latest, bare.website, bare.fiscalYearEnd, bare.tickers]).toEqual(["0000000001", [], {}, undefined, undefined, []]);
+    const junk = pickCompany({ error: "no" }, "X", "t");
+    expect(isRefusal(junk) && junk.code).toBe("E_VENUE_REJECTED");
+  });
+});
+
+describe("the company's record over the stand-in network (SecEdgar.company)", () => {
+  it("asks the ticker map and then the submissions file with the account's user agent, keeps the record an hour, and asks once however many drawers ask", async () => {
+    let t = START;
+    const net = sec([[`submissions/CIK${AAPL_CIK}.json`, json(AAPL_SUBMISSIONS)], ...ROUTES()]);
+    const r = reader(net, () => t);
+    const [a, b] = await Promise.all([r.company("aapl"), r.company("AAPL")]);
+    expect(isRefusal(a) ? a.code : a.name).toBe("Apple Inc.");
+    expect(b).toEqual(a);
+    expect(net.sent.map((s) => s.url)).toEqual([SEC_TICKERS_URL, secSubmissionsUrl(AAPL_CIK)]);
+    expect(net.sent.every((s) => s.headers["user-agent"] === UA)).toBe(true);
+    t += COMPANY_KEEP_MS - 1;
+    await r.company("AAPL");
+    expect(net.sent).toHaveLength(2);
+    t += 2;
+    await r.company("AAPL");
+    expect(net.sent).toHaveLength(3);
+  });
+
+  it("nothing is asked without a contact, a ticker the SEC does not list is refused in its words, and a bad ticker before anything is asked", async () => {
+    const net = sec([[`submissions/CIK${AAPL_CIK}.json`, json(AAPL_SUBMISSIONS)], ...ROUTES()]);
+    const none = refusalC(await reader(net, () => START, null).company("AAPL"));
+    expect([none.code, none.message]).toEqual(["E_ACCOUNT_CREDENTIAL", SEC_CONTACT_WORDS]);
+    expect(net.sent).toHaveLength(0);
+    const r = reader(net, () => START);
+    expect(refusalC(await r.company("ZZZZ")).message).toContain("lists no company under ZZZZ");
+    expect(refusalC(await r.company("not a ticker")).code).toBe("E_ACCOUNT_BAD_ACTION");
   });
 });

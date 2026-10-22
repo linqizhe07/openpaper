@@ -96,7 +96,7 @@ agent 记得的你放在账户里，不放在某一个 agent 程序里：换一�
 ## 给 agent 的接口
 
 - **MCP**：`npm run portfolio:mcp`（stdio；席位持自己的钥匙，每次写都签名）。接 Claude Code：Agents 页的 "Copy setup command"。真实账户上的工具：
-  - 读：`portfolio_account` · `portfolio_venues`（从用户所在的网络自动判断哪些场所能接，各用场所自己的话）· `portfolio_overview` · `portfolio_holdings` · `portfolio_history` · `portfolio_asset` · `portfolio_candles` · `portfolio_book` · `portfolio_explore` · `portfolio_receive` · `portfolio_earn` · `portfolio_watchlist` · `portfolio_statement`
+  - 读：`portfolio_account` · `portfolio_venues`（从用户所在的网络自动判断哪些场所能接，各用场所自己的话）· `portfolio_overview` · `portfolio_holdings` · `portfolio_history` · `portfolio_asset` · `portfolio_candles` · `portfolio_book` · `portfolio_financials`（一家美股公司在 SEC 的档案：是谁、财年、注册地、最新年报季报和最近十份申报，加上它申报的财务数字）· `portfolio_explore` · `portfolio_receive` · `portfolio_earn` · `portfolio_watchlist` · `portfolio_statement`
   - 下单和动钱：`portfolio_live_markets` · `portfolio_live_compare` · `portfolio_live_positions` · `portfolio_live_preview` · `portfolio_live_order` · `portfolio_live_batch` · `portfolio_live_amend` · `portfolio_live_cancel` · `portfolio_live_close` · `portfolio_live_leverage` · `portfolio_live_move` · `portfolio_live_earn` · `portfolio_pay`
   - 纸上交易：开一个 Paper account（什么都不用接；`live:paper`，可以开多个；美股、crypto、RWA、预测市场都能练，永续能设杠杆）或接上 "Hyperliquid · paper"（它的测试网）后，`portfolio_account` 里那家标 `paper: true`，同一套下单工具（`portfolio_live_markets`、`portfolio_live_order`——含 `trailing_stop` 和 `takeProfit` / `stopLoss`——、`portfolio_live_leverage`、`portfolio_live_positions`、`portfolio_history {paper: true}`……）在它上面演练——纸上账户按账户自己声明的规则成交，测试网真的发到测试网，都不是真钱；门一样（额度、Guard / Beast），只是不受 `--live-cap`；比价不比它；答复里的订单和持仓带 `paper: true`
   - 和 owner 说话、等结果：`portfolio_report` · `portfolio_ask` · `portfolio_approval` · `portfolio_wait`

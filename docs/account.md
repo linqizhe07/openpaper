@@ -412,6 +412,7 @@ Robinhood 的三条线都是它自己发布的接口（2026-10-05 读）：股�
 | `portfolio_asset` | 一个资产的全部 |
 | `portfolio_candles` | 一个市场的 K 线，接没接的场所都行：`range` 一个范围的首屏，或 `before` + `limit` 往左翻一页；答复带 `more`、`ends`、`source` |
 | `portfolio_book` | 一个市场的盘口和最新成交（Trade 中间那栏）：`book` 的 `depth` 是 `"full"`（场所自己的档）或 `"top"`（只有买一卖一，`topOnly` 说为什么），`trades` 最新的在前；接没接的场所都行，`venue: "paper"` 是纸上账户 |
+| `portfolio_financials` | 一家美股公司在 SEC 的档案（`company`：名字、代码、交易所、SIC 行业、财年截止、注册州、网站、申报人类别、最新年报与季报、最近十份申报，每份带 SEC 原文链接，8-K 按条目说成人话）和它申报的财务数字（`financials`，同 Financials）；只读 SEC，不读任何新闻站；需要账户设了 `SEC_CONTACT` |
 | `portfolio_receive` | 往哪里打钱：场所自己给的地址，agent 改不了；只看的地址、不收钱的场所不给 |
 | `portfolio_watchlist` | owner 的关注、owner 的价格提醒（`alerts` 在等的，`alertsFired` 最近触发的）、给这个席位（或所有 agent）的意图和每个 agent 最新的回报、自己的请求（含一天内被拒的，`declined: true`） |
 | `portfolio_earn` | Earn 的产品和持有 |

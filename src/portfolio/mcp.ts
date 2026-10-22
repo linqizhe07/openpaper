@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -938,6 +938,30 @@ server.registerTool(
     const tradesNone = !tradesNo && typeof tb.none === "string" ? { tradesNone: tb.none } : {};
     if (bookNo) return text({ ok: false, ...bookNo, ...(tradesNo ? {} : { trades: tb.trades, ...tradesNone }) }, true);
     return text({ ok: true, venue: bb.venue, venueName: bb.venueName, symbol: bb.symbol, ...(bb.public ? { public: true } : {}), book: bb.book, ...(tradesNo ? { tradesRefused: tradesNo } : { trades: tb.trades, ...tradesNone }) });
+  },
+);
+
+server.registerTool(
+  "portfolio_financials",
+  {
+    description: "A US COMPANY'S OWN FILINGS, from SEC EDGAR and nothing else. `company`: who it is as its record says — name, tickers, exchanges, its SIC code and what it means, fiscal year end, state of incorporation, sites, filer category — its latest annual and quarterly reports (`latest.annual`, `latest.quarterly`) and its ten newest filings, each with a link to its document and, for an 8-K, its items in plain words. `financials`: the last four fiscal years and four quarters as filed, with revenue, net income and diluted earnings a share, and the shares outstanding. A side the SEC refuses (it lists no company under a fund's or a foreign listing's ticker) is said in `companyRefused` or `financialsRefused` while the other answers. Needs SEC_CONTACT set on the account: the SEC asks every reader to say who they are. Nothing is estimated and no news site is read. A read.",
+    inputSchema: { symbol: z.string().max(12).describe("the US stock's ticker as the account writes it (AAPL, BRK.B)") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ symbol }) => {
+    const q = `symbol=${encodeURIComponent(symbol)}`;
+    const [c, f] = await Promise.all([call("GET", `/api/account/company?${q}`), call("GET", `/api/account/financials?${q}`)]);
+    if (c.status === 404 || f.status === 404) return text({ ok: false, error: "this service runs without the account layer (--classic)" }, true);
+    type Answer = { ok?: boolean; refusal?: { code: string; message: string; detail?: unknown }; error?: string } & Record<string, unknown>;
+    const refused = (x: Answer, status: number) => (x.refusal ? { code: x.refusal.code, message: x.refusal.message } : status >= 400 ? { error: x.error ?? `HTTP ${status}` } : undefined);
+    const cb = c.body as Answer;
+    const fb = f.body as Answer;
+    const cNo = refused(cb, c.status);
+    const fNo = refused(fb, f.status);
+    if (cNo && fNo) return text({ ok: false, symbol, ...cNo }, true);
+    const { ok: _c, ...company } = cb;
+    const { ok: _f, ...financials } = fb;
+    return text({ ok: true, symbol, ...(cNo ? { companyRefused: cNo } : { company }), ...(fNo ? { financialsRefused: fNo } : { financials }) });
   },
 );
 

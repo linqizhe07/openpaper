@@ -54,6 +54,158 @@ export function secUserAgent(env: Record<string, string | undefined> = process.e
   return EMAIL.test(contact) ? `Gravit buyer-agent-demo ${contact}` : undefined;
 }
 
+// ---- the company's own record and its latest filings: the SEC's "submissions" file --------------------------------------------------------
+
+/** GET https://data.sec.gov/submissions/CIK##########.json   the company's record and its filings, newest first (about 1 MB for Apple), in
+ *   the shape the SEC documents (sec.gov/search-filings/edgar-application-programming-interfaces): {cik, entityType, sic, sicDescription,
+ *   name, tickers, exchanges, fiscalYearEnd ("0927"), stateOfIncorporation, stateOfIncorporationDescription, website, investorWebsite,
+ *   category, filings: {recent: {accessionNumber[], filingDate[], reportDate[], form[], items[], primaryDocument[],
+ *   primaryDocDescription[], …}, files}} — the `recent` arrays are index-aligned, one filing per index. The file was not read live from the
+ *   machine this was written on (the SEC refuses a reader without a contact address, which this did not send): every field is read as the
+ *   SEC documents it, and one it does not carry is left out. Kept an hour: an 8-K can land any day of the year */
+export const secSubmissionsUrl = (cik: string): string => `https://data.sec.gov/submissions/CIK${cik.padStart(10, "0")}.json`;
+export const COMPANY_KEEP_MS = 3_600_000;
+export const COMPANY_SOURCE = "SEC EDGAR · submissions";
+/** a filing's primary document on the SEC's site, and the folder it sits in */
+export const secDocumentUrl = (cik: string, accession: string, doc: string): string => `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replace(/-/g, "")}/${doc}`;
+export const secIndexUrl = (cik: string, accession: string): string => `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accession.replace(/-/g, "")}/`;
+/** the items an 8-K names, in plain words (the SEC's own item numbers; one it does not list is said by its number) */
+export const ITEMS_8K: Readonly<Record<string, string>> = {
+  "1.01": "a material agreement",
+  "1.02": "an agreement ended",
+  "1.03": "bankruptcy or receivership",
+  "2.01": "an acquisition or disposition",
+  "2.02": "results of operations",
+  "2.03": "a new obligation",
+  "2.04": "an obligation brought forward",
+  "2.05": "exit or disposal costs",
+  "2.06": "an impairment",
+  "3.01": "a listing notice",
+  "3.02": "unregistered sales of shares",
+  "3.03": "a change to holders' rights",
+  "4.01": "a change of auditor",
+  "4.02": "financial statements not to be relied on",
+  "5.01": "a change in control",
+  "5.02": "officers and directors",
+  "5.03": "bylaws or the fiscal year",
+  "5.07": "a shareholder vote",
+  "5.08": "shareholder nominations",
+  "7.01": "a Regulation FD disclosure",
+  "8.01": "other events",
+  "9.01": "exhibits",
+};
+const ANNUAL_FORMS: ReadonlySet<string> = new Set(["10-K", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A"]);
+const QUARTERLY_FORMS: ReadonlySet<string> = new Set(["10-Q", "10-Q/A"]);
+const FILINGS_SHOWN = 10;
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const HTTP_URL = /^https?:\/\/[^\s]+$/i;
+
+/** one filing as the record lists it */
+export interface Filing {
+  form: string;
+  /** the day it was filed (ISO date) */
+  filed: string;
+  /** the period it reports on, where the record gives one */
+  reportDate?: string | undefined;
+  /** the SEC's description of its primary document, else — for an 8-K — its items in plain words, else the form */
+  description: string;
+  /** an 8-K's item numbers */
+  items?: string[] | undefined;
+  url: string;
+  indexUrl: string;
+}
+
+/** a company's own record: who it is, when its year ends, where it is incorporated, its latest annual and quarterly reports and its
+ * newest filings — all as the SEC's record says, nothing guessed */
+export interface Company {
+  symbol: string;
+  cik: string;
+  name: string;
+  tickers: string[];
+  exchanges: string[];
+  sic?: string | undefined;
+  sicDescription?: string | undefined;
+  fiscalYearEnd?: { month: number; day: number; words: string } | undefined;
+  stateOfIncorporation?: string | undefined;
+  stateOfIncorporationWords?: string | undefined;
+  website?: string | undefined;
+  investorWebsite?: string | undefined;
+  category?: string | undefined;
+  latest: { annual?: Filing | undefined; quarterly?: Filing | undefined };
+  /** the newest filings, at most ten */
+  filings: Filing[];
+  filingsUrl: string;
+  source: string;
+  readAt: string;
+}
+
+/** the record as the drawer and the agents want it, or a refusal where the body is not the SEC's record */
+export function pickCompany(body: unknown, symbol: string, readAt: string): Company | Refusal {
+  if (!isRec(body) || typeof body.name !== "string" || !body.name.trim()) return no("E_VENUE_REJECTED", { venue: SEC_VENUE, message: `${SEC_NAME} answered the company's record in a way this could not read` });
+  const cik = String(typeof body.cik === "number" || typeof body.cik === "string" ? body.cik : "").padStart(10, "0");
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()) : []);
+  const site = (v: unknown): string | undefined => { const s = str(v); return s && HTTP_URL.test(s) ? s : undefined; };
+  const fye = str(body.fiscalYearEnd);
+  const my = fye && /^\d{4}$/.test(fye) ? { month: Number(fye.slice(0, 2)), day: Number(fye.slice(2)) } : undefined;
+  const fiscalYearEnd = my && my.month >= 1 && my.month <= 12 && my.day >= 1 && my.day <= 31 ? { ...my, words: `${MONTHS[my.month - 1]} ${my.day}` } : undefined;
+  const recent = isRec(body.filings) && isRec(body.filings.recent) ? body.filings.recent : {};
+  const col = (k: string): unknown[] => (Array.isArray(recent[k]) ? (recent[k] as unknown[]) : []);
+  const rowAt = (i: number): Filing | undefined => {
+    const acc = col("accessionNumber")[i];
+    const form = col("form")[i];
+    const filed = col("filingDate")[i];
+    if (typeof acc !== "string" || !acc.trim() || typeof form !== "string" || !form.trim() || typeof filed !== "string" || !DATE.test(filed)) return undefined;
+    const doc = col("primaryDocument")[i];
+    const report = col("reportDate")[i];
+    const itemsRaw = col("items")[i];
+    const items = typeof itemsRaw === "string" ? itemsRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const said = str(col("primaryDocDescription")[i]);
+    const description = said ?? (form.startsWith("8-K") && items.length ? items.map((it) => ITEMS_8K[it] ?? `item ${it}`).join(", ") : form);
+    return {
+      form: form.trim(),
+      filed,
+      ...(typeof report === "string" && DATE.test(report) ? { reportDate: report } : {}),
+      description,
+      ...(items.length ? { items } : {}),
+      url: typeof doc === "string" && doc.trim() ? secDocumentUrl(cik, acc, doc.trim()) : secIndexUrl(cik, acc),
+      indexUrl: secIndexUrl(cik, acc),
+    };
+  };
+  const filings: Filing[] = [];
+  let annual: Filing | undefined;
+  let quarterly: Filing | undefined;
+  const n = col("accessionNumber").length;
+  for (let i = 0; i < n; i++) {
+    const f = rowAt(i);
+    if (!f) continue;
+    if (filings.length < FILINGS_SHOWN) filings.push(f);
+    if (!annual && ANNUAL_FORMS.has(f.form)) annual = f;
+    if (!quarterly && QUARTERLY_FORMS.has(f.form)) quarterly = f;
+    if (filings.length >= FILINGS_SHOWN && annual && quarterly) break;
+  }
+  return {
+    symbol,
+    cik,
+    name: body.name.trim(),
+    tickers: strs(body.tickers),
+    exchanges: strs(body.exchanges),
+    ...(str(body.sic) ? { sic: str(body.sic) } : {}),
+    ...(str(body.sicDescription) ? { sicDescription: str(body.sicDescription) } : {}),
+    ...(fiscalYearEnd ? { fiscalYearEnd } : {}),
+    ...(str(body.stateOfIncorporation) ? { stateOfIncorporation: str(body.stateOfIncorporation) } : {}),
+    ...(str(body.stateOfIncorporationDescription) ? { stateOfIncorporationWords: str(body.stateOfIncorporationDescription) } : {}),
+    ...(site(body.website) ? { website: site(body.website) } : {}),
+    ...(site(body.investorWebsite) ? { investorWebsite: site(body.investorWebsite) } : {}),
+    ...(str(body.category) ? { category: str(body.category) } : {}),
+    latest: { ...(annual ? { annual } : {}), ...(quarterly ? { quarterly } : {}) },
+    filings,
+    filingsUrl: secFilingsUrl(cik),
+    source: COMPANY_SOURCE,
+    readAt,
+  };
+}
+
 /** one period as a filing reports it, with the figures the three concepts give for it (each only where the filing tagged one) */
 export interface FinancialPeriod {
   /** the period's first and last day (ISO dates) and its length in days */
@@ -253,6 +405,7 @@ export class SecEdgar {
   private readonly userAgent: string | undefined;
   private tickers: { until: number; value: Map<string, { cik: string; title: string }> | Refusal } | undefined;
   private readonly facts = new Map<string, { until: number; value: Financials | Refusal }>();
+  private readonly companies = new Map<string, { until: number; value: Company | Refusal }>();
   private readonly pending = new Map<string, Promise<unknown>>();
   private nextAt = 0;
 
@@ -272,6 +425,33 @@ export class SecEdgar {
     const hit = map.get(sym.replace(".", "-"));
     if (!hit) return no("E_VENUE_REJECTED", { venue: SEC_VENUE, message: `${SEC_NAME} lists no company under ${sym}: a fund, a foreign listing or a very new one has no filings of its own there`, native: { symbol: sym } });
     return this.companyFacts(hit.cik, sym);
+  }
+
+  /** a company's own record — who it is, its fiscal year end, where it is incorporated, its latest reports and newest filings — by its
+   * ticker, through the same door as its figures */
+  async company(symbol: string): Promise<Company | Refusal> {
+    const sym = symbol.trim().toUpperCase();
+    if (!SEC_TICKER.test(sym)) return no("E_ACCOUNT_BAD_ACTION", { message: "a company's record is read for a US stock's ticker: letters, with a class letter after a dot (BRK.B)" });
+    if (!this.userAgent) return no("E_ACCOUNT_CREDENTIAL", { venue: SEC_VENUE, message: SEC_CONTACT_WORDS, detail: { setting: "SEC_CONTACT" } });
+    const map = await this.tickerMap();
+    if (isRefusal(map)) return map;
+    const hit = map.get(sym.replace(".", "-"));
+    if (!hit) return no("E_VENUE_REJECTED", { venue: SEC_VENUE, message: `${SEC_NAME} lists no company under ${sym}: a fund, a foreign listing or a very new one has no filings of its own there`, native: { symbol: sym } });
+    return this.submissions(hit.cik, sym);
+  }
+
+  private async submissions(cik: string, symbol: string): Promise<Company | Refusal> {
+    const now = this.clock();
+    const kept = this.companies.get(cik);
+    if (kept && now < kept.until) return kept.value;
+    const url = secSubmissionsUrl(cik);
+    const got = await this.once(url, async () => {
+      const r = await this.get(url);
+      return isRefusal(r) ? r : pickCompany(r, symbol, new Date(this.clock()).toISOString());
+    });
+    this.companies.set(cik, { until: this.clock() + (isRefusal(got) ? this.holdOf(got) : COMPANY_KEEP_MS), value: got });
+    if (this.companies.size > 200) this.companies.delete(this.companies.keys().next().value!);
+    return got;
   }
 
   private async tickerMap(): Promise<Map<string, { cik: string; title: string }> | Refusal> {

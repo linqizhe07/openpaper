@@ -324,6 +324,9 @@ describe("declined asks and price history through the MCP seat", () => {
 
   it("one market's price history, the same as over HTTP; a market the venue does not list is its refusal", async () => {
     expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_candles");
+    // the company's filings tool is there, and a ticker that is not one is refused before the SEC is asked
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_financials");
+    expect((await tool("portfolio_financials", { symbol: "not a ticker" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);

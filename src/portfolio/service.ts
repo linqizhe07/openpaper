@@ -63,7 +63,7 @@ import type { LiveEarn } from "./account/live-earn.ts";
 import type { Payment } from "./account/payments.ts";
 import { exploreAcross, type Exploration, type ExploreSort, type ExploreVenue } from "./live/explore.ts";
 import { fixedHosts, holdBackMs, KEEP_MS as LISTING_KEEP_MS, publicSources, type PublicSource } from "./live/public-markets.ts";
-import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Financials } from "./live/edgar.ts";
+import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Company, type Financials } from "./live/edgar.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -898,6 +898,15 @@ export class PortfolioService {
     const sym = symbol.trim().toUpperCase();
     if (!SEC_TICKER.test(sym)) return no("E_ACCOUNT_BAD_ACTION", { message: "financials are read for a US stock's ticker: letters, with a class letter after a dot (BRK.B)" });
     return this.edgar().financials(sym);
+  }
+  /** COMPANY: a US company's own record — who it is, its fiscal year end, where it is incorporated, its latest annual and quarterly reports
+   * and its newest filings — read keyless from SEC EDGAR's submissions file (live/edgar.ts) with the contact the owner set; the stock
+   * drawer's Company part, and the agents' portfolio_financials. Kept an hour; nothing is estimated. A read */
+  async company(symbol: string): Promise<Company | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const sym = symbol.trim().toUpperCase();
+    if (!SEC_TICKER.test(sym)) return no("E_ACCOUNT_BAD_ACTION", { message: "a company's record is read for a US stock's ticker: letters, with a class letter after a dot (BRK.B)" });
+    return this.edgar().company(sym);
   }
   private edgarMade: SecEdgar | undefined;
   /** the SEC reader, made once: the live connection's network behind the fixed-host guard for the SEC's two hosts, and the account's user

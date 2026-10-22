@@ -9,3 +9,35 @@ export const AAPL_FACTS: Rec = {"cik":320193,"entityName":"Apple Inc.","facts":{
 
 /** the SEC’s ticker map (www.sec.gov/files/company_tickers.json), three of its 10,428 rows of that day: a class share is written with a dash */
 export const SEC_TICKERS: Rec = { "0": { cik_str: 1045810, ticker: "NVDA", title: "NVIDIA CORP" }, "1": { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." }, "2": { cik_str: 1067983, ticker: "BRK-B", title: "BERKSHIRE HATHAWAY INC" } };
+
+/** APPLE’S RECORD in the shape the SEC documents for data.sec.gov/submissions/CIK0000320193.json, cut to what the reader picks from. The file
+ * was not read live from the machine this was written on (the SEC refuses a reader without a contact address): the fields are the SEC’s
+ * documented ones; the two report dates are the real ones (the 10-K filed 2025-10-31, the 10-Q filed 2026-07-31, as the SEC’s site showed
+ * them on 2026-10-22); the other rows are examples of the forms a record carries, each in the record’s own column layout, newest first */
+export const AAPL_SUBMISSIONS: Rec = {
+  cik: "320193",
+  entityType: "operating",
+  sic: "3571",
+  sicDescription: "Electronic Computers",
+  name: "Apple Inc.",
+  tickers: ["AAPL"],
+  exchanges: ["Nasdaq"],
+  fiscalYearEnd: "0927",
+  stateOfIncorporation: "CA",
+  stateOfIncorporationDescription: "CA",
+  website: "https://www.apple.com",
+  investorWebsite: "https://investor.apple.com",
+  category: "Large accelerated filer",
+  filings: {
+    recent: {
+      accessionNumber: ["0000320193-26-000112", "0000320193-26-000098", "0000320193-26-000090", "0000320193-26-000081", "0000320193-26-000063", "0000320193-26-000041", "0000320193-26-000017", "0000320193-25-000123", "0000320193-25-000101", "0000320193-25-000096", "0000320193-25-000080", "0000320193-25-000071"],
+      filingDate: ["2026-10-15", "2026-09-02", "2026-08-20", "2026-07-31", "2026-07-30", "2026-05-01", "2026-01-30", "2025-10-31", "2025-10-30", "2025-09-10", "2025-08-01", "2025-07-31"],
+      reportDate: ["2026-10-13", "", "2026-08-18", "2026-06-27", "2026-07-30", "2026-03-28", "2025-12-27", "2025-09-27", "2025-10-30", "", "2025-06-28", "2025-07-31"],
+      form: ["8-K", "4", "SC 13G/A", "10-Q", "8-K", "10-Q", "10-Q", "10-K", "8-K", "4", "10-Q", "8-K"],
+      items: ["5.02,9.01", "", "", "", "2.02,9.01", "", "", "", "2.02,9.01", "", "", "7.01"],
+      primaryDocument: ["aapl-20261013.htm", "xslF345X05/wk-form4_1.xml", "sc13ga.htm", "aapl-20260627.htm", "aapl-20260730.htm", "aapl-20260328.htm", "aapl-20251227.htm", "aapl-20250927.htm", "aapl-20251030.htm", "xslF345X05/wk-form4_2.xml", "aapl-20250628.htm", "aapl-20250731.htm"],
+      primaryDocDescription: ["8-K", "FORM 4", "", "10-Q", "", "10-Q", "10-Q", "10-K", "8-K", "FORM 4", "10-Q", ""],
+    },
+    files: [],
+  },
+};
