@@ -29,6 +29,7 @@
     "account:demo": "tsx src/portfolio/account-demo.ts",
     "account:service": "tsx src/portfolio/account-service.ts",
     "account:check": "tsx src/portfolio/account-check.ts",
+    "account:backup": "tsx src/portfolio/account-backup.ts",
     "site:numbers": "tsx scripts/site-numbers.ts",
     "site": "node scripts/site-serve.mjs"
   },

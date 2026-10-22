@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeLine, LABEL, plan, stillLeaving, tryAgain, untilGone } from "../../src/portfolio/account-service.ts";
+import { codeLine, LABEL, manager, plan, planSystemd, quoteUnit, rotateLogs, stillLeaving, tryAgain, unquoteUnit, untilGone } from "../../src/portfolio/account-service.ts";
 
 /** The LaunchAgent that keeps the account up for agents: what launchd is told to run, and what it is not given */
 describe("the account as a background service", () => {
@@ -107,5 +107,79 @@ describe("install over a running copy", () => {
     expect(() => tryAgain(() => { calls++; throw other; }, { again: stillLeaving, pause: f.pause })).toThrow(/Service is disabled/);
     expect(calls).toBe(1);
     expect(f.pauses.length).toBe(6);
+  });
+});
+
+/** The same service as a systemd user unit on Linux: the same command, environment, restart rule, umask and log files as the LaunchAgent */
+describe("the account as a systemd user service", () => {
+  const env = { PATH: "/home/me/demo/node_modules/.bin:/usr/local/bin:/usr/bin", HOME: "/home/me", PORTFOLIO_RPC_BASE: "https://rpc.example", SECRET_TOKEN: "x", SEC_CONTACT: "owner@example.org", ANTHROPIC_API_KEY: "sk-ant-not-for-the-unit" };
+  const p = planSystemd(["--live-cap", "20", "--port", "4820"], { node: "/usr/local/bin/node", root: "/home/me/demo", home: "/home/me/.buyer-agent-demo", env });
+
+  it("runs this folder's server under node and tsx by their full paths, with the options given, from this folder", () => {
+    expect(p.unit).toContain("ExecStart=/usr/local/bin/node /home/me/demo/node_modules/tsx/dist/cli.mjs /home/me/demo/src/portfolio/server.ts --live-cap 20 --port 4820\n");
+    expect(p.unit).toContain("WorkingDirectory=/home/me/demo\n");
+    expect(p.args).toEqual(["/usr/local/bin/node", "/home/me/demo/node_modules/tsx/dist/cli.mjs", "/home/me/demo/src/portfolio/server.ts", "--live-cap", "20", "--port", "4820"]);
+    expect(p.text).toBe(p.unit);
+  });
+
+  it("restarts only after a failure, writes files for the user alone, appends to the same two logs, and starts with the user's session", () => {
+    expect(p.unit).toContain("Restart=on-failure\n");
+    expect(p.unit).toContain("RestartSec=30\n");
+    expect(p.unit).toContain("UMask=0077\n");
+    expect(p.unit).toContain("StandardOutput=append:/home/me/.buyer-agent-demo/logs/account.log\n");
+    expect(p.unit).toContain("StandardError=append:/home/me/.buyer-agent-demo/logs/account.err.log\n");
+    expect(p.unit).toContain("WantedBy=default.target\n");
+    expect([p.log, p.errLog]).toEqual(["/home/me/.buyer-agent-demo/logs/account.log", "/home/me/.buyer-agent-demo/logs/account.err.log"]);
+  });
+
+  it("keeps the same few variables as the LaunchAgent and nothing else, and lives under the user's config directory", () => {
+    expect(p.unit).toContain("Environment=PATH=/usr/local/bin:/usr/bin\n");
+    expect(p.unit).toContain("Environment=HOME=/home/me\n");
+    expect(p.unit).toContain("Environment=PORTFOLIO_RPC_BASE=https://rpc.example\n");
+    expect(p.unit).toContain("Environment=SEC_CONTACT=owner@example.org\n");
+    expect(p.unit).not.toContain("SECRET_TOKEN");
+    expect(p.unit).not.toContain("ANTHROPIC_API_KEY");
+    expect(p.path).toBe(`/home/me/.config/systemd/user/${LABEL}.service`);
+    expect(planSystemd([], { node: "/n", root: "/r", home: "/h", env: { ...env, XDG_CONFIG_HOME: "/xdg" } }).path).toBe(`/xdg/systemd/user/${LABEL}.service`);
+  });
+
+  it("quotes a word with a space, a quote or a backslash the way systemd reads it, and reads it back", () => {
+    const words = ["/n", "/r/src/portfolio/server.ts", "--home", "/tmp/a b\"c\\d", "--live-cap", "20", ""];
+    const line = words.map(quoteUnit).join(" ");
+    expect(line).toBe('/n /r/src/portfolio/server.ts --home "/tmp/a b\\"c\\\\d" --live-cap 20 ""');
+    expect(unquoteUnit(line)).toEqual(words);
+    const q = planSystemd(["--home", "/tmp/a b\"c"], { node: "/n", root: "/r", home: "/h", env: {} });
+    expect(unquoteUnit(/^ExecStart=(.*)$/m.exec(q.unit!)![1]!)).toEqual(["/n", "/r/node_modules/tsx/dist/cli.mjs", "/r/src/portfolio/server.ts", "--home", "/tmp/a b\"c"]);
+  });
+
+  it("is the manager on Linux, launchd is on macOS, and Windows gets a sentence instead of a service", () => {
+    expect(manager("linux").name).toBe("systemd");
+    expect(manager("darwin").name).toBe("launchd");
+    expect(() => manager("win32")).toThrow(/npm run account/);
+  });
+});
+
+/** The logs are rotated when the service is started again: a big one becomes .1, the earlier ones shift, the oldest is dropped */
+describe("log rotation", () => {
+  const fake = (sizes: Record<string, number>) => {
+    const files = { ...sizes };
+    const moves: string[] = [];
+    return {
+      files,
+      moves,
+      fs: {
+        existsSync: (f: string) => f in files,
+        statSync: (f: string) => ({ size: files[f]! }),
+        renameSync: (a: string, b: string) => { files[b] = files[a]!; delete files[a]; moves.push(`${a} → ${b}`); },
+        rmSync: (f: string) => { delete files[f]; moves.push(`rm ${f}`); },
+      },
+    };
+  };
+
+  it("rotates a log over the limit, shifting the earlier ones and dropping the oldest; leaves a small or missing one alone", () => {
+    const f = fake({ "/l/account.log": 6_000_000, "/l/account.log.1": 10, "/l/account.log.2": 20, "/l/account.log.3": 30, "/l/account.err.log": 100 });
+    expect(rotateLogs(["/l/account.log", "/l/account.err.log", "/l/none.log"], { maxBytes: 5_000_000, keep: 3, fs: f.fs })).toEqual(["/l/account.log"]);
+    expect(f.moves).toEqual(["rm /l/account.log.3", "/l/account.log.2 → /l/account.log.3", "/l/account.log.1 → /l/account.log.2", "/l/account.log → /l/account.log.1"]);
+    expect(f.files).toEqual({ "/l/account.log.1": 6_000_000, "/l/account.log.2": 10, "/l/account.log.3": 20, "/l/account.err.log": 100 });
   });
 });
