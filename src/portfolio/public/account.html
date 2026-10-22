@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Account</title>
-<!-- the tab's mark, the Account's own green square (ui/tokens.css --ok): inline, so no browser asks this server for /favicon.ico and logs a 404 -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2300843D'/%3E%3Ctext x='16' y='22.5' font-family='Inter,Helvetica,Arial,sans-serif' font-size='19' font-weight='700' fill='%23fff' text-anchor='middle'%3EA%3C/text%3E%3C/svg%3E" />
+<title>openpaper</title>
+<!-- the tab's mark, openpaper's ring (site/img/favicon.svg) on the page's own green square (ui/tokens.css --ok): inline, so no browser asks this server for /favicon.ico and logs a 404 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2300843D'/%3E%3Ccircle cx='16' cy='16' r='6.5' fill='none' stroke='%23fff' stroke-width='2.6'/%3E%3C/svg%3E" />
 <script>/* the background before the first paint: Light (stored as "cream"), unless this browser chose Black; a link straight to the trading
    area (Trade, either mode) wears the area's grammar from its first paint, in the same background (ui/tokens.css, html[data-area]) */
 (function () { var t = "cream"; try { t = localStorage.getItem("account.theme") || t; } catch (e) {}
@@ -76,7 +76,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <a class="skip" href="#main">Skip to the page</a>
 <div class="app">
   <nav class="rail" aria-label="Main">
-    <a class="brand" href="#/portfolio"><span class="brand-mark" aria-hidden="true">A</span><span>Account</span></a>
+    <a class="brand" href="#/portfolio"><span class="brand-mark" aria-hidden="true"></span><span>openpaper</span></a>
     <div class="rail-nav">
       <span class="rail-pill" aria-hidden="true" hidden></span>
       <a href="#/markets" data-tab="markets"><svg class="ico" aria-hidden="true"><use href="#i-markets"></use></svg>Markets</a>

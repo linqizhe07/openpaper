@@ -38,7 +38,7 @@ function render() {
 function renderChrome(L, owner) {
   // what waits for the owner: the cards to approve, and what the agents asked for (both answered under Portfolio's Waiting for you)
   const waiting = A.cards.length + (A.asks || []).length + (A.memoryAsks || []).length;
-  document.title = `${waiting ? `(${waiting}) ` : ""}Account`;
+  document.title = `${waiting ? `(${waiting}) ` : ""}openpaper`;
   drawStamp();
   // trading on or off, and the most one order or move may be worth (round 7's "Trading on · $100 a move"; the sentence is in Settings)
   const cap = A.connectLive && A.connectLive.writes ? Number(A.connectLive.writes.capUsd) : NaN;

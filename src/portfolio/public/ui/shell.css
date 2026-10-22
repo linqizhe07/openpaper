@@ -119,7 +119,9 @@ button.ink { background: var(--primary); color: var(--on-primary); }
 /* the name with its mark — a green square with the letter on it (the Account's colour), as a Swiss page signs itself — the rail's items,
    and the Account at its foot */
 .brand { font-family: var(--font-sans); font-size: 21px; font-weight: 700; padding: 0 12px; letter-spacing: -0.035em; display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+/* the mark: openpaper's ring (the site's favicon) on the page's own green square */
 .brand-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 0; background: var(--mark); color: #ffffff; font: 700 16px/1 var(--font-sans); letter-spacing: 0; }
+.brand-mark::before { content: ""; width: 12px; height: 12px; border: 2.5px solid #ffffff; border-radius: 50%; }
 .rail-nav { display: flex; flex-direction: column; gap: 4px; position: relative; }
 .rail-nav a { position: relative; min-height: 44px; padding: 0 12px; border-radius: var(--radius-s); color: var(--dim); display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 500; text-decoration: none; }
 .rail-nav a .ico { width: 22px; height: 22px; }
