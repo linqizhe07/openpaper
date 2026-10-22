@@ -60,7 +60,8 @@ export function loadOrCreateKey(path: string, kind: KeyFile["kind"], name: strin
   const whose = `the key file of the ${kind === "seat" ? "agent seat" : "agent wallet"} "${name}"`;
   if (existsSync(path)) {
     const mode = statSync(path).mode & 0o777;
-    if (mode & 0o077) return no("E_ACCOUNT_CREDENTIAL", { message: `${whose} can be read by other users of this machine (mode ${mode.toString(8)}): make it the user's alone (chmod 600) before it is used`, detail: { path, mode: mode.toString(8) } });
+    // file modes mean nothing on Windows (live/credentials.ts reads venue keys the same way)
+    if (process.platform !== "win32" && mode & 0o077) return no("E_ACCOUNT_CREDENTIAL", { message: `${whose} can be read by other users of this machine (mode ${mode.toString(8)}): make it the user's alone (chmod 600) before it is used`, detail: { path, mode: mode.toString(8) } });
     const f = parse(readFileSync(path, "utf8"));
     if (!f) return no("E_ACCOUNT_CREDENTIAL", { message: `${whose} is not a key file this account wrote: move it aside, and a new key is made`, detail: { path } });
     return fromFile(f, label);
