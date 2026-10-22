@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/linqizhe07/openpaper/security/advisories/new
+    about: A way to move money, read a key, replay an instruction or take the owner's seat goes here, privately — never in a public issue.
+  - name: A question
+    url: https://github.com/linqizhe07/openpaper/issues/new
+    about: Anything that is not a bug or a venue — open a blank issue from here and say what you tried.

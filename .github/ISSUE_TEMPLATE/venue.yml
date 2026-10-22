@@ -1,0 +1,54 @@
+name: A venue to connect
+description: An exchange, broker, wallet or prediction market the account should read or trade at
+labels: ["venue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The account connects 93 exchanges by API key already (Account → Venues → Connect an account); this is for one it does not, or for a kind of connection it lacks.
+  - type: input
+    id: venue
+    attributes:
+      label: The venue
+      placeholder: Interactive Brokers
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind
+      options:
+        - An exchange, by API key
+        - A broker
+        - A wallet or a chain
+        - A prediction market
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where it serves
+      description: The countries or regions it says it serves. The account judges each venue from the user's own network, so this is what a reader there would see.
+      placeholder: United States; not the EU
+  - type: input
+    id: docs
+    attributes:
+      label: Its public API documentation
+      placeholder: https://…
+    validations:
+      required: true
+  - type: dropdown
+    id: ccxt
+    attributes:
+      label: Does ccxt list it?
+      description: The account's exchange connector is ccxt; an exchange ccxt knows is a short change, one it does not is a connector of its own.
+      options:
+        - "Yes"
+        - "No"
+        - I don't know
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would do there
+      description: Read balances, trade spot, trade perps, move money in or out, earn — which of these, and why this venue.
