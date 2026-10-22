@@ -1,0 +1,60 @@
+name: Something is wrong
+description: The page, the account, an agent's seat or a venue connection does something it should not
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. A security problem — a way to move money, read a key or take the owner's seat — goes privately instead, as [SECURITY.md](../blob/main/SECURITY.md) says; never here.
+  - type: textarea
+    id: did
+    attributes:
+      label: What you did
+      description: The steps, from the command you ran to the last thing you pressed.
+      placeholder: |
+        npm run account -- --live-cap 20
+        Markets → ★ on BTC → 🔔 → "Rises above" → Sign and set the alert
+    validations:
+      required: true
+  - type: textarea
+    id: saw
+    attributes:
+      label: What you saw
+      description: The page's words, the terminal's lines, a refusal code. A screenshot helps when it is the page.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Settings → Version, or the first line `npm run account` prints (`openpaper v0.1.0 (9e0ce79)`).
+      placeholder: openpaper v0.1.0 (9e0ce79)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Your operating system and `node --version`.
+      placeholder: macOS 26.1 · v22.12.0
+    validations:
+      required: true
+  - type: textarea
+    id: reach
+    attributes:
+      label: What your network reaches
+      description: Paste the output of `npm run account:check` if a venue is involved. It holds no IP address, place, key, balance or address.
+      render: markdown
+  - type: checkboxes
+    id: clean
+    attributes:
+      label: Nothing private
+      options:
+        - label: This report holds no API key, seed phrase, pairing code, wallet key, or anything else from my home directory.
+          required: true

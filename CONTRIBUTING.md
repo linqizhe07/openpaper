@@ -2,6 +2,8 @@
 
 Thanks for looking. openpaper has a definite shape, and the rules below are what keep it: read them once, then send what you have.
 
+Taking part is covered by the [Code of Conduct](CODE_OF_CONDUCT.md). A bug or a venue to connect goes in through the [issue forms](https://github.com/linqizhe07/openpaper/issues/new/choose); a pull request takes the shape of [its template](.github/PULL_REQUEST_TEMPLATE.md).
+
 ## Run it
 
 ```bash
