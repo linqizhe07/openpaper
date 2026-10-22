@@ -750,7 +750,7 @@ describe("the chart mounted", () => {
     p.run('chMount(EL, { venue: "okx", symbol: "BTC/USDT" })');
     // the frame: the head holds the nine ranges, the seven bar sizes' menu and the log switch; the readout, the hint and the key back to the
     // newest bar (hidden until the view is behind it) are inside the plot, between the picture's two layers and the crosshair
-    expect(p.el.innerHTML).toMatch(/<div class="ch-head"><div class="ch-rs"[^>]*>(<button[^>]*>[^<]*<\/button>){9}<\/div><span class="ch-hsep"[^>]*><\/span><span class="ch-ivw"><select[^>]*>(<option[^>]*>[^<]*<\/option>){7}<\/select><\/span><button[^>]*data-ch-ind[^>]*>Indicators<\/button><button[^>]*data-ch-log[^>]*>Log<\/button><\/div><div class="ch-ind-pop"[^>]*hidden><\/div><div class="ch-plot"[^>]*><div class="ch-draw"><\/div><div class="ch-live"><\/div><div class="ch-ind"><\/div><div class="ch-lines"><\/div><div class="ch-ohlc"><\/div><p class="ch-hint"[^>]*><\/p><button type="button" class="ch-now" data-ch-now hidden[^>]*>Now →<\/button><div class="ch-cross"/);
+    expect(p.el.innerHTML).toMatch(/<div class="ch-head"><div class="ch-rs"[^>]*>(<button[^>]*>[^<]*<\/button>){9}<\/div><span class="ch-hsep"[^>]*><\/span><span class="ch-ivw"><select[^>]*>(<option[^>]*>[^<]*<\/option>){7}<\/select><\/span><button[^>]*data-ch-ind[^>]*>Indicators<\/button><button[^>]*data-ch-draw[^>]*>Draw<\/button><button[^>]*data-ch-log[^>]*>Log<\/button><\/div><div class="ch-ind-pop"[^>]*hidden><\/div><div class="ch-ind-pop ch-draw-pop"[^>]*hidden><\/div><div class="ch-plot"[^>]*><div class="ch-draw"><\/div><div class="ch-live"><\/div><div class="ch-ind"><\/div><div class="ch-user"><\/div><div class="ch-lines"><\/div><div class="ch-note"><\/div><div class="ch-ohlc"><\/div><p class="ch-hint"[^>]*><\/p><button type="button" class="ch-now" data-ch-now hidden[^>]*>Now →<\/button><div class="ch-cross"/);
     // the hint, like the readout, is out of the flow and kept while empty
     expect(rule(".ch-hint")).toMatch(/position: absolute;/);
     expect(rule(".ch-hint")).toMatch(/pointer-events: none;/);
@@ -2445,5 +2445,201 @@ describe("the indicators on the chart (ui/indicators.js)", () => {
     press(daily.el, { chInd: "" });
     expect(daily.el.querySelector(".ch-ind-pop").innerHTML).toContain('<input type="checkbox" data-ind-on="vwap" disabled> <b>VWAP</b> <span class="ch-ind-w">intraday bars only</span>');
     daily.run("chRelease(EL)");
+  });
+});
+
+describe("the drawings on the chart", () => {
+  const bars = hourly(40);
+  const mount = (store = "var STORE = {}; localStorage = { getItem: (k) => STORE[k] ?? null, setItem: (k, v) => { STORE[k] = String(v); }, removeItem: (k) => { delete STORE[k]; } };", market = 'venue: "okx", symbol: "BTC/USDT"') => {
+    const p = page((path) => (path.startsWith("/api/account/candles") ? candles(bars) : new Promise(() => {})));
+    p.run(`${store} chMount(EL, { ${market}, kind: "spot", quote: "USDT", priceStep: 0.5 })`);
+    return p;
+  };
+  const doc = (p: ReturnType<typeof page>) => p.sandbox.document as Omit<Fake, "querySelector"> & { querySelector: () => unknown };
+  const press = (el: Fake, dataset: Record<string, string>) => el.fire("click", { target: { closest: () => ({ dataset }) } });
+  const down = (plot: Fake, x: number, y: number, id = 1) => plot.fire("pointerdown", { pointerId: id, pointerType: "mouse", button: 0, clientX: x, clientY: y });
+  const move = (plot: Fake, x: number, y: number, id = 1) => plot.fire("pointermove", { pointerId: id, pointerType: "mouse", clientX: x, clientY: y });
+  const up = (plot: Fake, id = 1) => plot.fire("pointerup", { pointerId: id, pointerType: "mouse" });
+  const kept = (p: ReturnType<typeof page>) => JSON.parse(p.run<string>('STORE["account.chart.drawings"] ?? "null"'));
+
+  it("a horizontal line: chosen from the Draw menu, the plot says what to do, a click places it at the price on the market's step, it joins the account's lines with its price on the axis, and this market keeps it in this browser — another market has none", async () => {
+    const p = mount();
+    await settle();
+    const plot = p.el.querySelector(".ch-plot");
+    expect(p.el.innerHTML).toContain('<button type="button" class="ch-iv ch-drawb" data-ch-draw aria-expanded="false" aria-haspopup="dialog" aria-pressed="false" data-fk="ch-draw" title="Draw: a horizontal line, a trend line, a note — kept in this browser">Draw</button>');
+    press(p.el, { chDraw: "" });
+    const pop = p.el.querySelector(".ch-draw-pop");
+    expect(pop.hidden).toBe(false);
+    expect(pop.innerHTML).toContain('<button type="button" class="ch-draw-b" data-draw-tool="h" aria-pressed="false">Line</button><button type="button" class="ch-draw-b" data-draw-tool="t" aria-pressed="false">Trend line</button><button type="button" class="ch-draw-b" data-draw-tool="n" aria-pressed="false">Note</button>');
+    expect(pop.innerHTML).toContain("data-draw-clear disabled>Clear all</button>");
+    press(p.el, { drawTool: "h" });
+    expect(pop.hidden).toBe(true);
+    expect(p.run("CH.get(EL).tool")).toBe("h");
+    expect(plot.classes.has("ch-tool")).toBe(true);
+    expect(p.el.querySelector(".ch-hint").innerHTML).toBe("Click where the horizontal line goes · Esc cancels");
+    expect(p.el.querySelector(".ch-head").innerHTML).toContain('aria-pressed="true" data-fk="ch-draw" title="Draw: a horizontal line, a trend line, a note — kept in this browser">Draw · Line</button>');
+    // placed: at the row's price on the step, the tool let go, nothing dragged
+    const price = p.run<number>("chSnap(CH.get(EL).L.sc.price(150), 0.5)");
+    down(plot, 300, 150);
+    up(plot);
+    const d = p.run<Array<{ id: string; kind: string; a: { p: number; t?: number }; at: number }>>("JSON.parse(JSON.stringify(CH.get(EL).draw))");
+    expect(d).toHaveLength(1);
+    expect([d[0]!.kind, d[0]!.a.p, "t" in d[0]!.a]).toEqual(["h", price, false]);
+    expect(p.run("[CH.get(EL).tool, CH.get(EL).drag, CH.get(EL).sel === CH.get(EL).draw[0].id]")).toEqual(["", null, true]);
+    expect(plot.classes.has("ch-tool")).toBe(false);
+    expect(p.el.querySelector(".ch-hint").innerHTML).toBe("");
+    const lines = p.el.querySelector(".ch-lines").innerHTML;
+    expect(lines).toContain(`<g class="ch-ln user sel" data-ln="d:${d[0]!.id}">`);
+    expect(lines).toContain(">Line</text>");
+    expect(lines).toContain(`>${price.toLocaleString("en-US", { minimumFractionDigits: 1 })}</text>`);
+    // kept, by market
+    expect(kept(p)).toEqual({ "okx|BTC/USDT": [d[0]] });
+    p.run("chRelease(EL)");
+    p.run('chMount(EL, { venue: "okx", symbol: "BTC/USDT", kind: "spot", quote: "USDT", priceStep: 0.5 })');
+    await settle();
+    expect(p.run("CH.get(EL).draw.length")).toBe(1);
+    expect(p.el.querySelector(".ch-lines").innerHTML).toContain('<g class="ch-ln user" data-ln="d:');
+    p.run("chRelease(EL)");
+    p.run('chMount(EL, { venue: "kraken", symbol: "BTC/USDT", kind: "spot", quote: "USDT" })');
+    await settle();
+    expect(p.run("CH.get(EL).draw.length")).toBe(0);
+    p.run("chRelease(EL)");
+  });
+
+  it("a trend line: dragged from one bar to another, anchored to their times and prices, so it stays through another bar size; a press that never moved keeps nothing and the tool stays; the draft is drawn dashed while it is dragged", async () => {
+    const p = mount();
+    await settle();
+    const plot = p.el.querySelector(".ch-plot");
+    press(p.el, { chDraw: "" });
+    press(p.el, { drawTool: "t" });
+    expect(p.el.querySelector(".ch-hint").innerHTML).toBe("Drag from one bar to another · Esc cancels");
+    const xA = p.run<number>("CH.get(EL).L.sc.cx(10)");
+    const xB = p.run<number>("CH.get(EL).L.sc.cx(30)");
+    // a press alone
+    down(plot, xA, 200);
+    up(plot);
+    expect(p.run("[CH.get(EL).draw.length, CH.get(EL).tool, CH.get(EL).draft]")).toEqual([0, "t", null]);
+    // a drag: the draft first, then the line
+    down(plot, xA, 200);
+    move(plot, xB, 120);
+    expect(p.el.querySelector(".ch-user").innerHTML).toContain('<g class="ch-usr draft" data-dr="draft"><line class="ch-usr-t" x1="');
+    expect(p.run("CH.get(EL).drag")).toBe(null);
+    up(plot);
+    const d = p.run<Array<{ kind: string; a: { t: number; p: number }; b: { t: number; p: number } }>>("JSON.parse(JSON.stringify(CH.get(EL).draw))");
+    expect(d).toHaveLength(1);
+    expect([d[0]!.kind, d[0]!.a.t, d[0]!.b.t]).toEqual(["t", bars[10]!.t, bars[30]!.t]);
+    expect(d[0]!.a.p).toBe(p.run("chSnap(CH.get(EL).L.sc.price(200), 0.5)"));
+    expect(d[0]!.b.p).toBe(p.run("chSnap(CH.get(EL).L.sc.price(120), 0.5)"));
+    expect(p.run("CH.get(EL).tool")).toBe("");
+    const user = p.el.querySelector(".ch-user").innerHTML;
+    expect(user).toMatch(/^<svg class="ch-svg ch-usvg" width="640" height="360" viewBox="0 0 640 360" aria-hidden="true" focusable="false"><svg x="0" y="0" width="\d+" height="\d+"><g class="ch-usr sel" data-dr="d[a-z0-9]+"><line class="ch-usr-t" x1="[\d.]+" y1="[\d.]+" x2="[\d.]+" y2="[\d.]+"\/><circle class="ch-usr-h"/);
+    expect(user).toContain(`x1="${xA + 0.5}"`);
+    expect(user).toContain(`x2="${xB + 0.5}"`);
+    // another bar size (the same bars come back here): still drawn, at its bars' times
+    pickSize(p.el, "5m");
+    await settle();
+    expect(p.run("chInterval(EL)")).toBe("1h");
+    expect(p.el.querySelector(".ch-user").innerHTML).toContain(`<line class="ch-usr-t" x1="${xA + 0.5}"`);
+    p.run("chRelease(EL)");
+  });
+
+  it("a note: typed where it is clicked, kept on Enter with its words escaped, nothing on Esc or empty; a click on a drawing selects it and Delete removes it; Esc cancels a tool, lets a selection go; Clear all; a browser refusing its storage keeps them for the page's life", async () => {
+    const p = mount();
+    await settle();
+    const plot = p.el.querySelector(".ch-plot");
+    const note = p.el.querySelector(".ch-note");
+    press(p.el, { chDraw: "" });
+    press(p.el, { drawTool: "n" });
+    down(plot, 200, 100);
+    up(plot);
+    expect(note.innerHTML).toContain('<input class="ch-note-in" type="text" maxlength="80" placeholder="A note (Enter keeps it)" aria-label="Note" style="left:200px;top:70px">');
+    expect(p.run("CH.get(EL).draft.kind")).toBe("n");
+    note.fire("keydown", { key: "Escape" });
+    expect(p.run("[CH.get(EL).draw.length, CH.get(EL).tool, CH.get(EL).draft]")).toEqual([0, "", null]);
+    expect(note.innerHTML).toBe("");
+    press(p.el, { chDraw: "" });
+    press(p.el, { drawTool: "n" });
+    down(plot, 200, 100);
+    up(plot);
+    note.fire("keydown", { key: "Enter", target: { value: "  " } });
+    expect(p.run("CH.get(EL).draw.length")).toBe(0);
+    press(p.el, { chDraw: "" });
+    press(p.el, { drawTool: "n" });
+    down(plot, 200, 100);
+    up(plot);
+    note.fire("keydown", { key: "Enter", target: { value: " Buy <zone> here " } });
+    const d = p.run<Array<{ id: string; kind: string; text: string; a: { t: number } }>>("JSON.parse(JSON.stringify(CH.get(EL).draw))");
+    expect([d[0]!.kind, d[0]!.text, d[0]!.a.t]).toEqual(["n", "Buy <zone> here", bars[p.run<number>("CH.get(EL).L.sc.at(200)")]!.t]);
+    expect(p.el.querySelector(".ch-user").innerHTML).toContain(">Buy &lt;zone&gt; here</text>");
+    expect(note.innerHTML).toBe("");
+    // a horizontal line too; a press elsewhere lets the selection go; a press on the line selects it; Delete removes it
+    press(p.el, { chDraw: "" });
+    press(p.el, { drawTool: "h" });
+    down(plot, 300, 250);
+    up(plot);
+    expect(p.run("CH.get(EL).draw.length")).toBe(2);
+    const line = p.run<{ id: string; a: { p: number } }>("JSON.parse(JSON.stringify(CH.get(EL).draw[1]))");
+    expect(p.run("CH.get(EL).sel")).toBe(line.id);
+    down(plot, 500, 40);
+    up(plot);
+    expect(p.run("CH.get(EL).sel")).toBe(null);
+    const y = p.run<number>(`CH.get(EL).L.sc.y(${line.a.p})`);
+    down(plot, 500, y + 3);
+    up(plot);
+    expect(p.run("[CH.get(EL).sel, CH.get(EL).drag]")).toEqual([line.id, null]);
+    expect(p.el.querySelector(".ch-lines").innerHTML).toContain('<g class="ch-ln user sel"');
+    plot.fire("keydown", { key: "Delete" });
+    expect(p.run("JSON.parse(JSON.stringify(CH.get(EL).draw.map((x) => x.kind)))")).toEqual(["n"]);
+    expect(kept(p)["okx|BTC/USDT"]).toHaveLength(1);
+    // the note selected by a press on its tag; Esc lets it go; a tool chosen then Esc on the page cancels it
+    const nx = p.run<number>("CH.get(EL).L.sc.cx(CH.get(EL).L.sc.at(200))");
+    down(plot, nx + 10, Math.round(p.run<number>("CH.get(EL).L.sc.y(CH.get(EL).draw[0].a.p)")) - 10);
+    up(plot);
+    expect(p.run("CH.get(EL).sel")).toBe(d[0]!.id);
+    plot.fire("keydown", { key: "Escape" });
+    expect(p.run("CH.get(EL).sel")).toBe(null);
+    press(p.el, { chDraw: "" });
+    press(p.el, { drawTool: "t" });
+    doc(p).fire("keydown", { key: "Escape", target: { closest: () => null } });
+    expect(p.run("[CH.get(EL).tool, CH.get(EL).full]")).toEqual(["", false]);
+    expect(plot.classes.has("ch-tool")).toBe(false);
+    // Clear all
+    press(p.el, { chDraw: "" });
+    expect(p.el.querySelector(".ch-draw-pop").innerHTML).toContain("data-draw-clear>Clear all</button>");
+    press(p.el, { drawClear: "" });
+    expect(p.run("CH.get(EL).draw.length")).toBe(0);
+    expect(kept(p)).toEqual({});
+    p.run("chRelease(EL)");
+    // a browser that refuses its storage, or holds junk under the key
+    const q = mount('localStorage = { getItem: () => { throw new Error("no"); }, setItem: () => { throw new Error("no"); }, removeItem: () => { throw new Error("no"); } };');
+    await settle();
+    press(q.el, { chDraw: "" });
+    press(q.el, { drawTool: "h" });
+    down(q.el.querySelector(".ch-plot"), 300, 150);
+    expect(q.run("CH.get(EL).draw.length")).toBe(1);
+    q.run("chRelease(EL)");
+    const j = mount('var STORE = { "account.chart.drawings": "{\\"okx|BTC/USDT\\": [{\\"kind\\": \\"x\\"}, {\\"kind\\": \\"h\\", \\"a\\": {\\"p\\": \\"83100\\"}}, {\\"kind\\": \\"t\\", \\"a\\": {\\"t\\": 1, \\"p\\": 2}}, 7]}" }; localStorage = { getItem: (k) => STORE[k] ?? null, setItem: (k, v) => { STORE[k] = String(v); }, removeItem: (k) => { delete STORE[k]; } };');
+    await settle();
+    expect(j.run("JSON.parse(JSON.stringify(CH.get(EL).draw.map((x) => [x.kind, x.a.p, typeof x.id])))")).toEqual([["h", 83100, "string"]]);
+    j.run("chRelease(EL)");
+    const b = mount('var STORE = { "account.chart.drawings": "not json" }; localStorage = { getItem: (k) => STORE[k] ?? null, setItem: (k, v) => { STORE[k] = String(v); }, removeItem: (k) => { delete STORE[k]; } };');
+    await settle();
+    expect(b.run("CH.get(EL).draw.length")).toBe(0);
+    b.run("chRelease(EL)");
+  });
+
+  it("keeps at most forty a market and fifty markets, the oldest let go first", async () => {
+    const p = mount();
+    await settle();
+    p.run(`var s = CH.get(EL); for (let i = 0; i < 45; i++) chDrawingAdd(s, { kind: "h", a: { p: 83000 + i } });`);
+    expect(p.run("CH.get(EL).draw.length")).toBe(40);
+    expect(p.run("CH.get(EL).draw[0].a.p")).toBe(83005);
+    p.run(`var all = {}; for (let m = 0; m < 55; m++) all["v" + m + "|S"] = [{ id: "d" + m, kind: "h", a: { p: 1 }, at: m }]; STORE["account.chart.drawings"] = JSON.stringify(all); chDrawingsSave(CH.get(EL))`);
+    const keys = Object.keys(kept(p));
+    expect(keys).toHaveLength(50);
+    expect(keys).toContain("okx|BTC/USDT");
+    expect(keys).not.toContain("v0|S");
+    expect(keys).toContain("v54|S");
+    p.run("chRelease(EL)");
   });
 });
