@@ -72,8 +72,11 @@
   --up: #00843d;
   --down: #da291c;
   /* a Yes and a No to press: the up and down colours on a fill of their own */
-  --up-fill: rgba(0, 132, 61, 0.1);
-  --down-fill: rgba(218, 41, 28, 0.09);
+  --up-fill: rgba(0, 132, 61, 0.14);
+  --down-fill: rgba(218, 41, 28, 0.13);
+  /* a price that just moved: its tint for a moment, stronger than a fill, fading out */
+  --tick-up: rgba(0, 132, 61, 0.28);
+  --tick-down: rgba(218, 41, 28, 0.26);
   --hover: rgba(17, 17, 17, 0.05);
   --area: rgba(17, 17, 17, 0.05);
   --scrim: rgba(251, 251, 250, 0.5);
@@ -141,8 +144,10 @@
   --on-warn: #0a0a0a;
   --up: #3bb360;
   --down: #ff7360;
-  --up-fill: rgba(59, 179, 96, 0.14);
-  --down-fill: rgba(255, 115, 96, 0.13);
+  --up-fill: rgba(59, 179, 96, 0.2);
+  --down-fill: rgba(255, 115, 96, 0.19);
+  --tick-up: rgba(59, 179, 96, 0.34);
+  --tick-down: rgba(255, 115, 96, 0.32);
   --hover: rgba(255, 255, 255, 0.06);
   --area: rgba(255, 255, 255, 0.06);
   --scrim: rgba(0, 0, 0, 0.55);
@@ -207,8 +212,10 @@
     --on-warn: #0a0a0a;
     --up: #3bb360;
     --down: #ff7360;
-    --up-fill: rgba(59, 179, 96, 0.14);
-    --down-fill: rgba(255, 115, 96, 0.13);
+    --up-fill: rgba(59, 179, 96, 0.2);
+    --down-fill: rgba(255, 115, 96, 0.19);
+    --tick-up: rgba(59, 179, 96, 0.34);
+    --tick-down: rgba(255, 115, 96, 0.32);
     --hover: rgba(255, 255, 255, 0.06);
     --area: rgba(255, 255, 255, 0.06);
     --scrim: rgba(0, 0, 0, 0.55);
@@ -258,6 +265,12 @@
   --radius-l: 6px;
   --radius-pill: 3px;
   --radius: var(--radius-s);
+  /* motion, one hand: what arrives eases out, what leaves eases in; three lengths — a pointer's feedback, a change, a part arriving */
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --t-1: 120ms;
+  --t-2: 180ms;
+  --t-3: 280ms;
   --radius-2: var(--radius-m);
   --rail: 248px;
   /* the earlier names, pointed at the ones above. --orange stays a fill: words in it use --warn-text, which reads on either background */

@@ -529,7 +529,8 @@ function chg(n, unit = "%") {
   const v = Number(n);
   const a = Math.abs(v);
   const amount = unit === "$" ? fine(a) : unit === "¢" ? `${Number(a.toFixed(1))}¢` : unit === "%" ? `${a >= 1 ? a.toFixed(1) : a.toFixed(2)}%` : px(a);
-  if (v === 0) return `<span class="flat">${amount}</span>`;
+  // a move too small for its figures (−0.004% reads 0.00%) is flat: never an arrow on a zero
+  if (v === 0 || !/[1-9]/.test(amount)) return `<span class="flat">${amount}</span>`;
   return `<span class="${v > 0 ? "up" : "down"}"><span aria-hidden="true">${v > 0 ? "▲" : "▼"}</span><span class="sr">${v > 0 ? "up" : "down"}</span> ${amount}</span>`;
 }
 /** a table: `cols` [{ label, r (right-aligned), cls, cell(row, i) → HTML }], `rows` any list; opts.empty the words when there are none,

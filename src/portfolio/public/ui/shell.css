@@ -40,10 +40,14 @@ svg.ico.sm { width: 16px; height: 16px; }
 .h2 { font-family: var(--font-sans); font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
 /* a price the poll moved (markets.js mkPrices): a tint behind its figures, up or down, for 160 ms — on, then off, nothing animated frame
    by frame; the figures, in tabular digits, keep their place */
-[data-q][data-fmt] { position: relative; z-index: 0; }
-.tick-up::after, .tick-down::after { content: ""; position: absolute; inset: -1px -4px; z-index: -1; border-radius: 6px; pointer-events: none; }
-.tick-up::after { background: var(--up-fill); }
-.tick-down::after { background: var(--down-fill); }
+[data-q][data-fmt] { position: relative; z-index: 0; transition: color var(--t-3) var(--ease-out); }
+/* a figure that just moved (markets.js mkFlash): its tint comes at once and fades out over the next moment, and the figure takes the
+   move's colour and settles back — paint only, nothing moves */
+[data-q][data-fmt]::after { content: ""; position: absolute; inset: -1px -4px; z-index: -1; border-radius: 6px; pointer-events: none; opacity: 0; transition: opacity 640ms var(--ease-out); }
+.tick-up::after { background: var(--tick-up); opacity: 1; transition-duration: 0ms; }
+.tick-down::after { background: var(--tick-down); opacity: 1; transition-duration: 0ms; }
+.tick-up { color: var(--up); transition-duration: 0ms; }
+.tick-down { color: var(--down); transition-duration: 0ms; }
 /* up and down: a glyph and a word for whoever cannot see the colour */
 .up { color: var(--up); font-weight: 600; }
 .down { color: var(--down); font-weight: 600; }
@@ -60,7 +64,9 @@ button.ink { background: var(--primary); color: var(--on-primary); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 18px; border: 0; border-radius: var(--radius-s); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; white-space: nowrap; text-decoration: none; }
 /* pointed at: a fill or a word changes colour over 120 ms (paint only, a small area), never a size or a place — and at once while the page
    scrolls under a resting pointer (core.js html.scrolling) */
-.btn, .icon-btn, .seg button, .tabs button, .rail-nav a, .rail-links button, .lens, .menu button, .picks button, .link, .t tr.click td, .tk-list button, .quick-card, .choice { transition: background-color 120ms ease-out, color 120ms ease-out, opacity 120ms ease-out; }
+.btn, .icon-btn, .seg button, .tabs button, .rail-nav a, .rail-links button, .lens, .menu button, .picks button, .link, .t tr.click td, .tk-list button, .quick-card, .choice, .rl-row, .rl-line, .mk-tile { transition: background-color var(--t-1) var(--ease-out), color var(--t-1) var(--ease-out), opacity var(--t-1) var(--ease-out), transform var(--t-1) var(--ease-out); }
+/* pressed: a touch smaller for the moment the pointer is down (a transform: the compositor's, nothing laid out again) */
+:is(.btn, .icon-btn, .seg button, .rail-nav a, .rail-links button, .menu button, .rl-row, .mk-tile, .tabs button):active:not(:disabled) { transform: scale(0.985); transition-duration: 60ms; }
 .scrolling :is(.btn, .icon-btn, .seg button, .tabs button, .lens, .menu button, .picks button, .link, .t tr.click td, .tk-list button, .quick-card, .choice) { transition: none; }
 .btn:hover:not(:disabled) { background: var(--border); }
 .btn-primary, .btn.btn-primary { background: var(--primary); color: var(--on-primary); }
@@ -81,6 +87,8 @@ button.ink { background: var(--primary); color: var(--on-primary); }
 .link.dim { color: var(--dim); }
 .link:hover { color: var(--warn-text); }
 /* a count beside a word: cards waiting, agents asking */
+.count:not([hidden]) { animation: count-pop var(--t-3) var(--ease-out); }
+@keyframes count-pop { from { transform: scale(0.6); } }
 .count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--warn); color: var(--on-warn); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; margin-left: auto; }
 
 /* a toggle: a track on the second surface, the pressed one in ink with the paper's colour on it (Background, Mode, 1D/1W/1M/All,
@@ -158,7 +166,8 @@ button.ink { background: var(--primary); color: var(--on-primary); }
 .st-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--dim); white-space: nowrap; }
 .st-dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
 .st-dot[data-st="connected"] { color: var(--up); }
-.st-dot[data-st="connected"]::before { background: var(--up); }
+.st-dot[data-st="connected"]::before { background: var(--up); animation: st-breathe 2.4s ease-in-out infinite; }
+@keyframes st-breathe { 50% { opacity: 0.4; } }
 .st-dot[data-st="stale"] { color: var(--warn-text); }
 .st-dot[data-st="stale"]::before { background: var(--warn); }
 /* under Agents: how many there are */
@@ -178,6 +187,11 @@ button.ink { background: var(--primary); color: var(--on-primary); }
 .rl-where { grid-area: where; min-width: 0; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rl-px { grid-area: px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .rl-chg { grid-area: chg; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+/* a move as a chip: the up or down colour on its own fill, so the eye finds it from across the page */
+.rl-chg > .up, .rl-chg > .down, .rl-line .rl-v > .up, .rl-line .rl-v > .down { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: var(--radius-pill); }
+.rl-chg > .up, .rl-line .rl-v > .up { background: var(--up-fill); }
+.rl-chg > .down, .rl-line .rl-v > .down { background: var(--down-fill); }
+.rl-row:active { background: var(--surface-2); }
 .rl-bell { display: inline-flex; align-items: center; gap: 2px; flex: none; font-size: 11px; font-weight: 600; color: var(--dim); }
 .rl-bell .ico { width: 12px; height: 12px; }
 .rl-bell.warm { color: var(--warn-text); }
@@ -242,6 +256,8 @@ kbd { font-family: var(--font-mono); font-size: 11px; font-weight: 500; border: 
 .sh-keys-note { margin: 0 0 14px; }
 /* the lens's menu, under its button: a floating card */
 .menu { position: absolute; top: 50px; left: 0; z-index: 20; min-width: 280px; max-height: 70vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--card-border); border-radius: var(--radius-m); box-shadow: var(--shadow); padding: 6px; }
+.menu:not([hidden]) { animation: menu-in var(--t-2) var(--ease-out); }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } }
 .menu .menu-h { font-size: 12px; font-weight: 600; color: var(--dim); padding: 10px 12px 4px; }
 .menu button { display: flex; width: 100%; min-height: 44px; border: 0; border-radius: var(--radius-s); background: transparent; padding: 0 12px 0 34px; align-items: center; gap: 10px; text-align: left; position: relative; font-weight: 500; }
 .menu button:hover { background: var(--surface-2); }
@@ -320,6 +336,10 @@ kbd { font-family: var(--font-mono); font-size: 11px; font-weight: 500; border: 
 /* a small word beside a name: Best · Connect to trade · Read-only — a pill in sentence case */
 .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--dim); background: var(--surface-2); border-radius: var(--radius-pill); padding: 1px 8px; vertical-align: middle; white-space: nowrap; line-height: 1.5; }
 .tag.up { color: var(--up); background: var(--up-fill); }
+/* a 24h move in a table's right-hand cell, and in a pulse tile: a chip in the move's colour on its fill */
+.mk-t td.r > .up, .mk-t td.r > .down, .mk-tile-f > .up, .mk-tile-f > .down { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: var(--radius-pill); }
+.mk-t td.r > .up, .mk-tile-f > .up { background: var(--up-fill); }
+.mk-t td.r > .down, .mk-tile-f > .down { background: var(--down-fill); }
 .tag.warn { color: var(--warn-text); background: var(--warn-fill); }
 .tag.paper { color: var(--text); background: none; border: 1px dashed var(--text); line-height: 1.3; }
 /* a chip: a white pill lifted by the card's shadow */
@@ -490,6 +510,8 @@ dialog { color: var(--text); }
 .toast-stack { position: fixed; inset: auto 24px 24px auto; margin: 0; padding: 0; border: 0; background: transparent; overflow: visible; color: var(--text); z-index: 50; display: flex; flex-direction: column; gap: 8px; width: min(440px, calc(100vw - 32px)); pointer-events: none; }
 .toast-stack > div { display: flex; flex-direction: column; gap: 8px; }
 .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; background: var(--surface); border: 1px solid var(--card-border); border-radius: var(--radius-m); box-shadow: var(--shadow); padding: 12px 8px 12px 16px; font-size: 14px; line-height: 1.4; }
+.toast { animation: toast-in var(--t-3) var(--ease-out); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 .toast.no { border-color: var(--down); }
 .toast .mk { font-weight: 800; padding-top: 1px; flex: none; width: 14px; }
 .toast.ok .mk { color: var(--up); }
@@ -764,4 +786,7 @@ html, body { transition: background-color 0.2s ease-in-out; }
   /* the rail and the page behind it change colour at once as the area comes and goes */
   html, body, .rail, .rail-wallet, .rail-pill, .rail-nav.moves .rail-pill, .brand, .brand-mark, .rail .count, .rail .stamp, .rw-sub { transition: none; }
   :root[data-area="trade"] .menu { animation: none; }
+  .menu:not([hidden]), .toast, .count:not([hidden]), .st-dot[data-st="connected"]::before { animation: none; }
+  [data-q][data-fmt], [data-q][data-fmt]::after, .rl-row, .rl-line, .mk-tile { transition: none; }
+  :is(.btn, .icon-btn, .seg button, .rail-nav a, .rail-links button, .menu button, .rl-row, .mk-tile, .tabs button):active:not(:disabled) { transform: none; }
 }
