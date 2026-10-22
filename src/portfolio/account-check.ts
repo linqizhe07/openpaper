@@ -10,12 +10,14 @@
  *                                            no movement, nothing written to the account's ledger
  *   npm run account:check -- --home <dir>    the home whose key files --keys reads (default $BUYER_HOME or ~/.buyer-agent-demo)
  *   npm run account:check -- --json          the same, as JSON
+ *   npm run account:check -- --help          these options; a misspelt one is refused
  *
  * No IP address, country or region is printed or kept: a venue that does not serve the place says so in its own words, and that is all.
  * Its output is meant to be pasted to someone else (a teammate where the venues serve them, or the developer): it holds no key, balance
  * amount or address.
  */
 import { KNOWN_EXCHANGES } from "./live/availability.ts";
+import { CHECK_FLAGS, CHECK_USAGE, parseFlags } from "./cli.ts";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -123,9 +125,12 @@ export function checkMarkdown(r: CheckReport): string {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const args = process.argv.slice(2);
-  const at = (flag: string) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
-  const report = await accountCheck({ home: at("--home") ?? defaultHome(), keys: args.includes("--keys") });
-  process.stdout.write(args.includes("--json") ? `${JSON.stringify(report, null, 2)}\n` : checkMarkdown(report));
+  const opts = parseFlags(process.argv.slice(2), CHECK_FLAGS, CHECK_USAGE);
+  if (opts.kind !== "ok") {
+    (opts.kind === "help" ? process.stdout : process.stderr).write(opts.kind === "help" ? opts.text : `${opts.text}\n`);
+    process.exit(opts.kind === "help" ? 0 : 2);
+  }
+  const report = await accountCheck({ home: opts.get("home") ?? defaultHome(), keys: opts.has("keys") });
+  process.stdout.write(opts.has("json") ? `${JSON.stringify(report, null, 2)}\n` : checkMarkdown(report));
   process.exit(0);
 }

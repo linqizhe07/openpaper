@@ -8,6 +8,8 @@
  *   npm run account:service -- logs                      the last lines it wrote
  *   npm run account:service -- code                      the pairing code, when the account has no owner yet
  *   npm run account:service -- uninstall                 stop it and take it out of launchd
+ *   npm run account:service -- help                      these commands and the server's options; an unknown command, or a server option
+ *                                                        the server would refuse, is refused here before anything is written
  *
  * What it runs is the code in this folder: a change here reaches it on the next restart. Its state is the account's own (the ledgers in the
  * home, account/restore.ts): a restart brings back the owner's browser, the venues, the agents and their limits.
@@ -18,6 +20,7 @@ import { homedir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultHome } from "./home.ts";
+import { checkServerArgs, SERVICE_COMMANDS, serviceUsage } from "./cli.ts";
 
 export const LABEL = "com.buyer-agent-demo.account";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -184,9 +187,23 @@ function installed(): { args: string[] } | undefined {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const [cmd = "status", ...rest] = process.argv.slice(2);
+  if (cmd === "help" || cmd === "--help" || cmd === "-h") {
+    process.stdout.write(serviceUsage());
+    process.exit(0);
+  }
+  if (!SERVICE_COMMANDS.some((c) => c.name === cmd)) {
+    process.stderr.write(`unknown command ${cmd}; npm run account:service takes: ${SERVICE_COMMANDS.map((c) => c.name).join(", ")}\n`);
+    process.exit(2);
+  }
   const p = plan(rest);
   if (cmd === "install") {
     if (process.platform !== "darwin") throw new Error("this installs a macOS LaunchAgent: on another system run `npm run account` under its own service manager");
+    // the server's options are checked here, before they are written into launchd: the server would refuse them and never start
+    const refused = checkServerArgs(rest);
+    if (refused) {
+      process.stderr.write(`${refused}\n`);
+      process.exit(2);
+    }
     mkdirSync(dirname(p.log), { recursive: true, mode: 0o700 });
     mkdirSync(dirname(p.path), { recursive: true });
     // a running copy of an earlier install is taken out first: one service, one port — and waited for, since launchd answers bootout

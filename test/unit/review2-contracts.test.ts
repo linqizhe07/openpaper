@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { OWNER_TYPES } from "../../src/portfolio/account/sign.ts";
+import { SERVER_FLAGS } from "../../src/portfolio/cli.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -112,7 +113,8 @@ describe("refusal codes: what the real account raises and what the COOKBOOK tabl
 describe("the docs' flags and scripts exist", () => {
   it("every --flag the COOKBOOK's 怎么跑 table and §11c name is read by the server or the stand-in", () => {
     const standin = read("test/standin/ui-standin.ts");
-    const parsed = new Set([...matches(server, /(?:at\("|includes\(")(--[a-z-]+)"/g), ...matches(standin, /(?:at\("|includes\(")(--[a-z-]+)"/g)]);
+    // the server's options are the table in cli.ts (what --help prints); the stand-in still reads its own with at() and includes()
+    const parsed = new Set([...SERVER_FLAGS.map((f) => `--${f.name}`), ...matches(standin, /(?:at\("|includes\(")(--[a-z-]+)"/g)]);
     const run = cookbook.slice(cookbook.indexOf("## 0 · 怎么跑"), cookbook.indexOf("## 1 ·"));
     const standinDoc = cookbook.slice(cookbook.indexOf("## 11c"), cookbook.indexOf("# 下半"));
     const named = matches(`${run}\n${standinDoc}`, /(--(?:port|home|read-only|live-cap|classic|fresh|cap|tick|mm))\b/g);
