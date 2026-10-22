@@ -1,17 +1,20 @@
-/** AN ATTACK THAT MUST FAIL (found by an independent review on 2026-10-04, written as it succeeded then, and run with `it.fails`:
- * this test passes only while the attack below does NOT go through) — attacker A, an agent with an open payment session.
+/** THE HOLE (found by an independent review on 2026-10-04) — attacker A, an agent with an open payment session.
  *
  * The owner replaces the spending approval while a session is open (here: cuts it to $5 a payment, $6 in all). Vouchers on the open session
  * are judged `inSession`: no budget line ("the budget was set aside when the deposit went in") and no card. But the deposit was set aside in
- * the OLD approval; the instruction is judged against the NEW one, which set nothing aside and has no pinned address for this payee. The
- * agent goes on spending the deposit: $25 on a $6 budget, to an address the owner never approved under this approval, without being asked. */
+ * the OLD approval; the instruction was judged against the NEW one, which set nothing aside and has no pinned address for this payee. The
+ * agent went on spending the deposit: $25 on a $6 budget, to an address the owner never approved under this approval, without being asked.
+ *
+ * THE REFUSAL: a session remembers the approval it was opened under. Once the owner has replaced that approval, every call on the session
+ * is E_MANDATE_EXPIRED — close it, and the next call opens one under the approval that stands. Nothing more leaves the float, and the new
+ * approval reads $0 spent with no pinned address. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { isRefusal } from "../../src/core/errors.ts";
+import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { cardHash, type Outcome } from "../../src/portfolio/account/exchange.ts";
-import { signAgent, signOwner, simKey, ZERO, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
+import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
 import { PortfolioService } from "../../src/portfolio/service.ts";
 
 const START = Date.parse("2026-10-05T14:00:00.000Z");
@@ -43,35 +46,40 @@ async function boot() {
     t += ms;
     await engine.settle();
   };
-  await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: t + 90 * DAY });
-  await own({ type: "createSubAccount", name: "research", agent: cc.address, float: "60" });
+  expect(code(await own({ type: "approveAgent", agentAddress: cc.address, agentName: "Claude Code", validUntil: t + 90 * DAY }))).toBe("account");
+  expect(code(await own({ type: "createSubAccount", name: "research", agent: cc.address, float: "60" }))).toBe("account");
   const fund = { destination: "self", sourceDex: "metamask", destinationDex: "sub:research", token: "USDC", amount: "50" };
   const route = await engine.resolve(fund, "owner");
   if (isRefusal(route)) throw new Error(route.message);
-  await own({ type: "sendAsset", ...fund, fromSubAccount: "", route: route.route.hash, maxFee: String(route.route.feeUsd), deadline: route.route.arrivalMs + MIN });
+  expect(code(await own({ type: "sendAsset", ...fund, fromSubAccount: "", route: route.route.hash, maxFee: String(route.route.feeUsd), deadline: route.route.arrivalMs + MIN }))).toBe("payment");
   await pass(2 * MIN);
-  await own({ type: "approveSpend", agent: cc.address, scope: "payees", allow: "infer.sim", perPayment: "30", budget: "40", windowHours: 0, validUntil: t + 90 * DAY });
+  expect(code(await own({ type: "approveSpend", agent: cc.address, scope: "payees", allow: "infer.sim", perPayment: "30", budget: "40", windowHours: 0, validUntil: t + 90 * DAY }))).toBe("account");
   const float = () => engine.sub("research")!.balanceMicro;
   const spend = () => engine.state.spends.find((s) => s.scope === "payees" && s.revokedAt === undefined)!;
   return { svc, engine, world: svc.payees!, own, pay, payOk, pass, float, spend, start: float(), now: () => t };
 }
 
-describe("A · an open session does not notice that the owner cut the budget", () => {
-  it.fails("the owner cuts the budget to $6 while a session is open: $25 more is spent under it, with no card", async () => {
+describe("A · an open session and an approval the owner has replaced", () => {
+  it("the owner cuts the budget to $6 while a session is open: every call on the session is refused, and nothing more is spent under either approval", async () => {
     const x = await boot();
     x.world.infer.depositMicro = 30_000_000;
     x.world.infer.unitMicro = 5_000_000;
     expect(code(await x.payOk("5"))).toBe("payment");
+    // the $30 deposit left the float; the approval reads $5 spent and $25 set aside for the session
+    expect(x.float()).toBe(x.start - 30_000_000);
+    expect([x.spend().spentMicro, x.spend().reservedMicro]).toEqual([5_000_000, 25_000_000]);
     // the owner thinks again: $5 a payment, $6 in all. A new approval starts with no pinned address
     expect(code(await x.own({ type: "approveSpend", agent: cc.address, scope: "payees", allow: "infer.sim", perPayment: "5", budget: "6", windowHours: 0, validUntil: x.now() + DAY }))).toBe("account");
     expect([x.spend().budgetMicro, x.spend().spentMicro, x.spend().payTo]).toEqual([6_000_000, 0, {}]);
-    // five more calls on the open session: no card for the first payment under the new approval, no budget line
-    const more: string[] = [];
-    for (let i = 0; i < 5; i++) more.push(code(await x.pay("5")));
-    expect(more).toEqual(["payment", "payment", "payment", "payment", "payment"]);
+    // five more calls on the open session: each is refused, since the approval the session was opened under is gone
+    const more: Outcome[] = [];
+    for (let i = 0; i < 5; i++) more.push(await x.pay("5"));
+    expect(more.map(code)).toEqual(Array.from({ length: 5 }, () => "E_MANDATE_EXPIRED"));
+    expect((more[0] as Refusal).message).toMatch(/opened under a spending approval the owner has since replaced/);
+    // nothing more left the float, and the new approval has nothing spent and no address the owner approved for this payee
+    expect(x.float()).toBe(x.start - 30_000_000);
     const spentBeyondBudget = x.spend().spentMicro > x.spend().budgetMicro;
-    expect([x.spend().budgetMicro, x.spend().spentMicro, spentBeyondBudget]).toEqual([6_000_000, 25_000_000, true]);
-    // and the new approval still has no address the owner approved for this payee
+    expect([x.spend().budgetMicro, x.spend().spentMicro, spentBeyondBudget]).toEqual([6_000_000, 0, false]);
     expect(x.spend().payTo).toEqual({});
   });
 });
