@@ -49,14 +49,29 @@ export function newestMerge(log: string): { number: number; branch: string } | u
   return undefined;
 }
 
-/** every merged pull request a git log names, as "number|branch", for keeping the earlier home's list to this history */
-export function mergedInHistory(log: string): Set<string> {
-  const out = new Set<string>();
+/** every merged pull request a git log names, as "number|branch", newest first: the order the repository merged them, which is the
+ * order the page shows them (a batch pushed at once has one merge time at GitHub for all of it, so the time says nothing of the order) */
+export function mergedOrder(log: string): string[] {
+  const out: string[] = [];
   for (const line of log.split("\n")) {
     const m = /^Merge pull request #(\d+) from [^/\s]+\/(\S+)/.exec(line.trim());
-    if (m) out.add(`${Number(m[1])}|${m[2]}`);
+    if (m) out.push(`${Number(m[1])}|${m[2]}`);
   }
   return out;
+}
+/** the same as a set, for keeping the earlier home's list to this history */
+export function mergedInHistory(log: string): Set<string> {
+  return new Set(mergedOrder(log));
+}
+/** the list in the history's order, newest first; an entry the history does not name (a shallow checkout) after the named ones, by its
+ * merge time; an entry without a branch matches by number alone */
+export function orderByHistory(list: Merged[], log: string): Merged[] {
+  const order = mergedOrder(log);
+  const rank = (e: Merged): number => {
+    const i = order.findIndex((k) => (e.branch ? k === `${e.number}|${e.branch}` : k.startsWith(`${e.number}|`)));
+    return i < 0 ? order.length : i;
+  };
+  return [...list].sort((a, b) => rank(a) - rank(b) || Date.parse(b.mergedAt) - Date.parse(a.mergedAt));
 }
 
 /** does the file's first entry name the newest merge? (an entry without a branch, from before branches were kept, matches by number) */
@@ -79,9 +94,10 @@ export async function fetchMerged(repo: string, perPage = 100): Promise<Merged[]
 }
 
 /** this repository's merged pull requests, then the earlier home's that this history merged */
-export async function refresh(history: Set<string> = mergedInHistory(execFileSync("git", ["log", "--merges", "--first-parent", "--format=%s"], { cwd: ROOT, encoding: "utf8" }))): Promise<Progress> {
+export async function refresh(log: string = execFileSync("git", ["log", "--merges", "--first-parent", "--format=%s"], { cwd: ROOT, encoding: "utf8" })): Promise<Progress> {
+  const history = mergedInHistory(log);
   const earlier = (await fetchMerged(EARLIER_HOME)).filter((e) => (e.branch ? history.has(`${e.number}|${e.branch}`) : [...history].some((h) => h.startsWith(`${e.number}|`))));
-  const merged = [...(await fetchMerged(REPO)), ...earlier];
+  const merged = orderByHistory([...(await fetchMerged(REPO)), ...earlier], log);
   return { asOf: new Date().toISOString().slice(0, 10), source: `https://api.github.com/repos/${REPO}/pulls?state=closed`, merged };
 }
 

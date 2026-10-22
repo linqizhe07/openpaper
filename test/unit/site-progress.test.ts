@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isFresh, mergedInHistory, newestMerge, PROGRESS_FILE, REPO, type Progress } from "../../scripts/site-progress.ts";
+import { isFresh, mergedInHistory, mergedOrder, newestMerge, orderByHistory, PROGRESS_FILE, REPO, type Merged, type Progress } from "../../scripts/site-progress.ts";
 
 /** The site's baked Progress list: the check that keeps it fresh reads the newest merge commit, number and branch, and no network. */
 describe("the site's progress file", () => {
@@ -12,9 +12,24 @@ describe("the site's progress file", () => {
     expect(newestMerge("")).toBeUndefined();
   });
 
-  it("names every merge in the log by number and branch, so the earlier home's list is kept to what this history merged", () => {
+  it("names every merge in the log by number and branch, newest first, so the earlier home's list is kept to what this history merged", () => {
+    expect(mergedOrder(log)).toEqual(["2|ci/typecheck-and-tests", "1|chore/rename-openpaper", "45|fix/from-zero-beta"]);
     expect(mergedInHistory(log)).toEqual(new Set(["2|ci/typecheck-and-tests", "1|chore/rename-openpaper", "45|fix/from-zero-beta"]));
     expect(mergedInHistory("nothing merged\n").size).toBe(0);
+  });
+
+  it("orders the list as the history merged them — not by GitHub's merge time, which is one time for a batch pushed at once — the ones the history does not name last, by their time", () => {
+    const e = (number: number, branch: string | undefined, mergedAt: string): Merged => ({ number, title: "t", mergedAt, url: "u", ...(branch ? { branch } : {}) });
+    const list = [e(1, "chore/rename-openpaper", "2026-10-22T20:00:00Z"), e(45, "fix/from-zero-beta", "2026-10-21T00:00:00Z"), e(7, "feat/elsewhere", "2026-10-22T21:00:00Z"), e(2, "ci/typecheck-and-tests", "2026-10-22T19:59:00Z"), e(9, undefined, "2026-10-22T22:00:00Z"), e(45, undefined, "2026-10-20T00:00:00Z")];
+    expect(orderByHistory(list, log).map((x) => [x.number, x.branch ?? "", x.mergedAt])).toEqual([
+      [2, "ci/typecheck-and-tests", "2026-10-22T19:59:00Z"],
+      [1, "chore/rename-openpaper", "2026-10-22T20:00:00Z"],
+      [45, "fix/from-zero-beta", "2026-10-21T00:00:00Z"],
+      [45, "", "2026-10-20T00:00:00Z"],
+      [9, "", "2026-10-22T22:00:00Z"],
+      [7, "feat/elsewhere", "2026-10-22T21:00:00Z"],
+    ]);
+    expect(orderByHistory([], log)).toEqual([]);
   });
 
   it("is fresh when its first entry is the newest merge by number and branch — numbers alone collide across the repository's homes", () => {
@@ -41,6 +56,11 @@ describe("the site's progress file", () => {
       expect(Number.isFinite(Date.parse(m.mergedAt))).toBe(true);
       expect(m.url).toMatch(/^https:\/\/github\.com\/linqizhe07\/(openpaper|account)\/pull\/\d+$/);
     }
-    for (let i = 1; i < file.merged.length; i++) expect(Date.parse(file.merged[i - 1]!.mergedAt)).toBeGreaterThanOrEqual(Date.parse(file.merged[i]!.mergedAt));
+    // this repository's pull requests first (in the order they were merged: the history's, which no checkout here can read), then the
+    // earlier home's, each merged on its own, so their times run newest first
+    const home = (m: Merged) => (m.url.includes("/openpaper/") ? 0 : 1);
+    for (let i = 1; i < file.merged.length; i++) expect(home(file.merged[i - 1]!)).toBeLessThanOrEqual(home(file.merged[i]!));
+    const earlier = file.merged.filter((m) => home(m) === 1);
+    for (let i = 1; i < earlier.length; i++) expect(Date.parse(earlier[i - 1]!.mergedAt)).toBeGreaterThanOrEqual(Date.parse(earlier[i]!.mergedAt));
   });
 });
