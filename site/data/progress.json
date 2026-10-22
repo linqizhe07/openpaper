@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 27,
+      "title": "The page calls itself openpaper: its title, the rail's brand with the ring for a mark, and the tab's icon",
+      "mergedAt": "2026-10-22T20:38:58Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/27",
+      "branch": "feat/brand-openpaper"
+    },
+    {
       "number": 26,
       "title": "The Progress script reads a merge subject that lost its number, by its branch",
       "mergedAt": "2026-10-22T20:24:26Z",
