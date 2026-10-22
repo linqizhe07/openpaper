@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 30,
+      "title": "One hand of motion and bolder colour for a move: the tick fades, a press is felt, menus and toasts arrive, the moves are chips, the live dot breathes",
+      "mergedAt": "2026-10-22T21:58:58Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/30",
+      "branch": "feat/polish-motion-colour"
+    },
+    {
       "number": 29,
       "title": "The changelog's rail line links its pull request",
       "mergedAt": "2026-10-22T21:49:15Z",
