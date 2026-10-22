@@ -31,7 +31,7 @@ link there.
 - Three session-word tests read the same in any zone, and the site's Progress list follows the merge history rather than GitHub's merge time. [#25](https://github.com/linqizhe07/openpaper/pull/25)
 - The Progress script reads a merge subject that lost its number, by its branch. [#26](https://github.com/linqizhe07/openpaper/pull/26)
 - The page calls itself openpaper: its title, the rail's brand with the ring for a mark, and the tab's icon. [#27](https://github.com/linqizhe07/openpaper/pull/27)
-- The left rail keeps watch from any tab: the markets starred, priced fresh every five seconds; the books in a line each (open orders, positions and what they are up or down, the paper result); the stream's dot beside the clock; how many agents.
+- The left rail keeps watch from any tab: the markets starred, priced fresh every five seconds; the books in a line each (open orders, positions and what they are up or down, the paper result); the stream's dot beside the clock; how many agents. [#28](https://github.com/linqizhe07/openpaper/pull/28)
 
 ## v0.1.0 — 2026-10-22
 
