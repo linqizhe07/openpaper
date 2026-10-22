@@ -31,6 +31,7 @@
     "account:service": "tsx src/portfolio/account-service.ts",
     "account:check": "tsx src/portfolio/account-check.ts",
     "site:numbers": "tsx scripts/site-numbers.ts",
+    "site:progress": "tsx scripts/site-progress.ts",
     "site": "node scripts/site-serve.mjs"
   },
   "dependencies": {
