@@ -616,7 +616,7 @@ export type OpenMcp = (url: string, bearer: string) => Promise<McpSession>;
 export const realMcp: OpenMcp = async (url, bearer) => {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StreamableHTTPClientTransport } = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
-  const client = new Client({ name: "buyer-agent-demo account", version: "0.1.0" });
+  const client = new Client({ name: "openpaper account", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { authorization: `Bearer ${bearer}` } } });
   // the SDK's own types disagree with exactOptionalPropertyTypes on `sessionId`; the object is the SDK's own transport
   await client.connect(transport as unknown as Parameters<typeof client.connect>[0]);

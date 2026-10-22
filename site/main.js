@@ -1,4 +1,4 @@
-// Gravit — the page's instruments. One frame loop drives every canvas (a dotted globe with live quotes in orbit, the airport radar, the
+// openpaper — the page's instruments. One frame loop drives every canvas (a dotted globe with live quotes in orbit, the airport radar, the
 // door); the departures board flips its digits when a quote changes; headings decode into place; the tool list boots. Everything shown
 // as a number is real: quotes read by this browser from the venues' public APIs, pull requests from GitHub, counts computed from the
 // repository. With prefers-reduced-motion nothing moves: each canvas is drawn once.
@@ -697,11 +697,11 @@ function renderPrs(list, note) {
 (async () => {
   try { const baked = await get("./data/progress.json"); renderPrs(baked.merged, `As of ${baked.asOf}, from GitHub.`); } catch { /* the link below */ }
   try {
-    const key = "gravit.prs";
+    const key = "openpaper.prs";
     const cached = JSON.parse(sessionStorage.getItem(key) || "null");
     let live = cached && Date.now() - cached.at < 600_000 ? cached.list : null;
     if (!live) {
-      const r = await get("https://api.github.com/repos/linqizhe07/buyer-agent-demo/pulls?state=closed&sort=updated&direction=desc&per_page=10");
+      const r = await get("https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed&sort=updated&direction=desc&per_page=10");
       live = r.filter((p) => p.merged_at).map((p) => ({ number: p.number, title: p.title, mergedAt: p.merged_at, url: p.html_url }));
       try { sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), list: live })); } catch { /* private window */ }
     }

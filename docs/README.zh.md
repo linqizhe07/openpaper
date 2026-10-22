@@ -1,4 +1,4 @@
-# Gravit（中文详版）
+# openpaper（中文详版）
 
 > 英文的简短说明在 [README.md](../README.md)；这一页是原来的中文 README，细节最全。
 
@@ -128,7 +128,7 @@ agent 记得的你放在账户里，不放在某一个 agent 程序里：换一�
 
 ## 网站
 
-公开介绍页：[linqizhe07.github.io/buyer-agent-demo](https://linqizhe07.github.io/buyer-agent-demo/)（源码在 `site/`，GitHub Pages，推到 main 自动发布）。页上的数字由 `npm run site:numbers` 从仓库算出来写进 `site/data/numbers.json`，过期时 `test/unit/site-numbers.test.ts` 失败、发布停下；行情由访客自己的浏览器直接从 Hyperliquid、Kraken、Coinbase、OKX、Polymarket 的公开接口读，读不到的不画；截图来自替身账户，图下写明。本地预览 `npm run site`（http://127.0.0.1:4870/buyer-agent-demo/）。
+公开介绍页：[linqizhe07.github.io/openpaper](https://linqizhe07.github.io/openpaper/)（源码在 `site/`，GitHub Pages，推到 main 自动发布）。页上的数字由 `npm run site:numbers` 从仓库算出来写进 `site/data/numbers.json`，过期时 `test/unit/site-numbers.test.ts` 失败、发布停下；行情由访客自己的浏览器直接从 Hyperliquid、Kraken、Coinbase、OKX、Polymarket 的公开接口读，读不到的不画；截图来自替身账户，图下写明。本地预览 `npm run site`（http://127.0.0.1:4870/buyer-agent-demo/）。
 
 ## 文档
 

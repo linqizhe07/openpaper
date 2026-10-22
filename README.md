@@ -1,18 +1,18 @@
-<p align="center"><img src="site/img/og.png" alt="Gravit — the airport for agents and money" width="720"></p>
+<p align="center"><img src="site/img/og.png" alt="openpaper — the airport for agents and money" width="720"></p>
 
-# Gravit
+# openpaper
 
 **Your trading accounts on one page, and AI agents that trade only inside the limits you sign.**
 
-Gravit runs on your own computer. It puts your exchanges, brokers, wallets and prediction markets on one page, gives you a paper account with live prices to practise on, and lets AI agents — its own trading desk, or yours over MCP — trade, move and pay inside limits you sign. Website: [linqizhe07.github.io/buyer-agent-demo](https://linqizhe07.github.io/buyer-agent-demo/)
+openpaper runs on your own computer. It puts your exchanges, brokers, wallets and prediction markets on one page, gives you a paper account with live prices to practise on, and lets AI agents — its own trading desk, or yours over MCP — trade, move and pay inside limits you sign. Website: [linqizhe07.github.io/openpaper](https://linqizhe07.github.io/openpaper/)
 
 ## Start in five minutes
 
 You need [Node.js](https://nodejs.org) 22 or newer and Git. Tested on macOS; Linux should work the same way; Windows is untested.
 
 ```bash
-git clone https://github.com/linqizhe07/buyer-agent-demo.git
-cd buyer-agent-demo
+git clone https://github.com/linqizhe07/openpaper.git
+cd openpaper
 npm ci
 npm run account
 ```
@@ -37,7 +37,7 @@ The superagent needs an AI model to think with. Paste a key from any of Anthropi
 
 ## Your network decides what you see
 
-Gravit has no server in the middle, and no analytics: your computer reads public prices and talks to venues directly. So your network — your country, your IP, a company firewall — decides which venues answer.
+openpaper has no server in the middle, and no analytics: your computer reads public prices and talks to venues directly. So your network — your country, your IP, a company firewall — decides which venues answer.
 
 - **It asks every venue from your network** and shows what serves you. A venue that refuses your network is marked *Not served here*, with its own regional edition where it has one (Binance.US, OKX US, Polymarket US). Nothing seen from anyone else's computer decides it.
 - **Prices have fallbacks.** Crypto comes from Coinbase, else Kraken, else OKX; US stocks from Robinhood, else Nasdaq (Cboe's delayed quotes are shown last but never fill a paper order); perpetuals from Hyperliquid. Where no source answers, that market has no price: a paper market order is refused and a limit order waits, and the page says why.
@@ -73,10 +73,10 @@ The same page with stand-in venues at http://127.0.0.1:4821 — no network, no m
 
 ## More
 
-- `npm run account -- --port 4825 --home ~/gravit-second` runs a second, separate account; `--fresh` starts one from nothing.
+- `npm run account -- --port 4825 --home ~/openpaper-second` runs a second, separate account; `--fresh` starts one from nothing.
 - In Chinese: [docs/README.zh.md](docs/README.zh.md) (the full description), [COOKBOOK.md](COOKBOOK.md) (recipes) and [docs/account.md](docs/account.md) (how every part works).
 - `npm test` · `npm run typecheck`
-- Questions and bugs: [GitHub issues](https://github.com/linqizhe07/buyer-agent-demo/issues).
+- Questions and bugs: [GitHub issues](https://github.com/linqizhe07/openpaper/issues).
 
 ## License
 
@@ -84,4 +84,4 @@ Apache-2.0: see [LICENSE](LICENSE). Copyright 2026 Linqi Zhe. You may use, chang
 
 To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md). A security problem goes privately, as [SECURITY.md](SECURITY.md) says, never in a public issue.
 
-Gravit is not financial advice. Real trading is at your own risk; paper money is not real money.
+openpaper is not financial advice. Real trading is at your own risk; paper money is not real money.

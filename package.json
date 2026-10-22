@@ -1,17 +1,17 @@
 {
-  "name": "buyer-agent-demo",
+  "name": "openpaper",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Gravit: your exchanges, brokers, wallets and prediction markets on one page, a paper account with live prices, and AI agents that trade, move and pay only inside the limits you sign. Runs on your own computer.",
+  "description": "openpaper: your exchanges, brokers, wallets and prediction markets on one page, a paper account with live prices, and AI agents that trade, move and pay only inside the limits you sign. Runs on your own computer.",
   "license": "Apache-2.0",
-  "homepage": "https://linqizhe07.github.io/buyer-agent-demo/",
+  "homepage": "https://linqizhe07.github.io/openpaper/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/linqizhe07/buyer-agent-demo.git"
+    "url": "git+https://github.com/linqizhe07/openpaper.git"
   },
   "bugs": {
-    "url": "https://github.com/linqizhe07/buyer-agent-demo/issues"
+    "url": "https://github.com/linqizhe07/openpaper/issues"
   },
   "engines": {
     "node": ">=22"

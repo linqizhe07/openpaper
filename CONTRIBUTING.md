@@ -1,12 +1,12 @@
 # Contributing
 
-Thanks for looking. Gravit has a definite shape, and the rules below are what keep it: read them once, then send what you have.
+Thanks for looking. openpaper has a definite shape, and the rules below are what keep it: read them once, then send what you have.
 
 ## Run it
 
 ```bash
 npm ci
-npm run account -- --port 4825 --home ~/gravit-dev
+npm run account -- --port 4825 --home ~/openpaper-dev
 ```
 
 That is a second, separate account on port 4825 with its own home, so it never touches one you already run (the README has the rest). `npm test` runs the suite (vitest; some tests bind local ports), `npm run typecheck` runs `tsc`. To see the page with stand-in venues — no network, no money, no key:
@@ -36,4 +36,4 @@ npx tsx test/standin/ui-standin.ts --port 4821 --superagent
 
 By contributing you agree that your contribution is licensed under the Apache License 2.0, as section 5 of [LICENSE](LICENSE) says. There is no separate contributor agreement.
 
-Bugs and questions go to [GitHub issues](https://github.com/linqizhe07/buyer-agent-demo/issues); a security problem goes privately, as [SECURITY.md](SECURITY.md) says.
+Bugs and questions go to [GitHub issues](https://github.com/linqizhe07/openpaper/issues); a security problem goes privately, as [SECURITY.md](SECURITY.md) says.

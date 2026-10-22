@@ -1,4 +1,4 @@
-# Publishes site/ to GitHub Pages (https://linqizhe07.github.io/buyer-agent-demo/) on every push to main that touches it.
+# Publishes site/ to GitHub Pages (https://linqizhe07.github.io/openpaper/) on every push to main that touches it.
 # One manual step, once: Settings → Pages → Build and deployment → Source → "GitHub Actions".
 name: Pages
 on:

@@ -17,7 +17,7 @@ import { json, type Rec } from "./live-public-markets-fixtures.ts";
  * nothing is asked; the SEC's refusals in its own words, each held; the ticker map and the facts kept; the route behind the server's guard.
  * Nothing leaves the process. */
 const START = Date.parse("2026-10-22T14:00:00.000Z");
-const UA = "Gravit buyer-agent-demo qa@example.com";
+const UA = "openpaper qa@example.com";
 const AAPL_CIK = "0000320193";
 /** the SEC's own 403 page for a reader without an address in its user agent, as it answered this machine on 2026-10-22 */
 const THRESHOLD: HttpReply = { status: 403, body: undefined, text: '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n<html xmlns="http://www.w3.org/1999/xhtml">\n<head>\n<title>SEC.gov | Request Rate Threshold Exceeded</title>' };
