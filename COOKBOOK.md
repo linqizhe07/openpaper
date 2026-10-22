@@ -966,9 +966,9 @@ Separate 下同一条指令是 `E_ACCOUNT_SOURCE`。
 npx vitest run test/attack
 ```
 
-三十个文件。早的二十个是独立审阅那一路留下的复现，其中十八个每个是一次真实跑通过的攻击，写成 `it.fails`：测试断言「攻击成功」，并被期望失败——哪天攻击又能成功，这个测试就报错；两个（`money-instruction-future-nonce`、`rekey-second-account`）直接断言。后来加的十个（`order-door-holes`、`real-pay-holes`、`restore-holes`、`steer-holes`、`earn-holes`、`seat-reads`、`ask-candles-earn-holes`、`earn-pair-holes`、`ask-reworded-decline`、`review2-account`）一个文件一组攻击，每个测试直接断言攻击不成：真钱的下单门、真钱付款、重启重建、引导（意图、关注、回报、请求）、earn 门和永续的地区线、席位之间看得见什么、拒请求和 K 线的 host 和 earn 只算一次、earn 和余额不重复计、改口的请求、第二轮审阅在门和重建上该成立的每一条。`seat-reads` 的最后一个测试钉住的是边界本身：读接口对本机任何进程都开着，席位的过滤不是墙。
+三十个文件。早的二十个是独立审阅那一路留下的复现，每个是一次真实跑通过的攻击；后来加的十个（`order-door-holes`、`real-pay-holes`、`restore-holes`、`steer-holes`、`earn-holes`、`seat-reads`、`ask-candles-earn-holes`、`earn-pair-holes`、`ask-reworded-decline`、`review2-account`）一个文件一组攻击：真钱的下单门、真钱付款、重启重建、引导（意图、关注、回报、请求）、earn 门和永续的地区线、席位之间看得见什么、拒请求和 K 线的 host 和 earn 只算一次、earn 和余额不重复计、改口的请求、第二轮审阅在门和重建上该成立的每一条。`test/attack/` 下的每个测试都直接断言具体的拒绝码或正确的状态：修之前它是红的，修之后是绿的；没有 `it.fails`（它只要抛出任何错误就算通过，环境坏了也是绿的，也说不出是哪条拒绝把洞堵上的）。`seat-reads` 的最后一个测试钉住的是边界本身：读接口对本机任何进程都开着，席位的过滤不是墙。
 
-找到新洞时照这个顺序：先写成一个普通测试，让它通过，证明洞是真的；修；把 `it` 改成 `it.fails`（或者像后来的十个那样，改写成断言攻击不成的测试，修之前它必须是红的）；再在 `test/unit/` 里加一条正面的回归测试。
+找到新洞时照这个顺序：先写成一个普通测试，让它通过，证明洞是真的；修；把它改写成断言具体的拒绝码或正确状态的测试，修之前它必须是红的，修之后是绿的，不用 `it.fails`；再在 `test/unit/` 里加一条正面的回归测试。
 
 ## 出了状况先看这里
 
