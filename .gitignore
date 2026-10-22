@@ -3,6 +3,9 @@ out/
 *.log
 .DS_Store
 # The home directory lives OUTSIDE the repo ($BUYER_HOME); nothing secret is ever written here.
+# Nothing loads a .env file either; one left here must never be committed
+.env
+.env.*
 # local agent tooling: per-user settings and vendored third-party skills (reinstall from skills-lock.json)
 .claude/
 .agents/
