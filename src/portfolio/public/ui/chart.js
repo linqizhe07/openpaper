@@ -1169,7 +1169,7 @@ function chMarks(el, marks) {
   const s = el ? CH.get(el) : null;
   if (!s) return;
   const tones = new Set(["up", "down", "ink"]);
-  s.marks = (Array.isArray(marks) ? marks : []).filter((m) => m && Number(m.price) > 0 && Number.isFinite(Number(m.t))).slice(0, CH_MARKS_MOST).map((m) => ({ id: String(m.id || ""), t: Number(m.t), price: Number(m.price), side: m.side === "sell" ? "sell" : "buy", kind: m.kind === "out" ? "out" : "in", label: String(m.label || ""), ...(m.short ? { short: String(m.short) } : {}), tone: tones.has(m.tone) ? m.tone : m.side === "sell" ? "down" : "up", lead: String(m.lead || ""), fresh: m.fresh === true, quiet: m.quiet === true, ...(m.float ? { float: String(m.float), floatTone: m.floatTone === "down" ? "down" : "up" } : {}) }));
+  s.marks = (Array.isArray(marks) ? marks : []).filter((m) => m && Number(m.price) > 0 && Number.isFinite(Number(m.t))).slice(0, CH_MARKS_MOST).map((m) => ({ id: String(m.id || ""), t: Number(m.t), price: Number(m.price), side: m.side === "sell" ? "sell" : "buy", kind: m.kind === "out" ? "out" : "in", label: String(m.label || ""), ...(m.short ? { short: String(m.short) } : {}), ...(m.title ? { title: String(m.title) } : {}), tone: tones.has(m.tone) ? m.tone : m.side === "sell" ? "down" : "up", lead: String(m.lead || ""), fresh: m.fresh === true, quiet: m.quiet === true, ...(m.float ? { float: String(m.float), floatTone: m.floatTone === "down" ? "down" : "up" } : {}) }));
   chSoon(s);
 }
 const CH_MARKS_MOST = 60;
@@ -1239,7 +1239,7 @@ function chMarksSvg(s, L) {
     }
     // one that just happened: a ring pulsing round its dot, and an exit's result floating up beside it once
     const fresh = p.m.fresh ? `<circle class="ch-mkp" cx="${p.x}" cy="${p.y}" r="6"/>${p.m.float ? `<text class="ch-mkf ${p.m.floatTone}" x="${Math.round(p.x + 12)}" y="${Math.round(p.y + 5)}">${esc(p.m.float)}</text>` : ""}` : "";
-    out += `<g class="ch-mk ${p.m.tone} ${p.m.kind}${p.m.fresh ? " fresh" : ""}" data-k="mk:${esc(p.m.id)}" data-mk="${esc(p.m.id)}"><title>${esc(p.m.label)}</title>${fresh}${tag}<circle class="ch-mkd" cx="${p.x}" cy="${p.y}" r="5"/></g>`;
+    out += `<g class="ch-mk ${p.m.tone} ${p.m.kind}${p.m.fresh ? " fresh" : ""}" data-k="mk:${esc(p.m.id)}" data-mk="${esc(p.m.id)}"><title>${esc(p.m.title || p.m.label)}</title>${fresh}${tag}<circle class="ch-mkd" cx="${p.x}" cy="${p.y}" r="5"/></g>`;
   }
   return `<svg class="ch-svg ch-mksvg" data-k="marks" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" focusable="false">${out}</svg>`;
 }

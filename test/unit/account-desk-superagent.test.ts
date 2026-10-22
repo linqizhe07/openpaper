@@ -234,7 +234,7 @@ describe("the superagent: the desk's autonomy on paper", () => {
     expect(v.open.map((l) => [l.id, l.state, l.order !== undefined, l.card])).toEqual([["L-0001", "executed", true, undefined]]);
     expect(v.cards).toEqual([]);
     expect((await svc.accountView())!.cards).toEqual([]);
-    expect(readRoom(home).find((m) => m.from === "sniper" && m.kind === "order")?.text).toMatch(/^L-0001: filled .* BTC at .* at Paper Ex \(on its own on paper, inside the limit\)\.$/);
+    expect(readRoom(home).find((m) => m.from === "sniper" && m.kind === "order")?.text).toMatch(/^L-0001: filled, bought .* BTC at .* at Paper Ex \(on its own on paper, inside the limit\)\.$/);
     const entryRow = ledger().find((r) => r.tool === "agentLiveOrder" && r.outcome === "accepted");
     expect(entryRow?.reason).toMatch(/^Superagent on paper \(Desk Sniper, the desk's autonomy you signed\): PAPER · buy .*BTC.*, inside the trading limit$/);
     expect(entryRow?.venue).toBe("pap");
@@ -563,7 +563,7 @@ describe("the floor's feed", () => {
     expect(f.seats.map((x) => [x.role, x.kind, x.status, x.limit?.perOrderUsd])).toEqual([["head", "house", "ok", undefined], ["search", "house", "ok", undefined], ["risk", "house", "ok", undefined], ["sniper", "house", "ok", 100], ["exit", "house", "ok", 100]]);
     expect(f.leads).toHaveLength(1);
     const lead = f.leads[0]!;
-    expect(Object.keys(lead).filter((k) => (lead as unknown as Record<string, unknown>)[k] !== undefined).sort()).toEqual(["at", "checks", "confidence", "entry", "id", "kind", "maxHours", "name", "side", "sizeUsd", "slPct", "state", "symbol", "tpPct", "updatedAt"]);
+    expect(Object.keys(lead).filter((k) => (lead as unknown as Record<string, unknown>)[k] !== undefined).sort()).toEqual(["at", "checks", "cleared", "confidence", "entry", "id", "kind", "maxHours", "name", "side", "sizeUsd", "slPct", "state", "symbol", "thesis", "tpPct", "updatedAt"]);
     expect(lead.entry).toEqual({ price: expect.any(Number), qty: expect.any(Number), at: new Date(START).toISOString() });
     // more than 200 new lines: the newest 200, oldest first
     await own({ type: "approveAgent", agentAddress: cc.address as `0x${string}`, agentName: "Claude Code", validUntil: START + 30 * DAY });

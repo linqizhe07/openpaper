@@ -266,7 +266,7 @@ describe("a cycle", () => {
     await desk.cycle("test");
     let v = (await desk.view())!;
     expect(v.open.map((l) => [l.id, l.state, l.order])).toEqual([["L-0001", "executed", "ord-0001"]]);
-    expect(readRoom(home).find((m) => m.from === "sniper" && m.kind === "order")?.text).toMatch(/L-0001: filled .* at .* \(Beast, inside the limit\)/);
+    expect(readRoom(home).find((m) => m.from === "sniper" && m.kind === "order")?.text).toMatch(/L-0001: filled, bought .* at .* \(Beast, inside the limit\)/);
     const entry = v.open[0]!.entry!;
     expect(entry.qty).toBeGreaterThan(0);
     // the market moves 3%: past the 2% take-profit

@@ -174,6 +174,10 @@
 .sg-wr { display: grid; grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 4px 16px; min-height: var(--hl-h-control); padding: 4px 0; border-top: 1px solid var(--hl-tabline); }
 .sg-wr b { font-weight: 400; color: var(--hl-title); }
 .sg-wr-why { overflow-wrap: anywhere; }
+/* why the card is asked: the thesis and Risk's reason, a line of their own under the ask */
+.sg-wr-thesis { grid-column: 1 / -1; margin-top: -2px; font-size: 12px; color: var(--hl-dim); overflow-wrap: anywhere; }
+/* the positions' Why: the thesis in one line, whole on hover */
+.sg-mt td.sg-why { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--hl-dim); }
 .sg-wr-k { display: inline-flex; gap: 8px; }
 @container (max-width: 899px) {
   .sg-wr { grid-template-columns: auto minmax(0, 1fr); }

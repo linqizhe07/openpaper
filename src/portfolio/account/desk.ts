@@ -235,6 +235,8 @@ export interface Lead {
   checks?: LeadChecks | undefined;
   /** why it was rejected or refused, in the words of whoever did */
   why?: string | undefined;
+  /** why Risk cleared it, in its words (the plan's reason): what the page says beside the entry, with the thesis */
+  cleared?: string | undefined;
   /** the clearance: the size in dollars, the plan */
   sizeUsd?: number | undefined;
   tpPct?: number | undefined;
@@ -344,7 +346,8 @@ export interface DeskAutonomy {
   at: string;
 }
 
-/** a lead as the floor reads it every second: what it is, where it stands, its numbers — no thesis, no orders' ids */
+/** a lead as the floor reads it every second: what it is, where it stands, its numbers, and why — Search's thesis, Risk's reason for
+ * clearing it, the words of whoever turned it down or closed it — so the page says beside every trade why it was made; no orders' ids */
 export interface FeedLead {
   id: string;
   at: string;
@@ -353,6 +356,8 @@ export interface FeedLead {
   name: string;
   kind: string;
   side: "buy" | "sell";
+  thesis: string;
+  cleared?: string | undefined;
   sizeUsd?: number | undefined;
   confidence?: number | undefined;
   checks?: LeadChecks | undefined;
@@ -2051,6 +2056,7 @@ export class Desk {
     lead.tpPct = plan.tpPct;
     lead.slPct = plan.slPct;
     lead.maxHours = plan.maxHours;
+    lead.cleared = plan.why;
     lead.updatedAt = this.world.now();
     this.room("risk", "clearance", `RISK CLEARANCE ${lead.id} | ${checks} | ${plan.why} | size ${usd(plan.sizeUsd)} · TP +${short(plan.tpPct)}% · SL -${short(plan.slPct)}% · ${short(plan.maxHours)} h | Verdict: CLEAR → SNIPER`, { lead: lead.id, brain: !!seat || undefined });
     this.save();
@@ -2134,7 +2140,8 @@ export class Desk {
       if (bracket) lead.exits = { takeProfit: Number(bracket.takeProfit), stopLoss: Number(bracket.stopLoss) };
       const px = out.order.avgPrice ?? out.order.price;
       const exits = bracket ? `, its take-profit at ${fig(Number(bracket.takeProfit))} and its stop at ${fig(Number(bracket.stopLoss))} held by the venue` : "";
-      this.room("sniper", "order", `${lead.id}: ${out.order.status === "filled" ? `filled ${fig(out.order.filledQty)} ${out.order.base}${px !== undefined ? ` at ${fig(px)}` : ""}` : `placed ${out.order.id} (${out.order.status})`} at ${venue.name} (${this.howPlaced(venue)})${exits}.`, { lead: lead.id, refs: { order: out.order.id, symbol: lead.symbol } });
+      // the fill says which way it went: a reader of the room should never have to know the lead's side to read its trade
+      this.room("sniper", "order", `${lead.id}: ${out.order.status === "filled" ? `filled, ${lead.side === "sell" ? "sold" : "bought"} ${fig(out.order.filledQty)} ${out.order.base}${px !== undefined ? ` at ${fig(px)}` : ""}` : `placed ${out.order.id} (${out.order.status})`} at ${venue.name} (${this.howPlaced(venue)})${exits}.`, { lead: lead.id, refs: { order: out.order.id, symbol: lead.symbol } });
       this.save();
       return "placed";
     }
@@ -2763,6 +2770,8 @@ export class Desk {
         name: l.name,
         kind: l.kind,
         side: l.side,
+        thesis: l.thesis,
+        cleared: l.cleared,
         sizeUsd: l.sizeUsd,
         confidence: l.confidence,
         checks: l.checks,
