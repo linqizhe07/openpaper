@@ -431,6 +431,7 @@ document.addEventListener("click", (e) => {
   const md = t.closest("button[data-set-mode]");
   if (md && !md.disabled) return void setMode(md.dataset.setMode);
   if (t.closest("[data-open-settings]")) return void (A && openSettings());
+  if (t.closest("[data-open-shortcuts]")) return void openShortcuts();
   if (t.closest("[data-sheet-close]")) return void closeSheet();
   if (t.closest("[data-drawer-close]")) closeDrawer();
 });
@@ -474,8 +475,25 @@ function shSearchFocus() {
   $("search").focus();
   $("search").select();
 }
+/* THE KEYS, in one place: the sheet behind "?" reads it, and so do the tests. Each group a place on the page; each row its keys and what
+   they do, in the words of the script that hears them (shell.js, ui/trade.js tkPickKeys, ui/book.js, ui/chart.js chKey, ui/superagent.js).
+   The chord's modifier is the platform's: ⌘ on a Mac, Ctrl elsewhere */
+const SH_MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(String(navigator.platform || navigator.userAgent || "")) ? "⌘" : "Ctrl";
+const SHORTCUTS = [
+  { where: "Anywhere", keys: [[[`${SH_MOD} K`], "Search markets, assets and agents (from a field too)"], [["/"], "Search"], [["t"], "Open the ticket"], [["?"], "These keys"], [["Esc"], "Close a sheet, the drawer, a menu"]] },
+  { where: "Search", keys: [[["↓"], "From the field into the results"], [["↑", "↓"], "Through them; ↑ from the first back to the field"], [["Home", "End"], "The first, the last"], [["Enter"], "Open the one chosen; in the field, filter Markets by what is typed"], [["Esc"], "Close the results"]] },
+  { where: "Trade · the picker", keys: [[["↓"], "From its search to the first market"], [["↑", "↓"], "Through every list shown"], [["Home", "End"], "The first, the last"], [["Enter"], "Open it"], [["S"], "Star it, or take its star off"]] },
+  { where: "Trade · the order book", keys: [[["↑", "↓"], "Through the rows"], [["Home", "End"], "The best ask, the lowest bid"], [["Enter", "Space"], "That price into the ticket"]] },
+  { where: "The chart, with the plot focused", keys: [[["←", "→"], "A bar at a time (the view follows past the edge)"], [["Home", "End"], "The oldest and the newest bar shown"], [["+", "−"], "Zoom in, zoom out"], [["F"], "Fill the window with the chart, or back to the page"], [["Delete"], "Remove the drawing selected"], [["Esc"], "The crosshair away; a tool, a selection, a menu or the window-filling view let go"]] },
+  { where: "Superagent", keys: [[["←", "→"], "Between its tabs"], [["Home", "End"], "The first, the last"]] },
+];
+/** the keys, as a sheet */
+function openShortcuts() {
+  const groups = SHORTCUTS.map((g) => `<section class="sheet-sec"><h3 class="label">${esc(g.where)}</h3><dl class="sh-keys">${g.keys.map(([ks, what]) => `<div><dt>${ks.map((k) => `<kbd>${esc(k)}</kbd>`).join(" ")}</dt><dd>${esc(what)}</dd></div>`).join("")}</dl></section>`).join("");
+  openSheet(`<p class="small dim sh-keys-note">The keys do nothing while you are typing in a field, and nothing here signs anything: an order or a movement still takes your signature.</p>${groups}`, { title: "Keyboard" });
+}
 /* "/" searches — and ⌘K (Ctrl+K elsewhere) from anywhere on the page, a field included, as every market screen has it — "t" opens the
-   ticket, Escape closes the lens's menu or the drawer (a sheet closes on Escape by itself) */
+   ticket, "?" shows the keys, Escape closes the lens's menu or the drawer (a sheet closes on Escape by itself) */
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented || e.altKey) return;
   const modal = $("modal").open || $("ask").open;
@@ -501,6 +519,9 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (typeof openTicket === "function") openTicket({});
     else go("trade");
+  } else if (e.key === "?") {
+    e.preventDefault();
+    openShortcuts();
   }
 });
 

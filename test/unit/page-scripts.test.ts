@@ -197,7 +197,7 @@ describe("the account page's scripts", () => {
     expect(b.stored).toEqual(["account.theme"]);
     // the shell and the contract it gives the panes
     const contract = ["render", "load", "own", "cancelOrder", "api", "forget", "refusalOf", "toast", "openSheet", "closeSheet", "openDrawer", "closeDrawer", "confirmSheet", "pickSheet", "whatYouSign", "quoteDialog", "paint", "go", "onRoute", "routed", "lensNow", "inLens", "chg", "avatar", "icon", "table", "seg", "field", "select", "formFields", "setOptions", "debounce", "thenLoad", "download", "copyText", "esc", "money", "fine", "px", "usd", "cents", "short", "qtyOf", "typeText", "isLive", "byOf", "readOnlyWords", "owns", "writesOn", "canTrade", "canMove", "isAgentWallet", "modeOf", "dollarsOf", "isDollar", "networksOf", "bridgeChainsOf", "walletFor", "mined"];
-    const mine = ["openStatement", "renderStatement", "openAgents", "openSettings", "openMode", "renderAgents", "renderDevices", "renderDial", "setMode", "setTheme", "copySetup", "downloadBalances", "lensMenu", "drawPane", "tradeModeLast", "setTradeMode"];
+    const mine = ["openStatement", "renderStatement", "openAgents", "openSettings", "openMode", "renderAgents", "renderDevices", "renderDial", "setMode", "setTheme", "copySetup", "downloadBalances", "lensMenu", "drawPane", "tradeModeLast", "setTradeMode", "openShortcuts"];
     // what the other parts already define, and the shell calls
     const there = ["openPicker", "openConnect", "connectVia", "keyHowFor", "openLiveMove", "openAmend", "renderWallets", "openClose", "declineAsk"];
     const all = [...contract, ...mine, ...there];
@@ -206,6 +206,41 @@ describe("the account page's scripts", () => {
     const panes = ["renderPortfolio", "renderVenues", "renderMemory", "renderMarkets", "renderTrade", "openTicket", "openHandToAgent", "openReceive", "openAsset", "openMarket"];
     for (const p of panes) expect(["function", "undefined"], p).toContain(b.run(`typeof ${p}`));
     expect(b.run("[A, busy, flash, said, S.length, ROUTE.tab, view.lens]")).toEqual([null, false, "", "", 0, "portfolio", ""]);
+  });
+
+  it("shows the keys behind ? — every group with its keys and words, the chord's modifier the platform's — not while typing in a field, and from Settings' button", () => {
+    const b = browser();
+    b.run("var SHEETS = []; openSheet = (html, o) => { SHEETS.push([o.title, html]); return null; }");
+    const press = (key: string, target: unknown) => {
+      for (const fn of b.heard.keydown ?? []) fn({ key, target, preventDefault() {}, altKey: false, metaKey: false, ctrlKey: false, shiftKey: true, defaultPrevented: false });
+    };
+    press("?", { closest: () => null });
+    const sheets = b.run("SHEETS") as Array<[string, string]>;
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0]![0]).toBe("Keyboard");
+    const html = sheets[0]![1];
+    const groups = b.run("SHORTCUTS.map((g) => [g.where, g.keys.length])") as Array<[string, number]>;
+    expect(groups.map((g) => g[0])).toEqual(["Anywhere", "Search", "Trade · the picker", "Trade · the order book", "The chart, with the plot focused", "Superagent"]);
+    for (const [where, n] of groups) {
+      expect(n).toBeGreaterThan(1);
+      expect(html).toContain(`<h3 class="label">${where}</h3>`);
+    }
+    // every row has keys and words; the keys as <kbd>; no key is named twice in one group
+    const rows = b.run("SHORTCUTS.flatMap((g) => g.keys.map(([ks, what]) => [ks, what]))") as Array<[string[], string]>;
+    for (const [ks, what] of rows) {
+      expect(ks.length).toBeGreaterThan(0);
+      expect(what.length).toBeGreaterThan(3);
+      for (const k of ks) expect(html).toContain(`<kbd>${k}</kbd>`);
+    }
+    expect(html).toContain("<kbd>Ctrl K</kbd>");
+    expect(html).toContain('<dt><kbd>?</kbd></dt><dd>These keys</dd>');
+    expect(html).toContain("nothing here signs anything");
+    // typing in a field: the key is the field's
+    press("?", { closest: (sel: string) => (sel.includes("input") ? {} : null) });
+    expect((b.run("SHEETS") as unknown[]).length).toBe(1);
+    // Settings' button
+    for (const fn of b.heard.click ?? []) fn({ target: { closest: (sel: string) => (sel === "[data-open-shortcuts]" ? {} : null) }, preventDefault() {} });
+    expect((b.run("SHEETS") as unknown[]).length).toBe(2);
   });
 
   it("makes Trade one place in two modes: html[data-area] set in the area and taken away outside it, the switch pressed for the mode showing, the rail's Trade current in both, the mode kept only by the switch", () => {

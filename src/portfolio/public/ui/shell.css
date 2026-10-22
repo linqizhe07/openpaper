@@ -197,6 +197,12 @@ button.pill-btn:hover { filter: brightness(0.96); }
 .search input::placeholder { color: var(--dim); }
 .search input::-webkit-search-cancel-button { cursor: pointer; }
 kbd { font-family: var(--font-mono); font-size: 11px; font-weight: 500; border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; color: var(--dim); }
+/* the keys' sheet (shell.js openShortcuts): each group its rows, the keys at the left, what they do beside them */
+.sh-keys { display: grid; grid-template-columns: minmax(110px, auto) minmax(0, 1fr); gap: 8px 16px; margin: 0; align-items: baseline; }
+.sh-keys div { display: contents; }
+.sh-keys dt { display: flex; flex-wrap: wrap; gap: 4px; }
+.sh-keys dd { margin: 0; font-size: 13px; }
+.sh-keys-note { margin: 0 0 14px; }
 /* the lens's menu, under its button: a floating card */
 .menu { position: absolute; top: 50px; left: 0; z-index: 20; min-width: 280px; max-height: 70vh; overflow-y: auto; background: var(--surface); border: 1px solid var(--card-border); border-radius: var(--radius-m); box-shadow: var(--shadow); padding: 6px; }
 .menu .menu-h { font-size: 12px; font-weight: 600; color: var(--dim); padding: 10px 12px 4px; }
