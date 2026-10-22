@@ -13,6 +13,12 @@
    last button (or F on the plot) fills the window with the chart where the page offers it (chSetFull): the frame laid over the page, the
    bars drawn again at the window's size; Esc, F or the button again bring the page back.
 
+   INDICATORS (ui/indicators.js does the arithmetic). The head's Indicators button opens a menu: moving averages, Bollinger bands and VWAP
+   over the price, RSI, MACD, the stochastic and ATR each in a pane of its own under it (at most three; the price pane keeps its height
+   first), each with its lengths. They are computed again as the bars change — a live price moves the newest value — and drawn in a layer of
+   their own each frame (chIndSvg), their values at the bar under the pointer after the bar's own in the readout. The list on is the page's
+   to keep (s.onIndicators: terminal.js writes it in the address and this browser's storage).
+
    MOVING THROUGH TIME. The first view fits the range: every bar it brought, side by side, as wide as fits (at most CH_MAX_SLOT pixels a
    bar, so a short history sits at the right). A drag moves it (the mouse, or a finger left and right: up and down still scrolls the page),
    the wheel zooms around the pointer (sideways it moves), a pinch zooms around its middle, and + and − zoom from the keyboard; a double
@@ -787,11 +793,11 @@ function chReadout(bar, prevClose, fmt) {
  * change after them (its figures, its sign and its percent: the widest it can be), each a unit that does not break, packed as the words
  * wrap with the gap between two. `small`: the narrow chart's smaller words. An estimate on the wide side, so the room kept under the plot's
  * top edge holds the readout of any bar shown — the room is set per layout, never by the bar the pointer is on */
-function chReadoutLines(wide, width, small = false) {
+function chReadoutLines(wide, width, small = false, extra = []) {
   const cw = small ? CH_CHAR_W_SMALL : CH_CHAR_W;
   const gap = small ? CH_GAP_SMALL : CH_GAP;
   const kv = (wide + 2) * cw;
-  const units = [kv, kv, kv, kv, (wide + 13) * cw];
+  const units = [kv, kv, kv, kv, (wide + 13) * cw, ...(Array.isArray(extra) ? extra.map((n) => n * cw) : [])];
   const room = Math.max(40, width - CH_RO_LEFT - 4);
   let lines = 1;
   let x = 0;
@@ -912,6 +918,13 @@ function chMount(el, opts = {}) {
     // whether the head offers the window-filling view (the pages that frame the chart ask for it), and whether it fills the window now
     fullscreen: opts.fullscreen === true,
     full: false,
+    // the indicators (ui/indicators.js): the list on, what they computed last and for which bars (chLayout computes them again as the
+    // bars change), whether their menu is open, and the page's keeper of the list
+    ind: typeof inParse === "function" ? inParse(opts.indicators) : [],
+    indOut: [],
+    indKey: "",
+    indOpen: false,
+    onIndicators: typeof opts.onIndicators === "function" ? opts.onIndicators : null,
     // the range asked, the bar size asked (the range's own, or the owner's pick), the bar size the bars came in (a source may draw a range
     // in a coarser one), and the price scale
     range,
@@ -994,7 +1007,7 @@ function chMount(el, opts = {}) {
   CH.set(el, s);
   paint(el, chShell(s));
   const q = (sel) => el.querySelector(sel);
-  s.parts = { head: q(".ch-head"), ohlc: q(".ch-ohlc"), plot: q(".ch-plot"), draw: q(".ch-draw"), live: q(".ch-live"), lines: q(".ch-lines"), hint: q(".ch-hint"), now: q(".ch-now"), cross: q(".ch-cross"), foot: q(".ch-foot") };
+  s.parts = { head: q(".ch-head"), pop: q(".ch-ind-pop"), ohlc: q(".ch-ohlc"), plot: q(".ch-plot"), draw: q(".ch-draw"), live: q(".ch-live"), ind: q(".ch-ind"), lines: q(".ch-lines"), hint: q(".ch-hint"), now: q(".ch-now"), cross: q(".ch-cross"), foot: q(".ch-foot") };
   if (!s.parts.plot || !s.parts.draw) return;
   if (!s.venue || !s.symbol) return void paint(s.parts.draw, '<p class="ch-msg">No market to chart.</p>');
   s.shown = chLaidOut(s);
@@ -1086,7 +1099,7 @@ function chLinesSvg(s, L) {
   const { sc, plotW, axisW, W, H, fmt } = L;
   // the last price's own tag on the axis is never covered: a line's price tag that would sit on it is left out (its words at the left say it)
   const B = s.bars || [];
-  const lastY = B.length ? Math.min(L.plotH - 9, Math.max(9, Math.round(sc.y(B[B.length - 1].c)))) : NaN;
+  const lastY = B.length ? Math.min(L.priceH - 9, Math.max(9, Math.round(sc.y(B[B.length - 1].c)))) : NaN;
   // a narrow plot says each line by its kind and size alone (its `short`), the whole of it on the row it stands for
   const narrow = plotW < CH_LINES_NARROW_W;
   const items = [];
@@ -1220,7 +1233,7 @@ function chMarksSvg(s, L) {
    their words never change a box's size */
 function chShell(s) {
   const how = `Price chart of ${s.symbol}: point at a bar, or use the arrow keys, to read it; drag or scroll sideways to move through time, and the wheel, a pinch, or the plus and minus keys to zoom; double-click to fit the range again`;
-  return `<div class="ch" data-k="ch:${esc(s.venue)}|${esc(s.symbol)}"><div class="ch-head">${chHeadHtml(s)}</div><div class="ch-plot" tabindex="0" role="group" aria-label="${esc(how)}"><div class="ch-draw"></div><div class="ch-live"></div><div class="ch-lines"></div><div class="ch-ohlc"></div><p class="ch-hint" aria-live="polite"></p><button type="button" class="ch-now" data-ch-now hidden aria-label="Back to the newest bar">Now →</button><div class="ch-cross" aria-hidden="true"></div></div><p class="ch-foot"></p></div>`;
+  return `<div class="ch" data-k="ch:${esc(s.venue)}|${esc(s.symbol)}"><div class="ch-head">${chHeadHtml(s)}</div><div class="ch-ind-pop" data-ch-pop role="dialog" aria-label="Indicators" hidden></div><div class="ch-plot" tabindex="0" role="group" aria-label="${esc(how)}"><div class="ch-draw"></div><div class="ch-live"></div><div class="ch-ind"></div><div class="ch-lines"></div><div class="ch-ohlc"></div><p class="ch-hint" aria-live="polite"></p><button type="button" class="ch-now" data-ch-now hidden aria-label="Back to the newest bar">Now →</button><div class="ch-cross" aria-hidden="true"></div></div><p class="ch-foot"></p></div>`;
 }
 /* the head: the ranges, the bar sizes' menu (the size the bars are drawn in), the log switch (not for an event contract's cents, which are
    0 to 100) */
@@ -1231,9 +1244,12 @@ function chHeadHtml(s) {
   const shown = s.biv || s.interval;
   const sizes = CH_INTERVALS.map(([v, w]) => `<option value="${v}"${v === shown ? " selected" : ""}>${w}</option>`).join("");
   const log = s.ev ? "" : `<button type="button" class="ch-iv ch-log" data-ch-log aria-pressed="${s.log}" data-fk="ch-log" title="Logarithmic price scale: equal steps are equal percentages">Log</button>`;
+  // the indicators' menu, with how many are on
+  const nInd = Array.isArray(s.ind) ? s.ind.length : 0;
+  const ind = typeof inCompute === "function" ? `<button type="button" class="ch-iv ch-indb" data-ch-ind aria-expanded="${!!s.indOpen}" aria-haspopup="dialog" data-fk="ch-ind" title="Indicators: moving averages, Bollinger bands, VWAP, RSI, MACD, the stochastic, ATR">Indicators${nInd ? ` · ${nInd}` : ""}</button>` : "";
   // the window-filling view, where the page asked for it: the corners point out, or back in while the chart fills the window
   const full = s.fullscreen ? `<button type="button" class="ch-iv ch-fullb" data-ch-full aria-pressed="${s.full}" data-fk="ch-full" aria-label="${s.full ? "Back to the page" : "Fill the window"}" title="${s.full ? "Back to the page (Esc, or F)" : "Fill the window with the chart (F)"}"><svg class="ch-fulli" viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${s.full ? "M5 1.5V5H1.5M9 1.5V5h3.5M12.5 9H9v3.5M5 12.5V9H1.5" : "M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9"}"/></svg></button>` : "";
-  return `<div class="ch-rs" role="group" aria-label="Range">${ranges}</div><span class="ch-hsep" aria-hidden="true"></span><span class="ch-ivw"><select class="ch-ivsel" data-ch-ivsel aria-label="Bar size" data-fk="ch-ivsel">${sizes}</select></span>${log}${full}`;
+  return `<div class="ch-rs" role="group" aria-label="Range">${ranges}</div><span class="ch-hsep" aria-hidden="true"></span><span class="ch-ivw"><select class="ch-ivsel" data-ch-ivsel aria-label="Bar size" data-fk="ch-ivsel">${sizes}</select></span>${ind}${log}${full}`;
 }
 /* the head drawn again (a range, a bar size or the scale picked; a source that drew a range coarser), its menu set to the size shown */
 function chHeadAgain(s) {
@@ -1272,6 +1288,50 @@ function chFull(el, on) {
   if (s) chSetFull(s, on);
 }
 
+/* THE INDICATORS' MENU (see the head of this file): each indicator with its switch, its words and its lengths (the lengths' fields live
+   only while it is on); one the bars cannot carry says why and cannot be switched on (VWAP on daily bars, or on bars without volume);
+   Clear takes them all off. Drawn when the menu opens and again as the list changes */
+function chIndPopHtml(s) {
+  const on = new Map((s.ind || []).map((x) => [x.id, x]));
+  const intraday = (CH_MS[s.biv] || 0) < CH_MS["1d"];
+  const hasVol = !!(s.bars && s.bars.some((b) => Number.isFinite(b.v) && b.v > 0));
+  const rows = IN_SPECS.map((sp) => {
+    const x = on.get(sp.id);
+    const off = sp.intradayOnly && !intraday ? "intraday bars only" : sp.needsVolume && s.bars && !hasVol ? "these bars carry no volume" : "";
+    const params = sp.params.map((p, k) => `<label class="ch-ind-p"><span>${esc(p.label)}</span><input type="number" class="ch-ind-n" data-ind-p="${sp.id}:${k}" value="${esc(String(x ? x.params[k] : p.def))}" min="${p.min}" max="${p.max}" step="${p.int === false ? 0.5 : 1}" aria-label="${esc(`${sp.name} ${p.label}`)}"${x ? "" : " disabled"}></label>`).join("");
+    return `<div class="ch-ind-row${x ? " on" : ""}${off ? " off" : ""}"><label class="ch-ind-sw"><input type="checkbox" data-ind-on="${sp.id}"${x ? " checked" : ""}${off && !x ? " disabled" : ""}> <b>${esc(sp.name)}</b> <span class="ch-ind-w">${esc(off || sp.words)}</span></label>${params ? `<span class="ch-ind-ps">${params}</span>` : ""}</div>`;
+  }).join("");
+  return `<div class="ch-ind-h"><span>Indicators</span><button type="button" class="ch-iv ch-ind-clear" data-ind-clear${(s.ind || []).length ? "" : " disabled"}>Clear</button></div>${rows}<p class="ch-ind-note">At most ${IN_MOST_UNDER} under the price. Kept in the address and in this browser.</p>`;
+}
+function chIndPop(s, on) {
+  const pop = s.parts && s.parts.pop;
+  if (!pop || typeof inCompute !== "function") return;
+  s.indOpen = !!on;
+  if (s.indOpen) paint(pop, chIndPopHtml(s));
+  pop.hidden = !s.indOpen;
+  chHeadAgain(s);
+}
+/* the list set: computed again at the next frame (chLayout), the head and the menu saying it, the page told */
+function chSetIndicators(s, list) {
+  if (!chLive(s) || typeof inString !== "function") return;
+  const next = inParse(inString(list));
+  if (inString(next) === inString(s.ind)) return;
+  s.ind = next;
+  s.indKey = "";
+  chHeadAgain(s);
+  if (s.indOpen && s.parts.pop) paint(s.parts.pop, chIndPopHtml(s));
+  if (s.onIndicators) s.onIndicators(inString(next));
+  chSoon(s);
+}
+/** the indicators on the chart mounted on el: `text` (the list's string, ui/indicators.js inParse) sets them where given; the list's
+ * string as it stands comes back */
+function chIndicators(el, text) {
+  const s = el ? CH.get(el) : null;
+  if (!s) return "";
+  if (text !== undefined && typeof inParse === "function") chSetIndicators(s, inParse(text));
+  return typeof inString === "function" ? inString(s.ind) : "";
+}
+
 /* a listener kept with the chart, so release takes it away */
 function chOn(s, target, type, fn, opts) {
   if (!target || typeof target.addEventListener !== "function") return;
@@ -1285,15 +1345,30 @@ function chOn(s, target, type, fn, opts) {
 function chWire(s) {
   const P = s.parts;
   chOn(s, s.el, "click", (e) => {
-    const b = e.target && typeof e.target.closest === "function" ? e.target.closest("[data-ch-r], [data-ch-log], [data-ch-full]") : null;
+    const b = e.target && typeof e.target.closest === "function" ? e.target.closest("[data-ch-r], [data-ch-log], [data-ch-full], [data-ch-ind], [data-ind-clear]") : null;
     if (!b || (typeof s.el.contains === "function" && !s.el.contains(b))) return;
     if (b.dataset.chR !== undefined) chSetRange(s, b.dataset.chR);
     else if (b.dataset.chLog !== undefined) chSetLog(s, !s.log);
     else if (b.dataset.chFull !== undefined) chSetFull(s, !s.full);
+    else if (b.dataset.chInd !== undefined) chIndPop(s, !s.indOpen);
+    else if (b.dataset.indClear !== undefined) chSetIndicators(s, []);
   });
   chOn(s, s.el, "change", (e) => {
     const t = e.target;
-    if (t && t.dataset && t.dataset.chIvsel !== undefined) chSetInterval(s, String(t.value));
+    if (!t || !t.dataset) return;
+    if (t.dataset.chIvsel !== undefined) chSetInterval(s, String(t.value));
+    else if (t.dataset.indOn !== undefined && typeof inWith === "function") chSetIndicators(s, inWith(s.ind, String(t.dataset.indOn), !!t.checked));
+    else if (t.dataset.indP !== undefined && typeof inWith === "function") {
+      // one length changed: the indicator keeps its place; a figure out of its range is not taken, and the field shows the one kept
+      const [id, k] = String(t.dataset.indP).split(":");
+      const cur = (s.ind || []).find((x) => x.id === id);
+      if (!cur) return;
+      const params = [...cur.params];
+      params[Number(k)] = Number(t.value);
+      const next = inWith(s.ind, id, true, params);
+      if (!next.some((x) => x.id === id)) return void (s.indOpen && s.parts.pop && paint(s.parts.pop, chIndPopHtml(s)));
+      chSetIndicators(s, next);
+    }
   });
   const rel = (e) => {
     const r = P.plot.getBoundingClientRect();
@@ -1337,10 +1412,21 @@ function chWire(s) {
   // key's target sits inside the one open, and the shell closes it)
   if (typeof document !== "undefined")
     chOn(s, document, "keydown", (e) => {
-      if (!s.full || e.key !== "Escape" || e.defaultPrevented) return;
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      // the indicators' menu first
+      if (s.indOpen) return void chIndPop(s, false);
+      if (!s.full) return;
       const inDialog = e.target && typeof e.target.closest === "function" && e.target.closest("dialog");
       if (inDialog || (typeof document.querySelector === "function" && document.querySelector("dialog[open]"))) return;
       chSetFull(s, false);
+    });
+  // a click outside the indicators' menu closes it
+  if (typeof document !== "undefined")
+    chOn(s, document, "click", (e) => {
+      if (!s.indOpen) return;
+      const t = e.target;
+      const inside = t && typeof t.closest === "function" && (t.closest("[data-ch-pop]") || t.closest("[data-ch-ind]"));
+      if (!inside) chIndPop(s, false);
     });
 }
 
@@ -2078,6 +2164,7 @@ function chDraw(s) {
     if (P.cross.classList) P.cross.classList.remove("on");
     paint(P.foot, "");
     paint(P.live, "");
+    if (P.ind) paint(P.ind, "");
     if (P.lines) paint(P.lines, "");
     paint(P.hint, "");
     paint(P.draw, html);
@@ -2094,7 +2181,8 @@ function chDraw(s) {
     paint(P.draw, chSvg(s, L));
   }
   paint(P.live, chLiveSvg(s, L));
-  // the account's own lines, and the desk's trades over them
+  // the indicators over the price and under it, then the account's own lines and the desk's trades over them
+  if (P.ind) paint(P.ind, chIndSvg(s, L));
   if (P.lines) paint(P.lines, chLinesSvg(s, L) + chMarksSvg(s, L));
   // the readout's box: over the price pane's corner, as wide as the pane (its words wrap inside it; nothing outside it moves)
   if (P.ohlc.style) P.ohlc.style.width = `${Math.max(40, L.plotW - CH_RO_LEFT - 4)}px`;
@@ -2203,15 +2291,70 @@ function chLayout(s, W, H) {
     if (b.h > maxH) maxH = b.h;
     if (b.l < minL) minL = b.l;
   }
-  const volH = hasVol ? Math.max(28, Math.min(96, Math.round(plotH * 0.18))) : 0;
+  // the indicators, computed again where the list, the bars or the newest bar changed (a live price moves the newest value)
+  const last = bars[bars.length - 1];
+  const indKey = s.ind && s.ind.length && typeof inCompute === "function" ? [inString(s.ind), s.sver, s.biv, bars.length, last.c, last.h, last.l, last.v].join("|") : "";
+  if (indKey !== s.indKey) {
+    s.indKey = indKey;
+    s.indOut = indKey ? inCompute(bars, s.ind, { intraday: (CH_MS[s.biv] || 0) < CH_MS["1d"], dayOf: (t) => chBarStart(t, "1d", chClock(s)) }) : [];
+  }
+  // the panes under the price: each a fifth of the plot, 56 to 120 pixels, the price pane keeping 140 at least (a short chart draws
+  // fewer panes, the first of the list first)
+  const under = s.indOut.filter((o) => o.pane === "under");
+  let nSub = under.length;
+  let subH = nSub ? Math.max(56, Math.min(120, Math.round(plotH * 0.2))) : 0;
+  if (nSub && plotH - subH * nSub < 140) {
+    subH = Math.floor((plotH - 140) / nSub);
+    if (subH < 40) {
+      nSub = Math.max(0, Math.min(nSub, Math.floor((plotH - 140) / 40)));
+      subH = nSub ? Math.floor((plotH - 140) / nSub) : 0;
+    }
+  }
+  const priceH = plotH - subH * nSub;
+  const volH = hasVol ? Math.max(28, Math.min(96, Math.round(priceH * 0.18))) : 0;
   const wide = Math.max(fmt(maxH).length, fmt(minL).length);
   const axisW = Math.max(44, Math.min(120, Math.ceil((wide + 1) * 6.6 + 12)));
   const plotW = Math.max(20, W - axisW);
-  const roomTop = CH_RO_TOP + chReadoutLines(wide, plotW, W <= CH_SMALL_W) * CH_LINE_H + 3;
+  // the readout's room: the bar's own figures and, after them, each indicator's value
+  const extra = s.indOut.flatMap((o) => o.series.map((se) => se.name.length + 1 + (se.fmt === "price" ? wide : 5)));
+  const roomTop = CH_RO_TOP + chReadoutLines(wide, plotW, W <= CH_SMALL_W, extra) * CH_LINE_H + 3;
   const sl = chSlotsOf(s);
   const usable = Math.max(1, plotW - CH_PAD_R);
   if (s.view) s.view = chClamp(s, s.view, usable);
-  const sc = chScale(bars, plotW, plotH, volH, roomTop, { pos: sl.pos, view: s.view, log: s.log && !s.ev });
+  const sc = chScale(bars, plotW, priceH, volH, roomTop, { pos: sl.pos, view: s.view, log: s.log && !s.ev });
+  // each pane under the price: its top, its own scale over what is in view (a fixed one where the indicator has it: 0 to 100), its
+  // guides inside it, a row at its top for its label
+  const subs = [];
+  for (let k = 0; k < nSub; k++) {
+    const o = under[k];
+    const top = priceH + k * subH;
+    let lo = Infinity;
+    let hi = -Infinity;
+    if (o.range) [lo, hi] = o.range;
+    else {
+      for (const se of o.series)
+        for (let i = sc.from; i < sc.to; i++) {
+          const v = se.values[i];
+          if (v === null || v === undefined || !Number.isFinite(v)) continue;
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+      for (const g of o.guides || []) {
+        if (g < lo) lo = g;
+        if (g > hi) hi = g;
+      }
+      if (!Number.isFinite(lo) || !Number.isFinite(hi)) [lo, hi] = [0, 1];
+      if (hi === lo) {
+        const d = Math.abs(hi) * 0.01 || 1;
+        lo -= d;
+        hi += d;
+      }
+    }
+    const padT = 14;
+    const padB = 4;
+    const h = Math.max(1, subH - padT - padB);
+    subs.push({ o, top, h: subH, lo, hi, y: (v) => top + padT + ((hi - v) / (hi - lo)) * h });
+  }
   // "Now →" while the view's right edge is behind the newest bar
   if (s.parts.now) s.parts.now.hidden = !(s.view && s.view.end < sc.total - 0.5);
   const tickFmt = chFmt(sc.ticks.reduce((d, t) => Math.max(d, chDecimalsOf(t)), 0), s.ev);
@@ -2244,8 +2387,8 @@ function chLayout(s, W, H) {
       while (liveFrom > sc.from && sc.cx(liveFrom - 1) === col) liveFrom--;
     }
   }
-  const key = [W, H, plotW, axisW, volH, roomTop, sc.from, sc.to, sc.slot, sc.end, sc.lo, sc.hi, sc.vmax, sc.log, s.sver, liveFrom, s.edge && s.edge.more].join("|");
-  return { W, H, plotW, plotH, axisW, volH, roomTop, sc, fmt, tickFmt, labels, liveFrom, key, sl, sver: s.sver };
+  const key = [W, H, plotW, axisW, volH, roomTop, priceH, sc.from, sc.to, sc.slot, sc.end, sc.lo, sc.hi, sc.vmax, sc.log, s.sver, liveFrom, s.edge && s.edge.more].join("|");
+  return { W, H, plotW, plotH, priceH, subs, axisW, volH, roomTop, sc, fmt, tickFmt, labels, liveFrom, key, sl, sver: s.sver };
 }
 
 /* the candles and their volume for bars [i0, i1) of the picture, as path data: one candle a bar where a bar has a pixel's column or more,
@@ -2253,7 +2396,7 @@ function chLayout(s, W, H) {
    and a body from open to close at least 1px high (where the body would be no wider than the wick, the wick alone), up when the close is at
    or above the open */
 function chCandles(s, L, i0, i1) {
-  const { sc, plotH } = L;
+  const { sc, priceH } = L;
   const B = s.bars;
   const half = (sc.bw - 1) / 2;
   const out = { cu: "", cd: "", vu: "", vd: "" };
@@ -2271,7 +2414,7 @@ function chCandles(s, L, i0, i1) {
     else out.cd += shape;
     const vh = Math.round(sc.vh(v));
     if (vh > 0) {
-      const bar = `M${x - half} ${plotH - vh}h${sc.bw}v${vh}h${-sc.bw}Z`;
+      const bar = `M${x - half} ${priceH - vh}h${sc.bw}v${vh}h${-sc.bw}Z`;
       if (up) out.vu += bar;
       else out.vd += bar;
     }
@@ -2362,7 +2505,7 @@ function chLiveSvg(s, L) {
   const c = chCandles(s, L, L.liveFrom, sc.to);
   const last = B[B.length - 1];
   const lastDir = last.c >= last.o ? "up" : "down";
-  const ly = Math.min(plotH - 9, Math.max(9, Math.round(sc.y(last.c))));
+  const ly = Math.min(L.priceH - 9, Math.max(9, Math.round(sc.y(last.c))));
   const lyIn = Math.round(sc.y(last.c));
   let axis = "";
   for (const t of sc.ticks) {
@@ -2395,7 +2538,121 @@ function chReadoutAt(s, i, hole) {
   const segs = s.segs || [];
   const k = segs.length > 1 ? chSegAt(s, s.bars[i].t) : -1;
   const whose = k >= 0 && k < segs.length - 1 && segs[k].source ? ` <span class="ch-src">${esc(segs[k].source)}</span>` : "";
-  paint(s.parts.ohlc, chReadout(s.bars[i], prev, L.fmt).html + today + whose);
+  paint(s.parts.ohlc, chReadout(s.bars[i], prev, L.fmt).html + today + whose + chIndReadout(s, i));
+}
+/* the indicators' values at bar i after the bar's own: each series its name and its figure in its colour (a dash before it has one) */
+function chIndReadout(s, i) {
+  const L = s.L;
+  if (!L || !s.indOut || !s.indOut.length) return "";
+  let html = "";
+  for (const o of s.indOut)
+    for (const se of o.series) {
+      const v = se.values[i];
+      const words = v === null || v === undefined || !Number.isFinite(v) ? "—" : se.fmt === "plain" ? String(Math.round(v * 10) / 10) : L.fmt(v);
+      html += ` <span class="ch-kv ch-inv"><span class="ch-k">${esc(se.name)}</span> <span class="ch-v ${esc(se.cls)}">${esc(words)}</span></span>`;
+    }
+  return html;
+}
+
+/* THE INDICATORS' LAYER (see the head of this file): over the price pane, each series a line through its values in view — one point a
+   column where bars share one, the pen lifted where a value is missing — and a band filled between its two; under it, each pane with its
+   separator, its label, its guides with their figures on the axis, its series, a histogram as bars either side of zero. Each pane an inner
+   svg, which clips what it holds to the pane */
+function chIndSvg(s, L) {
+  const outs = s.indOut || [];
+  if (!L || !outs.length || !s.bars || !s.bars.length) return "";
+  const { sc, plotW, W, H, fmt } = L;
+  const cols = [];
+  let lastX = NaN;
+  for (let i = sc.from; i < sc.to; i++) {
+    const x = sc.cx(i);
+    if (x === lastX) cols[cols.length - 1] = i;
+    else {
+      cols.push(i);
+      lastX = x;
+    }
+  }
+  const has = (v) => v !== null && v !== undefined && Number.isFinite(v);
+  const line = (values, y, cls) => {
+    let d = "";
+    let pen = false;
+    for (const i of cols) {
+      const v = values[i];
+      if (!has(v)) {
+        pen = false;
+        continue;
+      }
+      d += `${pen ? "L" : "M"}${sc.cx(i) + 0.5} ${Math.round(y(v)) + 0.5}`;
+      pen = true;
+    }
+    return d ? `<path class="ch-inl ${esc(cls)}" d="${d}"/>` : "";
+  };
+  const band = (up, lo, y, cls) => {
+    let d = "";
+    let top = [];
+    let bot = [];
+    const flush = () => {
+      if (top.length > 1) d += `M${top.join("L")}L${bot.reverse().join("L")}Z`;
+      top = [];
+      bot = [];
+    };
+    for (const i of cols) {
+      const a = up[i];
+      const b = lo[i];
+      if (!has(a) || !has(b)) {
+        flush();
+        continue;
+      }
+      const x = sc.cx(i) + 0.5;
+      top.push(`${x} ${Math.round(y(a)) + 0.5}`);
+      bot.push(`${x} ${Math.round(y(b)) + 0.5}`);
+    }
+    flush();
+    return d ? `<path class="ch-inb ${esc(cls)}" d="${d}"/>` : "";
+  };
+  let over = "";
+  for (const o of outs) {
+    if (o.pane !== "over") continue;
+    if (o.band) over += band(o.series[o.band[0]].values, o.series[o.band[1]].values, sc.y, o.series[o.band[0]].cls);
+    for (const se of o.series) over += line(se.values, sc.y, se.cls);
+  }
+  let under = "";
+  for (const p of L.subs || []) {
+    const o = p.o;
+    const plain = o.series[0] && o.series[0].fmt === "plain";
+    const vf = (v) => (plain ? String(Math.round(v * 10) / 10) : fmt(v));
+    under += `<path class="ch-sep" d="M0 ${p.top + 0.5}H${plotW}"/><text class="ch-inlab" x="6" y="${p.top + 11}">${esc(o.label)}</text>`;
+    for (const g of o.guides || []) {
+      const yi = Math.round(p.y(g));
+      if (yi <= p.top + 12 || yi >= p.top + p.h) continue;
+      under += `<path class="ch-ing" d="M0 ${yi + 0.5}H${plotW}"/><text class="ch-ax" x="${plotW + 6}" y="${yi + 4}">${esc(vf(g))}</text>`;
+    }
+    // the pane's reach on the axis where it has no fixed range: its top and its foot
+    if (!o.range) under += `<text class="ch-ax" x="${plotW + 6}" y="${p.top + 24}">${esc(vf(p.hi))}</text><text class="ch-ax" x="${plotW + 6}" y="${p.top + p.h - 2}">${esc(vf(p.lo))}</text>`;
+    const py = (v) => p.y(v) - p.top;
+    let inner = "";
+    for (const se of o.series) {
+      if (se.kind === "bars") {
+        const w = Math.max(1, sc.bw);
+        const y0 = Math.round(py(0));
+        let up = "";
+        let down = "";
+        for (const i of cols) {
+          const v = se.values[i];
+          if (!has(v)) continue;
+          const yv = Math.round(py(v));
+          const x = sc.cx(i) - (w - 1) / 2;
+          const bar = `M${x} ${Math.min(y0, yv)}h${w}v${Math.max(1, Math.abs(yv - y0))}h${-w}Z`;
+          if (v >= 0) up += bar;
+          else down += bar;
+        }
+        inner += `<path class="ch-inh up" d="${up}"/><path class="ch-inh down" d="${down}"/>`;
+      } else inner += line(se.values, py, se.cls);
+    }
+    under += `<svg x="0" y="${p.top}" width="${plotW}" height="${p.h}" aria-hidden="true">${inner}</svg>`;
+  }
+  if (!over && !under) return "";
+  return `<svg class="ch-svg ch-isvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" focusable="false">${over ? `<svg x="0" y="0" width="${plotW}" height="${Math.max(1, Math.round(sc.bottom))}">${over}</svg>` : ""}${under}</svg>`;
 }
 
 /* a pointer move's crosshair, once a frame */
