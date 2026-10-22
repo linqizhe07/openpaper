@@ -9,7 +9,9 @@
    is still the stretch asked, in the bars the owner picked. A range pressed takes its own bar size again. The answer says the bars' size
    (a source that keeps only so many bars at a size draws a range in a coarser one: Hyperliquid's latest 5,000; the menu then says the size
    drawn, and why is said over the plot), whether older bars exist (`more`) and, where the history ends, why (`ends`), whose bars they are
-   (`source`), what the prices are adjusted for, which hours the bars cover, what they were folded from — all said in the foot.
+   (`source`), what the prices are adjusted for, which hours the bars cover, what they were folded from — all said in the foot. The head's
+   last button (or F on the plot) fills the window with the chart where the page offers it (chSetFull): the frame laid over the page, the
+   bars drawn again at the window's size; Esc, F or the button again bring the page back.
 
    MOVING THROUGH TIME. The first view fits the range: every bar it brought, side by side, as wide as fits (at most CH_MAX_SLOT pixels a
    bar, so a short history sits at the right). A drag moves it (the mouse, or a finger left and right: up and down still scrolls the page),
@@ -907,6 +909,9 @@ function chMount(el, opts = {}) {
     onRange: typeof opts.onRange === "function" ? opts.onRange : null,
     onInterval: typeof opts.onInterval === "function" ? opts.onInterval : null,
     onLog: typeof opts.onLog === "function" ? opts.onLog : null,
+    // whether the head offers the window-filling view (the pages that frame the chart ask for it), and whether it fills the window now
+    fullscreen: opts.fullscreen === true,
+    full: false,
     // the range asked, the bar size asked (the range's own, or the owner's pick), the bar size the bars came in (a source may draw a range
     // in a coarser one), and the price scale
     range,
@@ -1008,6 +1013,9 @@ function chRelease(el) {
   s.timer = 0;
   for (const off of s.off) off();
   s.off = [];
+  // the window-filling view let go with the chart: the page is its own layout again
+  if (s.full) chFullMark(s, false);
+  s.full = false;
   if (s.ro) s.ro.disconnect();
   s.ro = null;
   s.ptrs.clear();
@@ -1223,7 +1231,9 @@ function chHeadHtml(s) {
   const shown = s.biv || s.interval;
   const sizes = CH_INTERVALS.map(([v, w]) => `<option value="${v}"${v === shown ? " selected" : ""}>${w}</option>`).join("");
   const log = s.ev ? "" : `<button type="button" class="ch-iv ch-log" data-ch-log aria-pressed="${s.log}" data-fk="ch-log" title="Logarithmic price scale: equal steps are equal percentages">Log</button>`;
-  return `<div class="ch-rs" role="group" aria-label="Range">${ranges}</div><span class="ch-hsep" aria-hidden="true"></span><span class="ch-ivw"><select class="ch-ivsel" data-ch-ivsel aria-label="Bar size" data-fk="ch-ivsel">${sizes}</select></span>${log}`;
+  // the window-filling view, where the page asked for it: the corners point out, or back in while the chart fills the window
+  const full = s.fullscreen ? `<button type="button" class="ch-iv ch-fullb" data-ch-full aria-pressed="${s.full}" data-fk="ch-full" aria-label="${s.full ? "Back to the page" : "Fill the window"}" title="${s.full ? "Back to the page (Esc, or F)" : "Fill the window with the chart (F)"}"><svg class="ch-fulli" viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${s.full ? "M5 1.5V5H1.5M9 1.5V5h3.5M12.5 9H9v3.5M5 12.5V9H1.5" : "M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9"}"/></svg></button>` : "";
+  return `<div class="ch-rs" role="group" aria-label="Range">${ranges}</div><span class="ch-hsep" aria-hidden="true"></span><span class="ch-ivw"><select class="ch-ivsel" data-ch-ivsel aria-label="Bar size" data-fk="ch-ivsel">${sizes}</select></span>${log}${full}`;
 }
 /* the head drawn again (a range, a bar size or the scale picked; a source that drew a range coarser), its menu set to the size shown */
 function chHeadAgain(s) {
@@ -1231,6 +1241,35 @@ function chHeadAgain(s) {
   paint(s.parts.head, chHeadHtml(s));
   const sel = typeof s.parts.head.querySelector === "function" ? s.parts.head.querySelector(".ch-ivsel") : null;
   if (sel && "value" in sel && sel.value !== (s.biv || s.interval)) sel.value = s.biv || s.interval;
+}
+
+/* THE CHART FILLING THE WINDOW (the head's last button, or F on the plot; Esc, F or the button again bring the page back): the frame is laid
+   over the page (chart.css .ch-full: fixed, under a sheet and the toasts) and the page behind it does not scroll (html[data-chart-full]);
+   the plot's size observer draws the bars again at the new size. Nothing is kept: a reload, or the page leaving the chart's tab
+   (terminal.js, superagent.js), is the page's own layout again. Not the browser's own fullscreen: a phone's Safari has none for an element,
+   and one in the top layer would fight the page's sheets. Esc is the page's first: a sheet or the drawer open takes it (shell.js), and the
+   chart leaves the window only when none is open */
+function chFullMark(s, on) {
+  if (s.el && s.el.classList) s.el.classList.toggle("ch-full", on);
+  const root = typeof document !== "undefined" ? document.documentElement : null;
+  if (root && root.dataset) {
+    if (on) root.dataset.chartFull = "";
+    else delete root.dataset.chartFull;
+  }
+}
+function chSetFull(s, on) {
+  if (!s.fullscreen || !chLive(s) || s.full === !!on) return;
+  s.full = !!on;
+  chFullMark(s, s.full);
+  chHeadAgain(s);
+  // the keys (Esc, the arrows, F) are the plot's at once
+  if (s.full && s.parts.plot && typeof s.parts.plot.focus === "function") s.parts.plot.focus();
+  chSoon(s);
+}
+/** the chart on el filling the window, or back to the page */
+function chFull(el, on) {
+  const s = el ? CH.get(el) : null;
+  if (s) chSetFull(s, on);
 }
 
 /* a listener kept with the chart, so release takes it away */
@@ -1246,10 +1285,11 @@ function chOn(s, target, type, fn, opts) {
 function chWire(s) {
   const P = s.parts;
   chOn(s, s.el, "click", (e) => {
-    const b = e.target && typeof e.target.closest === "function" ? e.target.closest("[data-ch-r], [data-ch-log]") : null;
+    const b = e.target && typeof e.target.closest === "function" ? e.target.closest("[data-ch-r], [data-ch-log], [data-ch-full]") : null;
     if (!b || (typeof s.el.contains === "function" && !s.el.contains(b))) return;
     if (b.dataset.chR !== undefined) chSetRange(s, b.dataset.chR);
     else if (b.dataset.chLog !== undefined) chSetLog(s, !s.log);
+    else if (b.dataset.chFull !== undefined) chSetFull(s, !s.full);
   });
   chOn(s, s.el, "change", (e) => {
     const t = e.target;
@@ -1293,6 +1333,15 @@ function chWire(s) {
     s.ro.observe(P.plot);
   } else if (typeof addEventListener === "function") chOn(s, globalThis, "resize", () => chSoon(s));
   if (typeof document !== "undefined") chOn(s, document, "visibilitychange", () => !chHidden() && chLive(s) && !s.timer && chTick(s));
+  // Esc anywhere on the page brings the page back from the window-filling chart — unless a sheet or the drawer is open: Esc is theirs (the
+  // key's target sits inside the one open, and the shell closes it)
+  if (typeof document !== "undefined")
+    chOn(s, document, "keydown", (e) => {
+      if (!s.full || e.key !== "Escape" || e.defaultPrevented) return;
+      const inDialog = e.target && typeof e.target.closest === "function" && e.target.closest("dialog");
+      if (inDialog || (typeof document.querySelector === "function" && document.querySelector("dialog[open]"))) return;
+      chSetFull(s, false);
+    });
 }
 
 /* ANOTHER RANGE: its own bar size with it (the owner's pick of a size before is let go), the view fitted to it, the head saying it at once,
@@ -2445,6 +2494,11 @@ function chLeave(s) {
 /* the keys on the plot: ← and → a bar at a time (the view following past either edge), Home the oldest shown, End the newest shown, + and
    − zoom (around the crosshair where the keys put it), Escape away */
 function chKey(s, e) {
+  // F fills the window with the chart, or brings the page back, where the page offers it
+  if ((e.key === "f" || e.key === "F") && s.fullscreen && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (typeof e.preventDefault === "function") e.preventDefault();
+    return void chSetFull(s, !s.full);
+  }
   const L = s.L;
   if (!L || !s.bars || !s.bars.length) return;
   const sc = L.sc;

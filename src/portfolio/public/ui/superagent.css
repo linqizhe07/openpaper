@@ -196,6 +196,10 @@
 /* the stage: the chart as tall as a trading screen's, and the banner laid over its top (under the chart's own toolbar, clear of its price
    axis) — out of the flow, so a banner coming and going never moves the chart */
 .sg-stage { position: relative; min-width: 0; }
+/* the chart filling the window (chart.js chSetFull) is laid out from the window: this panel's glass would frame it instead (a backdrop
+   filter makes its box the containing block of a fixed descendant), so the glass is off while the chart fills the window — nothing of
+   the panel shows behind the chart then */
+html[data-chart-full] .sg-chartp { -webkit-backdrop-filter: none; backdrop-filter: none; }
 .sg-chart { display: flex; flex-direction: column; height: clamp(380px, 58vh, 620px); min-width: 0; }
 /* the chart's open-high-low-close on a line of its own above the bars, never over them */
 .sg-chart .ch-plot { margin-top: 19px; overflow: visible; }

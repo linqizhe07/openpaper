@@ -282,7 +282,8 @@ describe("the trade terminal (ui/terminal.js): the market bar's figures, its ses
       var TT_CH = { innerHTML: "" }; var TT_BKP = { innerHTML: "" };
       var PANE = { querySelector: (s) => (s === "[data-tt-chart]" ? TT_CH : s === "[data-tt-book]" ? TT_BKP : null) };
       document.getElementById = (id) => (id === "pane-trade" ? PANE : null);
-      chMount = (el, o) => MOUNTS.push(["chart", o.venue, o.symbol]);
+      var FULL = null;
+      chMount = (el, o) => { MOUNTS.push(["chart", o.venue, o.symbol]); FULL = o.fullscreen; };
       bkMount = (el, o) => MOUNTS.push(["book", o.venue, o.symbol]);
       chRelease = () => MOUNTS.push(["release"]);
       bkRelease = () => {};
@@ -291,6 +292,8 @@ describe("the trade terminal (ui/terminal.js): the market bar's figures, its ses
     // a coin traded at the exchange connected: once the ticket chooses it, the chart and the book are that venue's
     p.run(`ttSetItem(${JSON.stringify(ROW("coin", "BTC"))}, "crypto"); ttSetMarket({ venue: "ex", symbol: "BTC/USDT" }, { kind: "coin", base: "BTC", quote: "USDT", priceStep: 0.1, price: 81900 })`);
     expect(p.out("MOUNTS.filter((m) => m[1] === 'ex')")).toEqual([["chart", "ex", "BTC/USDT"], ["book", "ex", "BTC/USDT"]]);
+    // the terminal's chart offers the window-filling view (ui/chart.js)
+    expect(p.out("FULL")).toBe(true);
     // a share no account of yours trades, listed publicly: the last market's place and price are dropped at once, its public listing shows
     const nvda = { key: "stock:NVDA", kind: "stock", base: "NVDA", name: "NVIDIA", at: [{ venue: "cboe", venueName: "US stocks", symbol: "NVDA", public: true, connected: false, price: 221.09 }] };
     p.run(`MOUNTS.length = 0; ttSetItem(${JSON.stringify(nvda)}, "stocks")`);

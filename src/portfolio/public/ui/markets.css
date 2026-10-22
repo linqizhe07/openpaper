@@ -214,6 +214,9 @@
 .mk-src { margin: 4px 0 0; font-family: var(--font-sans); font-size: 11px; line-height: 1.4; color: var(--dim); }
 /* the nine ranges over the drawer's price: narrower buttons, so they sit on one line beside the heading where there is room */
 .mk-rseg button { min-height: 32px; padding: 0 8px; font-size: 12px; }
+/* the Price head: its title and, beside it, the way to the Trade page's own chart of the market */
+.mk-sec-t { display: inline-flex; align-items: baseline; gap: 12px; min-width: 0; }
+.mk-d .mk-sec-t .link { min-height: 0; }
 .mk-d .t td, .mk-d .t th { padding-left: 6px; padding-right: 6px; }
 .mk-d .why { white-space: normal; }
 /* You hold: a position's Close… and an order's Cancel at the end of its own line */

@@ -953,7 +953,7 @@ describe("honesty: empty seats say so, a brain that cannot think says why, nothi
 
 describe("the desk: the chart with its trades, Now, the seats' line and What it did — and what happened, played as it happens", () => {
   /** the chart's own calls, recorded (ui/chart.js is not on this page's stand-in): what the desk mounts and hands over */
-  const CHART = 'var CALLS = []; chMount = (el, o) => void CALLS.push(["mount", o.venue, o.symbol, o.range, o.interval]); chLines = (el, l) => void CALLS.push(["lines", l.map((x) => x.kind)]); chMarks = (el, m) => void CALLS.push(["marks", m.map((x) => x.id)]); chRelease = () => void CALLS.push(["release"])';
+  const CHART = 'var CALLS = []; chMount = (el, o) => void CALLS.push(["mount", o.venue, o.symbol, o.range, o.interval, o.fullscreen]); chLines = (el, l) => void CALLS.push(["lines", l.map((x) => x.kind)]); chMarks = (el, m) => void CALLS.push(["marks", m.map((x) => x.id)]); chRelease = () => void CALLS.push(["release"])';
 
   it("paints the desk from one read — the chart on the market it holds, its trades and plan handed over only when they change; Now; the seats' line; What it did; the positions — and lets the chart go", () => {
     const p = page();
@@ -962,7 +962,7 @@ describe("the desk: the chart with its trades, Now, the seats' line and What it 
     p.run(CHART);
     p.run(`var ROOT = fakeEl("root"); SG.desk = ${JSON.stringify(feed())}; SG.view = ${JSON.stringify(VIEW)}; SG.catalog = ${JSON.stringify(CATALOG)}; SG.room = SG.desk.room; sgPaintDesk(ROOT, true); sgPaintDesk(ROOT, true)`);
     // mounted once, on the market of the lead it holds, a day of five-minute bars; its entry's dot and its plan's lines handed over once
-    expect(p.out("CALLS")).toEqual([["mount", "paper-1", "SOL/USDT", "1D", "5m"], ["lines", ["entry", "tp", "sl"]], ["marks", ["L-0003:in"]]]);
+    expect(p.out("CALLS")).toEqual([["mount", "paper-1", "SOL/USDT", "1D", "5m", true], ["lines", ["entry", "tp", "sl"]], ["marks", ["L-0003:in"]]]);
     const part = (sel: string) => p.run<string>(`ROOT.querySelector('${sel}').innerHTML`);
     expect(part('[data-sg-p="chart-h"]')).toContain('<b>Solana</b><span class="sg-dim">SOL/USDT · open lead L-0003</span>');
     // one market held: no markets to press
