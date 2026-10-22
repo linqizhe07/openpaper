@@ -32,6 +32,7 @@ link there.
 - The Progress script reads a merge subject that lost its number, by its branch. [#26](https://github.com/linqizhe07/openpaper/pull/26)
 - The page calls itself openpaper: its title, the rail's brand with the ring for a mark, and the tab's icon. [#27](https://github.com/linqizhe07/openpaper/pull/27)
 - The left rail keeps watch from any tab: the markets starred, priced fresh every five seconds; the books in a line each (open orders, positions and what they are up or down, the paper result); the stream's dot beside the clock; how many agents. [#28](https://github.com/linqizhe07/openpaper/pull/28)
+- One hand of motion and bolder colour for a move: a price's tick fades, a press is felt, menus and toasts arrive, a 24h move is a chip in its colour, the live dot breathes; a move too small for its figures reads flat. [#30](https://github.com/linqizhe07/openpaper/pull/30)
 
 ## v0.1.0 — 2026-10-22
 
