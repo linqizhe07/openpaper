@@ -196,6 +196,7 @@ Node 22, TypeScript (strict), Express, ccxt, viem, zod, the MCP SDK and vitest. 
 | `npm run account` | The account at http://127.0.0.1:4820 (`npm run portfolio` is the same) |
 | `npm run account:check` | What your network reaches, in each venue's own words; safe to paste |
 | `npm run account:service -- <command>` | The account as a background service on macOS |
+| `npm run account:replay -- --day 2026-10-01` | A recorded day of Hyperliquid (tardis.dev; the first of each month is free) replayed through the desk on a paper account, with a script for a brain: how the desk's mechanics fare on a real day's prices, in seconds |
 | `npm test` | The suite: about 170 files and 2,900 cases, among them thirty attack files, serial because the simulators bind fixed ports |
 | `npm run typecheck` | `tsc --noEmit`, strict |
 | `npm run site` · `npm run site:numbers` | Preview the public page; recompute its numbers from the repository |
