@@ -83,6 +83,7 @@ import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { no } from "../../src/portfolio/refuse.ts";
 import { cardHash, type Outcome } from "../../src/portfolio/account/exchange.ts";
 import { BRAIN_MODELS, scriptedBrain, seatName, type Brain, type BrainAnswer, type BrainRequest, type RoleId } from "../../src/portfolio/account/desk.ts";
+import { momentumScriptBrain } from "../../src/portfolio/account/brain-script.ts";
 import Anthropic from "@anthropic-ai/sdk";
 import { ANTHROPIC_KEY_REF, CLAUDE_KEY_REF, type ClaudeClient, type ClaudeClientOptions } from "../../src/portfolio/account/brain-claude.ts";
 import { keyRejected, present, rejectedFix } from "../../src/portfolio/account/brain-key.ts";
@@ -527,25 +528,11 @@ async function drawThePast(svc: PortfolioService, world: World, home: string, wa
   return written;
 }
 
-/** the superagent's brain in the stand-in: a script that picks from the very table Search is shown (the paper account's rows), in turn;
- * Risk clears most at $60 with a quick 0.4% take-profit and stop, and rejects every third with its reason; Exit holds; the Head writes
- * two fixed sentences. A script, so nothing here is any model's judgement: it only makes the desk's real steps happen on the stand-in */
-function superagentBrain() {
-  let n = 0;
-  let r = 0;
-  return scriptedBrain(({ role, input }) => {
-    if (role === "search") {
-      const symbols = [...new Set([...input.matchAll(/"symbol":\s*"([^"]+)"/g)].map((m) => m[1]!))];
-      if (!symbols.length) return { leads: [], note: "nothing listed to pick from" };
-      const symbol = symbols[n++ % Math.min(symbols.length, 6)]!;
-      return { leads: [{ symbol, side: "buy", thesis: `${symbol.split(/[/:@-]/)[0]} keeps its momentum on volume`, confidence: 0.55 + (n % 4) * 0.1 }], note: "" };
-    }
-    if (role === "risk") return ++r % 3 === 0 ? { verdict: "reject", why: "the move is already spent on the day", sizeUsd: 0, tpPct: 0.4, slPct: 0.4, maxHours: 1 } : { verdict: "clear", why: "a tight spread, the day's loss room untouched", sizeUsd: 60, tpPct: 0.4, slPct: 0.4, maxHours: 1 };
-    if (role === "exit") return { decisions: [] };
-    if (role === "head") return { worked: "Quick entries, each with its numbers said first.", change: "Keep the size small while the tape is thin." };
-    return null;
-  }, "claude-opus-5-5");
-}
+/** the superagent's brain in the stand-in: the momentum script (account/brain-script.ts), which a replay of a recorded day thinks with
+ * too — it picks from the very table Search is shown (the paper account's rows), in turn; Risk clears most at $60 with a quick 0.4%
+ * take-profit and stop, and rejects every third with its reason; Exit holds; the Head writes two fixed sentences. A script, so nothing
+ * here is any model's judgement: it only makes the desk's real steps happen on the stand-in */
+const superagentBrain = (): Brain => momentumScriptBrain();
 
 /** The stand-in's brain answering as the Anthropic API does to a key it refuses (`--brain-refuses`): every call throws E_BRAIN_KEY_REJECTED
  * with the fix brain-claude.ts gives for a key from the file (the file opened again, no restart), so the page shows the rejected-key

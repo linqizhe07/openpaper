@@ -728,7 +728,9 @@ export class PortfolioService {
 
   /** the order ticket's reads, kept for a moment and shared while they are in flight: a page (or anything else on this machine) asking
    * again and again costs the venue one request, not one each — the venue's rate limit is for the orders */
-  private readonly marketReads = new ReadCache((venue, r) => void this.sawRule(venue, r));
+  // kept on the account's real clock (liveDeps.clock: the wall clock on the server, a test's or a replay's own), so what is kept expires
+  // as that clock moves — a replay walks a day in seconds, and a read kept by the wall clock would never let the day's prices through
+  private readonly marketReads = new ReadCache((venue, r) => void this.sawRule(venue, r), () => this.realNow());
 
   /** a venue connected live that orders are placed through, or why it is not one */
   private tradingVenue(venue: string): LiveVenue | Refusal {
@@ -4548,7 +4550,11 @@ function liveLiquidity(page: AccountPage): Liquidity {
  * part only — while the connection's own hold holds every part of it */
 class ReadCache {
   /** `onRule`: a venue's own rule for the whole network, met by one of its reads and held here (the service remembers it for the keyless gate) */
-  constructor(private readonly onRule?: (venue: string, r: Refusal) => void) {}
+  constructor(
+    private readonly onRule?: (venue: string, r: Refusal) => void,
+    /** the clock what is kept expires on: the wall clock unless given */
+    private readonly clock: () => number = Date.now,
+  ) {}
   private readonly kept = new Map<string, { at: number; value: Promise<unknown>; failed: boolean; settled: boolean }>();
   private readonly slots = new Map<string, { busy: number; waiting: Array<() => void> }>();
   private readonly health = new Map<string, VenueHealth>();
@@ -4561,7 +4567,7 @@ class ReadCache {
 
   /** `parties`: the read is one of the venue's trader's (its markets, prices, history), which another party may answer for */
   get<T>(key: string, ttlMs: number, load: () => Promise<T>, venue?: string, parties = false): Promise<T> {
-    const now = Date.now();
+    const now = this.clock();
     const hit = this.kept.get(key);
     if (hit && (!hit.settled || now - hit.at < (hit.failed ? FAIL_KEEP_MS : ttlMs))) return hit.value as Promise<T>;
     const held = venue === undefined ? undefined : this.holding(venue, parties);
@@ -4581,7 +4587,7 @@ class ReadCache {
       (v) => {
         entry.settled = true;
         if (isRefusal(v) && this.kept.get(key) === entry) {
-          if (holdsBack(v)) Object.assign(entry, { at: Date.now(), failed: true });
+          if (holdsBack(v)) Object.assign(entry, { at: this.clock(), failed: true });
           else this.kept.delete(key);
         }
         return v;

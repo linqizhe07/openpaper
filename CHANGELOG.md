@@ -34,6 +34,7 @@ link there.
 - The left rail keeps watch from any tab: the markets starred, priced fresh every five seconds; the books in a line each (open orders, positions and what they are up or down, the paper result); the stream's dot beside the clock; how many agents. [#28](https://github.com/linqizhe07/openpaper/pull/28)
 - One hand of motion and bolder colour for a move: a price's tick fades, a press is felt, menus and toasts arrive, a 24h move is a chip in its colour, the live dot breathes; a move too small for its figures reads flat. [#30](https://github.com/linqizhe07/openpaper/pull/30)
 - Why beside every trade of the superagent's: Search's thesis and Risk's reason under each entry in What it did, on the banners, in the chart's marks, in a Why column of the positions and on the cards, and the fill line says bought or sold; on paper a seat's trading limit is the whole balance an order and fifty balances a day, and the form's risk per lead starts at 10%. [#31](https://github.com/linqizhe07/openpaper/pull/31)
+- `npm run account:replay`: one of tardis.dev's recorded days of Hyperliquid (the first of each month is free) replayed through the desk at the account's own clock, the paper account filling against the recorded book and the momentum script for a brain, a day in seconds; the service's market-read cache expires on the account's clock, not the wall clock. [#32](https://github.com/linqizhe07/openpaper/pull/32)
 
 ## v0.1.0 — 2026-10-22
 
