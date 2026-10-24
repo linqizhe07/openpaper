@@ -1,7 +1,14 @@
 {
-  "asOf": "2026-10-22",
+  "asOf": "2026-10-24",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 32,
+      "title": "A recorded day replayed through the desk: tardis.dev's free day of Hyperliquid on the paper account, with the momentum script for a brain",
+      "mergedAt": "2026-10-24T22:18:10Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/32",
+      "branch": "feat/tardis-replay"
+    },
     {
       "number": 31,
       "title": "Why beside every trade of the superagent's, and on paper a seat's limit is the whole balance",
