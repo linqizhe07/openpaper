@@ -154,6 +154,23 @@
 .pf-mk-r > .up, .pf-mk-r > .down, .pf-mk-t24 > .up, .pf-mk-t24 > .down { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: var(--radius-pill); }
 .pf-mk-r > .up, .pf-mk-t24 > .up { background: var(--up-fill); }
 .pf-mk-r > .down, .pf-mk-t24 > .down { background: var(--down-fill); }
+/* the heatmap (after OpenStock's sector treemap, in this page's grammar): a 220-high map whose cells are placed in percents of it, so it
+   follows the card's width — one cell a market, a button to its drawer, its fill the up or down colour mixed into the surface by the size
+   of the move (12% at nothing, 57% at 5% and over: words in the text colour read on both, Light and Black), flat on the second surface; a
+   hairline of the surface between cells; under All each class has a label strip over its own block. The pointer and the keyboard ring a
+   cell in the text colour. No motion */
+.pf-heat { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pf-heat-map { position: relative; height: 220px; min-width: 0; overflow: hidden; border-radius: var(--radius-s); background: var(--surface-2); }
+.pf-heat-c { position: absolute; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 1px; margin: 0; padding: 4px 6px; border: 1px solid var(--surface); border-radius: 0; box-sizing: border-box; overflow: hidden; background: var(--surface-2); color: var(--text); font: inherit; line-height: 1.2; text-align: left; cursor: pointer; }
+.pf-heat-c.up { background: color-mix(in srgb, var(--up) calc(12% + var(--heat) * 0.45), var(--surface)); }
+.pf-heat-c.down { background: color-mix(in srgb, var(--down) calc(12% + var(--heat) * 0.45), var(--surface)); }
+.pf-heat-c.flat { color: var(--dim); }
+.pf-heat-c b { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.pf-heat-c span { font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pf-heat-c .up, .pf-heat-c .down { color: inherit; font-weight: 600; }
+.pf-heat-c:hover, .pf-heat-c:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; z-index: 1; }
+.pf-heat-g { position: absolute; box-sizing: border-box; padding: 0 6px; font-size: 11px; font-weight: 700; line-height: 16px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.pf-heat-l { margin: 0; }
 .pf-mk-foot, .pf-mk-note { margin: 0; }
 .pf-mk-foot .link { font-size: 12px; }
 /* the perpetuals' table: the funding and its next payment on two lines, the owner's position on two, the figures in tabular digits */

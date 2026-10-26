@@ -1,7 +1,8 @@
 /* PORTFOLIO — what the owner has, in one place: the net worth and its curve, THE PULSE (four glance tiles under it: today's change, what
    waits for the owner, the dollars that are ready, the desk's day), THE MARKETS the account specialises in (US stocks, crypto and
-   perpetuals: the biggest moves and the most traded of a class, five each, or the perpetuals' own table with funding and the owner's
-   positions, priced fresh every five seconds), what waits for the owner (the agents' cards and what they asked for), the agents at work
+   perpetuals: a heatmap of the class — one cell a market, its area the day's volume, its colour the day's move — then the biggest moves
+   and the most traded, five each, or the perpetuals' own table with funding and the owner's positions, priced fresh every five
+   seconds), what waits for the owner (the agents' cards and what they asked for), the agents at work
    (the owner's words to them and what they did), what the money is in, and every asset, position and account — all narrowed by the top
    bar's lens. The home's shape follows OpenStock's dashboard (a status line, glance tiles, lists, then a dense table) in this page's own
    grammar; nothing of OpenStock's is copied. Every button does what it says through the account's own door:
@@ -17,7 +18,7 @@
 /* what the pane keeps between draws: the segment and the curve's range, the last answer of each read, what the curve last drew, the key
    of the intents last mounted under Agents at work, the card a "Review" elsewhere asked to be shown, the Markets card's class and rows
    and its poll, and the desk's day (undefined until read, null with none hired) */
-const PF = { tab: "assets", range: "1w", hold: null, holdErr: "", hist: new Map(), histPaper: new Map(), book: "", pos: null, agents: null, earn: null, curve: null, intentsKey: "", hiWant: "", soon: false, hover: null, mkt: "all", mktBody: null, mktErr: "", mkRows: [], mkTimer: 0, desk: undefined };
+const PF = { tab: "assets", range: "1w", hold: null, holdErr: "", hist: new Map(), histPaper: new Map(), book: "", pos: null, agents: null, earn: null, curve: null, intentsKey: "", hiWant: "", soon: false, hover: null, mkt: "all", mktBody: null, mktErr: "", mkRows: [], mkPriced: [], mkTimer: 0, desk: undefined };
 const PF_RANGES = [["1d", "1D"], ["1w", "1W"], ["1m", "1M"], ["all", "All"]];
 const PF_TABS = [["assets", "Assets"], ["positions", "Positions"]];
 const PF_RANGE_WORDS = { "1d": "past day", "1w": "past week", "1m": "past month", all: "since the start" };
@@ -802,6 +803,7 @@ const pfMkStar = (it) => (pfMkWatched(it) ? '<span class="pf-mk-star" title="Wat
    the poll ticks), and what the list is about, at the right */
 function pfMkRow(it, cell, list) {
   const i = PF.mkRows.push(it) - 1;
+  PF.mkPriced.push(it);
   const pair = pfMkPair(it);
   return `<li class="pf-mk-row" data-k="${esc(it.key)}"><button type="button" class="pf-mk-btn" data-pf-act="market" data-i="${i}" data-fk="market:${esc(list)}:${esc(it.key)}" title="${esc(it.name)}">${pfMkAv(it)}<span class="pf-mk-name"><b>${esc(it.base || it.name)}${pfMkStar(it)}</b><span class="pf-mk-sub">${esc(pfMkSub(it))}</span></span><span class="pf-mk-px"${pair ? ` data-q="${esc(pair)}" data-fmt="usd"` : ""}>${pfMkPrice(it, pair)}</span><span class="pf-mk-r">${cell(it)}</span></button></li>`;
 }
@@ -812,7 +814,9 @@ function pfMkList(title, items, cell, to) {
 /** the Markets card: the class (All · US stocks · Crypto · Perps, kept in this browser), then the biggest moves and the most traded of it,
  * five each — or, for the perpetuals, their own table (pfPerpsHtml). The rows' prices are polled every five seconds (pfMkTick) */
 function pfMarketsHtml(l) {
+  // the rows drawn, by index (a press names one), and among them the ones that show a price (the poll asks for those)
   PF.mkRows = [];
+  PF.mkPriced = [];
   const body = PF.mktBody;
   const tab = PF.mkt === "all" ? "" : PF.mkt;
   const head = `<div class="sec-head pf-mk-h"><div class="pf-mk-t"><h2 class="label" id="pf-mk-h">Markets</h2><span class="dim small">US stocks, crypto and perpetuals, as the account lists them</span></div>${pfSeg("mkt", PF_MKT, PF.mkt, "Market")}</div>`;
@@ -820,10 +824,112 @@ function pfMarketsHtml(l) {
   const rows = pfMktRows(body, PF.mkt, l);
   const foot = `<p class="dim small pf-mk-foot">Prices every 5 s where a venue is connected${body.asOf ? ` · listed ${esc(nyTime(body.asOf))}` : ""} · <a class="link" href="${esc(hashOf("markets", tab ? { tab } : {}))}">All markets →</a></p>`;
   if (!rows.length) return `${head}<p class="empty">${PF.mkt === "all" ? "No stock, coin or perpetual is listed here yet." : `No ${PF_MKT_WORD[PF.mkt]} is listed here yet.`}</p>${foot}`;
-  if (PF.mkt === "perps") return `${head}${pfPerpsHtml(rows)}${foot}`;
+  const heat = pfHeatHtml(rows, PF.mkt);
+  if (PF.mkt === "perps") return `${head}${heat}${pfPerpsHtml(rows)}${foot}`;
   const { movers, traded } = pfMktLists(rows);
   const move = (it) => chg(it.changePct24h);
-  return `${head}<div class="pf-mk-lists">${pfMkList("Biggest moves", movers, move, { ...(tab ? { tab } : {}), sort: "movers" })}${pfMkList("Most traded", traded, (it) => `<span class="pf-mk-vol">${esc(pfVol(it.volumeUsd24h))}</span>${move(it)}`, tab ? { tab } : {})}</div>${foot}`;
+  return `${head}${heat}<div class="pf-mk-lists">${pfMkList("Biggest moves", movers, move, { ...(tab ? { tab } : {}), sort: "movers" })}${pfMkList("Most traded", traded, (it) => `<span class="pf-mk-vol">${esc(pfVol(it.volumeUsd24h))}</span>${move(it)}`, tab ? { tab } : {})}</div>${foot}`;
+}
+
+// ---- the heatmap: one cell a market, its area the day's dollars, its colour the day's move ------------------------------------------
+
+/* the map's own box (the cells are placed in percents of it, so the map follows the card's width): about the card's shape at 640 × 220 */
+const PF_HEAT_W = 1000;
+const PF_HEAT_H = 330;
+const PF_HEAT_PX = [640, 220];
+/* the label strip over a group of cells, and the move at which a cell's colour is deepest (5% in a day) */
+const PF_HEAT_STRIP = 24;
+const PF_HEAT_FULL_PCT = 5;
+/** A TREEMAP, squarified (Bruls, Huizing and van Wijk): the items with a positive `size`, largest first, laid in rows along the shorter side
+ * of the box, each row's cells as square as the row can make them. Every item's area is its share of the box; nothing overlaps; the box is
+ * filled. Returns [{ item, x, y, w, h }], the items with no size left out */
+function pfSquarify(items, box) {
+  const list = (items || []).filter((it) => Number(it.size) > 0).slice().sort((a, b) => b.size - a.size);
+  const total = list.reduce((s, it) => s + it.size, 0);
+  const out = [];
+  if (!(total > 0) || !(box.w > 0) || !(box.h > 0)) return out;
+  const k = (box.w * box.h) / total;
+  let left = { ...box };
+  let row = [];
+  for (const it of list) {
+    const side = Math.min(left.w, left.h);
+    const areas = row.map((r) => r.size * k);
+    if (!row.length || pfWorst([...areas, it.size * k], side) <= pfWorst(areas, side)) {
+      row.push(it);
+      continue;
+    }
+    left = pfLayRow(row, left, k, out);
+    row = [it];
+  }
+  if (row.length) pfLayRow(row, left, k, out);
+  return out;
+}
+/* the worst aspect ratio among a row of areas laid along a side of that length */
+function pfWorst(areas, side) {
+  const sum = areas.reduce((s, a) => s + a, 0);
+  if (!(sum > 0) || !(side > 0)) return Infinity;
+  const s2 = side * side;
+  return Math.max((s2 * Math.max(...areas)) / (sum * sum), (sum * sum) / (s2 * Math.min(...areas)));
+}
+/* one row laid along the shorter side of what is left of the box: a strip at the left when the box is wider than tall, else at the top;
+   returns the box that is left */
+function pfLayRow(row, box, k, out) {
+  const sum = row.reduce((s, it) => s + it.size * k, 0);
+  if (box.w >= box.h) {
+    const sw = sum / box.h;
+    let y = box.y;
+    for (const it of row) {
+      const h = (it.size * k) / sw;
+      out.push({ item: it, x: box.x, y, w: sw, h });
+      y += h;
+    }
+    return { x: box.x + sw, y: box.y, w: box.w - sw, h: box.h };
+  }
+  const sh = sum / box.w;
+  let x = box.x;
+  for (const it of row) {
+    const w = (it.size * k) / sh;
+    out.push({ item: it, x, y: box.y, w, h: sh });
+    x += w;
+  }
+  return { x: box.x, y: box.y + sh, w: box.w, h: box.h - sh };
+}
+/** THE HEATMAP of a class (after OpenStock's sector treemap, in this page's own grammar): one cell a market, sized by the day's dollar
+ * volume, coloured by the 24-hour move — the up or down colour, deeper the bigger the move, full at 5%; flat where the listing gives no
+ * move. Under All the three classes are groups, each with its label and its own treemap, the groups themselves laid by their volumes. A
+ * cell is a button to the market's drawer, named in full for the pointer and the screen reader; a cell too small for its words carries
+ * none. A market with no volume is left out and counted under the map */
+function pfHeatHtml(rows, cls) {
+  const sized = rows.filter((it) => pfFin(it.volumeUsd24h) > 0);
+  const left = rows.length - sized.length;
+  if (!sized.length) return "";
+  const groups = cls === "all"
+    ? PF_MKT.slice(1).map(([id, label]) => ({ id, label, items: sized.filter((it) => pfMktKind(it) === id) })).filter((g) => g.items.length).map((g) => ({ ...g, size: g.items.reduce((s, it) => s + it.volumeUsd24h, 0) }))
+    : [{ id: cls, label: "", items: sized, size: 1 }];
+  const box = { x: 0, y: 0, w: PF_HEAT_W, h: PF_HEAT_H };
+  const laid = groups.length > 1 ? pfSquarify(groups, box) : [{ item: groups[0], ...box }];
+  const px = (r) => [(r.w / PF_HEAT_W) * PF_HEAT_PX[0], (r.h / PF_HEAT_H) * PF_HEAT_PX[1]];
+  const pc = (n, of) => `${Number(((n / of) * 100).toFixed(3))}%`;
+  const at = (r) => `left:${pc(r.x, PF_HEAT_W)};top:${pc(r.y, PF_HEAT_H)};width:${pc(r.w, PF_HEAT_W)};height:${pc(r.h, PF_HEAT_H)}`;
+  let html = "";
+  for (const g of laid) {
+    // the label strip, where the group has the height for it; the cells under it
+    const strip = groups.length > 1 && g.h >= PF_HEAT_STRIP * 2.5 && px(g)[0] >= 60;
+    if (strip) html += `<span class="pf-heat-g" style="${at({ x: g.x, y: g.y, w: g.w, h: PF_HEAT_STRIP })}">${esc(g.item.label)}</span>`;
+    const inner = strip ? { x: g.x, y: g.y + PF_HEAT_STRIP, w: g.w, h: g.h - PF_HEAT_STRIP } : { x: g.x, y: g.y, w: g.w, h: g.h };
+    for (const c of pfSquarify(g.item.items.map((it) => ({ it, size: it.volumeUsd24h })), inner)) {
+      const it = c.item.it;
+      const i = PF.mkRows.push(it) - 1;
+      const pct = pfFin(it.changePct24h);
+      const tone = pct === undefined || !(Math.abs(pct) >= 0.005) ? "flat" : pct > 0 ? "up" : "down";
+      const heat = pct === undefined ? 0 : Math.min(100, Math.round((Math.abs(pct) / PF_HEAT_FULL_PCT) * 100));
+      const [cw, ch] = px(c);
+      const words = `${it.name} · ${usd(it.price)} · ${pct === undefined ? "no 24-hour move" : `${pct > 0 ? "up" : pct < 0 ? "down" : "flat"} ${Math.abs(pct).toFixed(2)}% in 24 hours`} · ${pfVol(it.volumeUsd24h)} traded`;
+      const label = cw >= 44 && ch >= 30 ? `<b>${esc(it.base || it.name)}</b><span>${pct === undefined ? "—" : chg(pct)}</span>` : cw >= 30 && ch >= 16 ? `<b>${esc(it.base || it.name)}</b>` : "";
+      html += `<button type="button" class="pf-heat-c ${tone}" style="${at(c)};--heat:${heat}%" data-pf-act="market" data-i="${i}" data-fk="heat:${esc(it.key)}" data-k="${esc(it.key)}" title="${esc(words)}" aria-label="${esc(words)}">${label}</button>`;
+    }
+  }
+  return `<div class="pf-heat" role="group" aria-label="Heatmap"><div class="pf-heat-map">${html}</div><p class="dim small pf-heat-l">Sized by the day's volume · coloured by the 24-hour move${left ? ` · ${left} with no volume left out` : ""}</p></div>`;
 }
 /* how far the mark is from liquidation, in percent of the mark: below it for a long (negative), above it for a short; null without both */
 function pfLiqDist(p) {
@@ -838,6 +944,7 @@ function pfPerpsHtml(rows) {
   const list = rows.slice(0, PF_MK_PERPS);
   const base = PF.mkRows.length;
   PF.mkRows.push(...list);
+  PF.mkPriced.push(...list);
   const pos = PF.pos && !PF.pos.error ? PF.pos.positions : null;
   const mine = (it) => (pos || []).filter((p) => (p.kind === "perp" || p.kind === "future") && p.qty > 0 && (it.at || []).some((a) => a.venue === p.venue && a.symbol === p.symbol));
   const yours = (it) => {
@@ -858,8 +965,9 @@ function pfPerpsHtml(rows) {
   ], list, { empty: "No perpetual is listed here yet.", cls: "pf-perps-t", rowAttr: (it, i) => `class="click" data-pf-act="market" data-i="${base + i}" data-k="${esc(it.key)}"` });
   return `${t}<p class="dim small pf-mk-note">Funding passes between longs and shorts each interval as the venue reports it: positive, longs pay. Yours is your open position at that venue, with how far the mark is from its liquidation price.</p>`;
 }
-/* the markets the card's rows are priced at, at most twelve (the quotes read's own most) */
-const pfMkPairs = () => [...new Set(PF.mkRows.map(pfMkPair).filter(Boolean))].slice(0, PF_MK_MOST);
+/* the markets the card's priced rows are at (the lists and the perpetuals' table; the heatmap shows no price), at most twelve (the quotes
+   read's own most) */
+const pfMkPairs = () => [...new Set(PF.mkPriced.map(pfMkPair).filter(Boolean))].slice(0, PF_MK_MOST);
 /* the poll: started (or kept) after each draw with rows to price, dropped when there are none; a tick asks nothing while the page is out of
    view or another pane shows, and the shell's next draw of the Portfolio starts it again */
 function pfMkWatch() {
