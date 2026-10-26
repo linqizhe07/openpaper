@@ -1,17 +1,23 @@
-/* PORTFOLIO — what the owner has, in one place: the net worth and its curve, what waits for the owner (the agents' cards and what they
-   asked for), the agents at work (the owner's words to them and what they did), the dollars that are ready, what the money is in, and
-   every asset, position and account — all narrowed by the top bar's lens. Every button does what it says through the account's own door:
+/* PORTFOLIO — what the owner has, in one place: the net worth and its curve, THE PULSE (four glance tiles under it: today's change, what
+   waits for the owner, the dollars that are ready, the desk's day), THE MARKETS the account specialises in (US stocks, crypto and
+   perpetuals: the biggest moves and the most traded of a class, five each, or the perpetuals' own table with funding and the owner's
+   positions, priced fresh every five seconds), what waits for the owner (the agents' cards and what they asked for), the agents at work
+   (the owner's words to them and what they did), what the money is in, and every asset, position and account — all narrowed by the top
+   bar's lens. The home's shape follows OpenStock's dashboard (a status line, glance tiles, lists, then a dense table) in this page's own
+   grammar; nothing of OpenStock's is copied. Every button does what it says through the account's own door:
    a card approved is the owner's signature on it (approveCard), a position closed a signed liveClose, an account disconnected a signed
    disconnectVenue, an account closed to agents a free POST /api/revoke and reopened a signed setPolicy restore, a key that can't trade
    replaced through a signed disconnect and the venue's own connect form, and Grant… opens the owner's own form for what an agent asked
    (a limit: approveSpend · a wallet: createSubAccount, or a top-up move · a session, leverage or the mode: setPolicy · a venue: its
    connection), and Decline… is the owner's signed answerAsk. Money already held goes to its own sheets: Earn… and an earn row's Withdraw…
    open the Earn sheet (ui/earn.js openEarn), Sell many… the Sell many sheet (openSellMany). Reads: GET /api/account/holdings?cost=1 ·
-   /history · /positions · /agents (· /earn, to find which product an earn row is in). */
+   /history · /positions · /agents (· /earn, to find which product an earn row is in) · /explore?limit=200 (the one list the rail and
+   Markets read too) · /quotes?pairs= (the card's fresh prices) · /desk (the desk's day). */
 
 /* what the pane keeps between draws: the segment and the curve's range, the last answer of each read, what the curve last drew, the key
-   of the intents last mounted under Agents at work, and the card a "Review" elsewhere asked to be shown */
-const PF = { tab: "assets", range: "1w", hold: null, holdErr: "", hist: new Map(), histPaper: new Map(), book: "", pos: null, agents: null, earn: null, curve: null, intentsKey: "", hiWant: "", soon: false, hover: null };
+   of the intents last mounted under Agents at work, the card a "Review" elsewhere asked to be shown, the Markets card's class and rows
+   and its poll, and the desk's day (undefined until read, null with none hired) */
+const PF = { tab: "assets", range: "1w", hold: null, holdErr: "", hist: new Map(), histPaper: new Map(), book: "", pos: null, agents: null, earn: null, curve: null, intentsKey: "", hiWant: "", soon: false, hover: null, mkt: "all", mktBody: null, mktErr: "", mkRows: [], mkTimer: 0, desk: undefined };
 const PF_RANGES = [["1d", "1D"], ["1w", "1W"], ["1m", "1M"], ["all", "All"]];
 const PF_TABS = [["assets", "Assets"], ["positions", "Positions"]];
 const PF_RANGE_WORDS = { "1d": "past day", "1w": "past week", "1m": "past month", all: "since the start" };
@@ -237,7 +243,7 @@ function renderPortfolio({ el, owner, params = {} }) {
   if (!el.firstElementChild || el.firstElementChild.dataset.pf !== mode) {
     el.innerHTML = mode === "fresh"
       ? '<div class="pf pf-fresh" data-pf="fresh"><div data-pf-part="worth"></div><div data-pf-part="steps"></div><div data-pf-part="waiting"></div></div>'
-      : '<div class="pf cols" data-pf="full"><div class="col-main"><div data-pf-part="steps"></div><section class="sec pf-worth" data-pf-part="worth" data-ocean-calm aria-label="Net worth"></section><section class="sec pf-live" data-pf-part="live" aria-label="Open positions, live"></section><div class="quick" data-pf-part="quick"></div><section class="sec pf-table" data-pf-part="table" aria-label="Assets, positions and accounts"></section></div><div class="col-side"><div data-pf-part="waiting"></div><section class="sec pf-agents" data-pf-part="agents" aria-label="Agents at work"></section><section class="sec pf-cash" data-pf-part="cash" aria-label="Cash ready"></section><section class="sec pf-alloc" data-pf-part="alloc" aria-label="Allocation"></section></div></div>';
+      : '<div class="pf cols" data-pf="full"><div class="col-main"><div data-pf-part="steps"></div><section class="sec pf-worth" data-pf-part="worth" data-ocean-calm aria-label="Net worth"></section><div class="pf-pulse" data-pf-part="pulse" role="group" aria-label="At a glance"></div><section class="sec pf-markets" data-pf-part="markets" aria-labelledby="pf-mk-h"></section><section class="sec pf-live" data-pf-part="live" aria-label="Open positions, live"></section><div class="quick" data-pf-part="quick"></div><section class="sec pf-table" data-pf-part="table" aria-label="Assets, positions and accounts"></section></div><div class="col-side"><div data-pf-part="waiting"></div><section class="sec pf-agents" data-pf-part="agents" aria-label="Agents at work"></section><section class="sec pf-alloc" data-pf-part="alloc" aria-label="Allocation"></section></div></div>';
   }
   pfWire(el);
   pfDraw(el, owner);
@@ -267,6 +273,10 @@ function pfDraw(el, owner) {
   pfPut(el, "worth", pfWorthHtml(l, venueIn, rows));
   pfPut(el, "waiting", pfWaitingHtml(l, owner));
   if (el.firstElementChild.dataset.pf === "fresh") return;
+  // the pulse under the net worth, and the markets the account specialises in (their prices polled while the card has rows)
+  pfPut(el, "pulse", pfPulseHtml(l, venueIn, rows, owner));
+  pfPut(el, "markets", pfMarketsHtml(l));
+  pfMkWatch();
   // what was bought, watched as it moves (ui/live.js): the cards are polled while they are on the page
   const live = pfLiveHtml(l, venueIn, owner);
   pfPut(el, "live", live);
@@ -278,7 +288,6 @@ function pfDraw(el, owner) {
   pfPut(el, "quick", pfQuickHtml(l, venueIn, owner));
   pfPut(el, "table", pfTableHtml(l, venueIn, rows, owner));
   pfIntents(el, pfPut(el, "agents", pfAgentsHtml(l)));
-  pfPut(el, "cash", pfCashHtml(l, venueIn, owner));
   pfPut(el, "alloc", pfAllocHtml(rows, book));
 }
 /* draw again when an answer came back, if the Portfolio is still what is shown: once a frame, however many answers land in it */
@@ -315,8 +324,19 @@ function pfRead() {
     pfAgain();
   });
   pfReadHistory();
-  if (PF.tab === "positions") pfReadPositions();
+  if (PF.tab === "positions" || PF.mkt === "perps") pfReadPositions();
   if (A.keys.length) api("/api/account/agents", { ttl: 15_000 }).then((b) => { if (b && b.ok) PF.agents = b; pfAgain(); });
+  // the Markets card: the one explore read the rail and Markets make too (cached a minute); a failure keeps what was drawn
+  api(typeof MKT_ALL === "string" ? MKT_ALL : "/api/account/explore?limit=200", { ttl: 60_000 }).then((b) => {
+    if (b && b.ok !== false && Array.isArray(b.items)) [PF.mktBody, PF.mktErr] = [b, ""];
+    else if (!PF.mktBody) PF.mktErr = refusalOf(b) || "The markets could not be read.";
+    pfAgain();
+  });
+  // the desk's day, for its tile: null where the account keeps no desk
+  api("/api/account/desk", { ttl: 15_000 }).then((b) => {
+    PF.desk = b && b.ok && b.desk ? b.desk : null;
+    pfAgain();
+  });
 }
 function pfReadHistory() {
   const range = PF.range;
@@ -608,16 +628,75 @@ function pfIntents(el, drawn) {
   htaIntents(box, owns(), { change: (x) => typeof openHandToAgent === "function" && openHandToAgent({ intent: x }) });
 }
 
+// ---- THE PULSE: four glance tiles under the net worth ---------------------------------------------------------------------------------
+
+/* one tile: its label (and what stands at its right: a tag, a state, a link), one figure, one line */
+const pfTile = (id, label, right, figure, foot, { warm = false, dim = false } = {}) => `<div class="pf-tile${warm ? " warm" : ""}" data-pf-tile="${id}"><div class="pf-tile-h"><span class="label${warm ? " warn-t" : ""}">${label}</span><span class="pf-tile-r">${right}</span></div><div class="pf-tile-n${dim ? " dim" : ""}">${figure}</div><div class="pf-tile-f">${foot}</div></div>`;
+const PF_SKEL = '<span class="skel" style="width:120px" aria-hidden="true"></span>';
+/** the pulse: today's change, what waits for the owner, the cash that is ready, the desk's day — the four numbers an owner looks for first,
+ * each with the way to what it is about. Paper money is said as paper on the tiles that follow the book */
+function pfPulseHtml(l, venueIn, rows, owner) {
+  const tag = pfBook(l) === "paper" ? '<span class="tag paper">Paper</span>' : "";
+  return `<div class="pf-tiles">${[pfTodayTile(l, rows, tag), pfWaitingTile(l), pfCashHtml(l, venueIn, owner), pfDeskTile()].join("")}</div>`;
+}
+/* today: the last 24 hours of what is held here, whatever range the curve shows — the holdings read's own figure for the whole book, each
+   row's own 24 hours under a venue's or an agent's lens (pfDayChange) */
+function pfTodayTile(l, rows, tag) {
+  const whole = l.kind === "all" || l.kind === "real" || l.kind === "paper";
+  const day = !PF.hold ? null : whole ? PF.hold.change24h : pfDayChange(rows || []);
+  if (!day) return pfTile("today", "Today", tag, PF.holdErr ? '<span class="flat">—</span>' : PF_SKEL, PF.holdErr ? esc(PF.holdErr) : "");
+  if (!(day.ofUsd > 0)) return pfTile("today", "Today", tag, '<span class="flat">—</span>', "Nothing priced here yet.");
+  const of = day.coveredUsd < day.ofUsd - 0.5 ? `of ${money(day.coveredUsd)} priced` : `on ${money(day.ofUsd)}`;
+  return pfTile("today", "Today", tag, chg(day.usd, "$"), `${day.pct !== undefined ? `<b>${Math.abs(day.pct).toFixed(2)}%</b> · ` : ""}${esc(of)} · last 24 hours`);
+}
+/* what waits for the owner, counted as the callout counts it (pfWaitingHtml): the cards, the asks, the memories, the agents knocking; the
+   soonest card's deadline; Review goes to the callout */
+function pfWaitingTile(l) {
+  const cards = A.cards.filter((c) => pfAboutIn(c.agent, pfCardVenue(c), l));
+  const asks = (A.asks || []).filter((a) => pfAboutIn(a.agent, a.venue, l));
+  const mems = (A.memoryAsks || []).filter((m) => pfAboutIn(m.agent, "", l));
+  const knocks = l.kind === "all" ? A.requests : [];
+  const n = cards.length + asks.length + mems.length + knocks.length;
+  if (!n) return pfTile("waiting", "Waiting for you", "", "0", "Nothing waits for you.", { dim: true });
+  const soon = cards.map((c) => c.expiresAt).filter(Boolean).sort()[0];
+  const parts = [cards.length ? plural(cards.length, "card") : "", asks.length ? plural(asks.length, "ask") : "", mems.length ? plural(mems.length, "memory", "memories") : "", knocks.length ? `${knocks.length} knocking` : ""].filter(Boolean).join(" · ");
+  return pfTile("waiting", "Waiting for you", pfBtn("waiting", "Review ›", { cls: "link" }), String(n), `${esc(parts)}${soon ? ` · answer by ${esc(pfWhen(soon))}` : ""}`, { warm: true });
+}
 /* the dollars that are ready: one figure, one line, and the way to put them to earn where a venue takes them */
 function pfCashHtml(l, venueIn, owner) {
   const L = connected().filter((v) => venueIn(v.id));
   // offered where a venue that serves this network takes money to earn
-  const earn = typeof openEarn === "function" && L.some((v) => v.earn && v.earn.can !== false && servedHere(v)) ? pfBtn("earn", "Earn…", { cls: "btn btn-sm", off: !owner, title: owner ? "" : PF_LOOK_ONLY }) : "";
-  const head = `<div class="sec-head"><div class="label">Cash ready${pfBook(l) === "paper" ? ' <span class="tag paper">Paper</span>' : ""}</div>${earn}</div>`;
-  if (!PF.hold) return `${head}${PF.holdErr ? `<div class="msg no">${esc(PF.holdErr)}</div>` : '<span class="skel" aria-hidden="true"></span>'}`;
+  const earn = typeof openEarn === "function" && L.some((v) => v.earn && v.earn.can !== false && servedHere(v)) ? pfBtn("earn", "Earn…", { cls: "link", off: !owner, title: owner ? "" : PF_LOOK_ONLY }) : "";
+  const tag = pfBook(l) === "paper" ? '<span class="tag paper">Paper</span>' : "";
+  if (!PF.hold) return pfTile("cash", "Cash ready", tag, PF.holdErr ? '<span class="flat">—</span>' : PF_SKEL, PF.holdErr ? esc(PF.holdErr) : "");
   const c = pfCash(PF.hold.money, venueIn);
   const line = !(c.ready > 0) ? `No cash or dollar stablecoins here.${L.some(canReceive) ? " Receive some to trade with." : ""}` : c.canMove > 0 ? `${money(c.canMove)} can move between your accounts.` : "None of it can move between your accounts from here.";
-  return `${head}<div class="num-m">${money(c.ready)}</div><p class="dim small pf-cash-l">${esc(line)}</p>`;
+  return pfTile("cash", "Cash ready", `${tag}${earn}`, money(c.ready), esc(line));
+}
+/* the desk's day (account/desk.ts, GET /api/account/desk): what it made today, its wins and losses, what is open, how long the session has
+   left — or, with no desk hired, the way to hire one. Paper where its venue is a paper account; the Superagent is where it works */
+function pfDeskTile() {
+  if (PF.desk === undefined) return pfTile("desk", "The desk · today", "", PF_SKEL, "");
+  const d = PF.desk;
+  if (!d) return pfTile("desk", "The desk", pfBtn("desk", "Hire the desk ›", { cls: "link" }), "Not hired", "Eight seats, one objective, paper money first.", { dim: true });
+  const o = d.objective || {};
+  const s = d.session;
+  const t = d.today || {};
+  const venue = o.venue || (d.venue && d.venue.id) || "";
+  const tag = paperVenue(venue) ? '<span class="tag paper">Paper</span>' : "";
+  const state = !s ? "" : s.state === "live" ? '<span class="lv-live">live</span>' : s.state === "halted" ? "halted for the day" : s.state === "paused" ? "paused" : "session ended";
+  const left = s && s.state === "live" && Number.isFinite(Number(s.remainingMs)) ? ` · ${pfLeft(Number(s.remainingMs))} left` : "";
+  const open = Array.isArray(d.open) ? d.open.length : 0;
+  const foot = s ? `${plural(num(t.wins), "win")} · ${plural(num(t.losses), "loss", "losses")} · ${open} open${left}` : "Hired, not running: start a session on the Superagent.";
+  const to = `<a class="link" href="${esc(hashOf("superagent", venue ? { venue } : {}))}">Superagent ›</a>`;
+  return pfTile("desk", "The desk · today", `${tag}${state ? `<span class="pf-tile-st">${state}</span>` : ""}${to}`, s ? chg(t.pnlUsd, "$") : '<span class="flat">—</span>', foot);
+}
+/* a span of time, short: 1d 2h · 21h 54m · 12m */
+function pfLeft(ms) {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  const d = Math.floor(m / 1440);
+  const h = Math.floor((m % 1440) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m % 60}m`;
 }
 
 /* what the money is in */
@@ -627,6 +706,180 @@ function pfAllocHtml(rows, book = "real") {
   if (!rows) return `${label}<span class="skel" aria-hidden="true"></span>`;
   if (!s.length) return "";
   return `${label}<div class="bar" aria-hidden="true">${s.map((x) => `<span style="flex:${x.usd};background:${(CLASS[x.cls] || ["", "var(--dim)"])[1]}"></span>`).join("")}</div><div class="legend-l">${s.map((x) => `<div><span class="sw-k" style="background:${(CLASS[x.cls] || ["", "var(--dim)"])[1]}" aria-hidden="true"></span><span>${esc((CLASS[x.cls] || [x.cls])[0])}</span><span>${x.pct}% · ${money(x.usd)}</span></div>`).join("")}</div>`;
+}
+
+// ---- MARKETS on the home: US stocks, crypto and perpetuals, as the account lists them ---------------------------------------------------
+
+/* the classes the home keeps to — the three the account specialises in. Tokens, pre-IPO contracts and events are Markets' own */
+const PF_MKT = [["all", "All"], ["stocks", "US stocks"], ["crypto", "Crypto"], ["perps", "Perps"]];
+const PF_MKT_KEY = "openpaper-home-markets";
+const PF_MK_POLL_MS = 5_000;
+const PF_MK_MOST = 12;
+const PF_MK_ROWS = 5;
+const PF_MK_PERPS = 8;
+const PF_MKT_WORD = { stocks: "US stock", crypto: "coin", perps: "perpetual" };
+/* the class a row is in, or "" where it is none of the three: a stock, a coin, a perpetual that is not a pre-IPO contract */
+const pfMktKind = (it) => (!it ? "" : it.kind === "stock" ? "stocks" : it.kind === "coin" ? "crypto" : it.kind === "perp" && !it.implied && it.category !== "Pre-IPO" ? "perps" : "");
+/* the class this browser last chose, kept here and nowhere on the account */
+function pfMktKept() {
+  try {
+    const v = localStorage.getItem(PF_MKT_KEY);
+    return PF_MKT.some(([k]) => k === v) ? v : "all";
+  } catch {
+    return "all";
+  }
+}
+function pfMktKeep(v) {
+  try {
+    localStorage.setItem(PF_MKT_KEY, v);
+  } catch {
+    /* storage is off in this window: the choice lasts the page */
+  }
+}
+PF.mkt = pfMktKept();
+const pfFin = (n) => (typeof n === "number" && Number.isFinite(n) ? n : undefined);
+/** the rows of a class, as the account lists them (busiest first), narrowed by the lens where Markets would narrow them */
+function pfMktRows(body, cls, l = lensNow()) {
+  const inLens = typeof mkInLens === "function" ? (it) => mkInLens(it, l) : () => true;
+  return ((body && body.items) || []).filter((it) => it && Array.isArray(it.at) && pfMktKind(it) && (cls === "all" || pfMktKind(it) === cls) && inLens(it));
+}
+/** the two lists of a class: the biggest 24-hour moves (by the size of the move the listing gives) and the most traded (by the day's
+ * dollars), five each */
+function pfMktLists(rows) {
+  const movers = rows.filter((it) => pfFin(it.changePct24h) !== undefined).sort((a, b) => Math.abs(b.changePct24h) - Math.abs(a.changePct24h)).slice(0, PF_MK_ROWS);
+  const traded = rows.filter((it) => pfFin(it.volumeUsd24h) !== undefined).sort((a, b) => b.volumeUsd24h - a.volumeUsd24h).slice(0, PF_MK_ROWS);
+  return { movers, traded };
+}
+/* the market a row is priced at — its first leg at a venue connected live, as Markets' drawer prices it — as "venue|symbol"; "" where
+   none is connected (the listing's own price stands) */
+function pfMkPair(it) {
+  const live = (id) => !!A && (A.venues || []).some((v) => v.id === id && v.live);
+  const leg = (it.at || []).find((a) => a.symbol && live(a.venue));
+  return leg ? `${leg.venue}|${leg.symbol}` : "";
+}
+/* where a row is priced, by name: a real venue connected live, else the public listing (a paper account's price is that listing's own),
+   else the first venue that lists it */
+function pfMkWhere(it) {
+  const legs = it.at || [];
+  const live = (id) => !!A && (A.venues || []).some((v) => v.id === id && v.live);
+  const a = legs.find((x) => x.connected && !x.paper && !paperVenue(x.venue) && live(x.venue)) || legs.find((x) => x.public) || legs[0] || {};
+  const v = A && (A.venues || []).find((x) => x.id === a.venue);
+  return (v && v.name) || a.venueName || a.venue || "";
+}
+/* starred in Markets (A.watch names a venue and a symbol the row lists) */
+const pfMkWatched = (it) => !!A && Array.isArray(A.watch) && A.watch.some((w) => w && (it.at || []).some((a) => a.venue === w.venue && a.symbol === w.symbol));
+/* a funding rate per interval, signed, to four places of a percent: +0.0100% (longs pay shorts) · −0.0050% (shorts pay longs) */
+const pfFunding = (it) => {
+  const r = pfFin(it.fundingRate);
+  return r === undefined ? "" : `${r < 0 ? "−" : "+"}${(Math.abs(r) * 100).toFixed(4)}%`;
+};
+/* the line under a row's name: a stock's company without its share-class words, a perpetual's funding, a coin's venue */
+function pfMkSub(it) {
+  if (it.kind === "stock") return String(it.name || "").replace(/\s+(common stock|ordinary shares|common shares|class [a-c](?: common stock| ordinary shares)?|shares)$/i, "").trim() || pfMkWhere(it);
+  if (it.kind === "perp") {
+    const f = pfFunding(it);
+    return `Perpetual${f ? ` · funding ${f}` : ""}`;
+  }
+  return pfMkWhere(it);
+}
+/* a day's dollars, short: $4.2B · $340M · $12k */
+function pfVol(n) {
+  const v = pfFin(Number(n));
+  if (v === undefined || n === undefined || n === null || n === "") return "—";
+  const a = Math.abs(v);
+  const [d, s] = a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "k"] : [1, ""];
+  const x = v / d;
+  return `$${s ? (Math.abs(x) >= 100 ? x.toFixed(0) : String(Number(x.toFixed(1)))) : String(Math.round(x))}${s}`;
+}
+/* a price as a row draws it: the fresh quote this page has for its market (markets.js keeps them), else the listing's own */
+function pfMkPrice(it, pair) {
+  const m = pair && typeof mkFresh === "function" ? mkFresh(pair) : null;
+  return m && typeof mkFmt === "function" ? mkFmt(m, "usd") : usd(it.price);
+}
+const pfMkAv = (it) => (typeof mkAv === "function" ? mkAv(it, "sm") : avatar(it.base || it.name, "sm"));
+const pfMkStar = (it) => (pfMkWatched(it) ? '<span class="pf-mk-star" title="Watched"><span aria-hidden="true">★</span><span class="sr"> watched</span></span>' : "");
+/* one row of a list: the market (its drawer on press), the line under its name, its price (fresh where a venue is connected: data-q, which
+   the poll ticks), and what the list is about, at the right */
+function pfMkRow(it, cell, list) {
+  const i = PF.mkRows.push(it) - 1;
+  const pair = pfMkPair(it);
+  return `<li class="pf-mk-row" data-k="${esc(it.key)}"><button type="button" class="pf-mk-btn" data-pf-act="market" data-i="${i}" data-fk="market:${esc(list)}:${esc(it.key)}" title="${esc(it.name)}">${pfMkAv(it)}<span class="pf-mk-name"><b>${esc(it.base || it.name)}${pfMkStar(it)}</b><span class="pf-mk-sub">${esc(pfMkSub(it))}</span></span><span class="pf-mk-px"${pair ? ` data-q="${esc(pair)}" data-fmt="usd"` : ""}>${pfMkPrice(it, pair)}</span><span class="pf-mk-r">${cell(it)}</span></button></li>`;
+}
+function pfMkList(title, items, cell, to) {
+  if (!items.length) return "";
+  return `<section class="pf-mk-list" aria-label="${esc(title)}"><div class="pf-mk-lh"><span class="label">${esc(title)}</span><a class="link dim small" href="${esc(hashOf("markets", to))}">See all →</a></div><ol class="pf-mk-ol">${items.map((it) => pfMkRow(it, cell, title)).join("")}</ol></section>`;
+}
+/** the Markets card: the class (All · US stocks · Crypto · Perps, kept in this browser), then the biggest moves and the most traded of it,
+ * five each — or, for the perpetuals, their own table (pfPerpsHtml). The rows' prices are polled every five seconds (pfMkTick) */
+function pfMarketsHtml(l) {
+  PF.mkRows = [];
+  const body = PF.mktBody;
+  const tab = PF.mkt === "all" ? "" : PF.mkt;
+  const head = `<div class="sec-head pf-mk-h"><div class="pf-mk-t"><h2 class="label" id="pf-mk-h">Markets</h2><span class="dim small">US stocks, crypto and perpetuals, as the account lists them</span></div>${pfSeg("mkt", PF_MKT, PF.mkt, "Market")}</div>`;
+  if (!body) return `${head}${PF.mktErr ? `<div class="msg no">${esc(PF.mktErr)}</div>` : '<div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div>'}`;
+  const rows = pfMktRows(body, PF.mkt, l);
+  const foot = `<p class="dim small pf-mk-foot">Prices every 5 s where a venue is connected${body.asOf ? ` · listed ${esc(nyTime(body.asOf))}` : ""} · <a class="link" href="${esc(hashOf("markets", tab ? { tab } : {}))}">All markets →</a></p>`;
+  if (!rows.length) return `${head}<p class="empty">${PF.mkt === "all" ? "No stock, coin or perpetual is listed here yet." : `No ${PF_MKT_WORD[PF.mkt]} is listed here yet.`}</p>${foot}`;
+  if (PF.mkt === "perps") return `${head}${pfPerpsHtml(rows)}${foot}`;
+  const { movers, traded } = pfMktLists(rows);
+  const move = (it) => chg(it.changePct24h);
+  return `${head}<div class="pf-mk-lists">${pfMkList("Biggest moves", movers, move, { ...(tab ? { tab } : {}), sort: "movers" })}${pfMkList("Most traded", traded, (it) => `<span class="pf-mk-vol">${esc(pfVol(it.volumeUsd24h))}</span>${move(it)}`, tab ? { tab } : {})}</div>${foot}`;
+}
+/* how far the mark is from liquidation, in percent of the mark: below it for a long (negative), above it for a short; null without both */
+function pfLiqDist(p) {
+  const liq = pfFin(Number(p.liquidationPrice));
+  const mark = pfFin(Number(p.markPrice));
+  return liq && mark ? ((liq - mark) / mark) * 100 : null;
+}
+/** PERPETUALS, carefully: one table of the busiest eight — the market, its mark (fresh), the 24-hour move, the funding rate and when it
+ * is next paid, the day's volume, and the owner's own position in it (side, size, leverage, Paper where it is, how far the mark is from
+ * liquidation, what it is up or down). A market with no position of the owner's shows a dash */
+function pfPerpsHtml(rows) {
+  const list = rows.slice(0, PF_MK_PERPS);
+  const base = PF.mkRows.length;
+  PF.mkRows.push(...list);
+  const pos = PF.pos && !PF.pos.error ? PF.pos.positions : null;
+  const mine = (it) => (pos || []).filter((p) => (p.kind === "perp" || p.kind === "future") && p.qty > 0 && (it.at || []).some((a) => a.venue === p.venue && a.symbol === p.symbol));
+  const yours = (it) => {
+    const ps = mine(it);
+    if (!ps.length) return '<span class="flat">—</span>';
+    return ps.map((p) => {
+      const dist = pfLiqDist(p);
+      return `<span class="pf-yours"><b>${p.side === "short" ? "short" : "long"}</b> ${esc(qtyOf(p.qty))}${p.leverage ? ` · ${esc(String(p.leverage))}x` : ""}${p.paper ? ' <span class="tag paper">Paper</span>' : ""}</span><span class="why">${dist !== null ? `liq ${Math.abs(dist).toFixed(1)}% ${dist < 0 ? "below" : "above"} · ` : ""}${chg(p.unrealizedUsd, "$")}</span>`;
+    }).join("");
+  };
+  const t = table([
+    { label: "Market", cell: (it) => `<div class="who">${pfMkAv(it)}<div><b>${esc(it.base || it.name)}${pfMkStar(it)}</b><span class="dim">Perpetual · ${esc(pfMkWhere(it))}</span></div></div>` },
+    { label: "Mark", r: true, cell: (it) => { const pair = pfMkPair(it); return `<span class="pf-mk-px"${pair ? ` data-q="${esc(pair)}" data-fmt="usd"` : ""}>${pfMkPrice(it, pair)}</span>`; } },
+    { label: "24h", r: true, cell: (it) => `<span class="pf-mk-t24">${chg(it.changePct24h)}</span>` },
+    { label: "Funding", r: true, cell: (it) => { const f = pfFunding(it); return f ? `<span class="pf-funding">${f}</span>${it.nextFundingAt ? `<span class="why">next ${esc(nyTime(it.nextFundingAt))}</span>` : ""}` : '<span class="flat">—</span>'; } },
+    { label: "24h volume", r: true, cell: (it) => esc(pfVol(it.volumeUsd24h)) },
+    { label: "Yours", cell: yours },
+  ], list, { empty: "No perpetual is listed here yet.", cls: "pf-perps-t", rowAttr: (it, i) => `class="click" data-pf-act="market" data-i="${base + i}" data-k="${esc(it.key)}"` });
+  return `${t}<p class="dim small pf-mk-note">Funding passes between longs and shorts each interval as the venue reports it: positive, longs pay. Yours is your open position at that venue, with how far the mark is from its liquidation price.</p>`;
+}
+/* the markets the card's rows are priced at, at most twelve (the quotes read's own most) */
+const pfMkPairs = () => [...new Set(PF.mkRows.map(pfMkPair).filter(Boolean))].slice(0, PF_MK_MOST);
+/* the poll: started (or kept) after each draw with rows to price, dropped when there are none; a tick asks nothing while the page is out of
+   view or another pane shows, and the shell's next draw of the Portfolio starts it again */
+function pfMkWatch() {
+  clearTimeout(PF.mkTimer);
+  PF.mkTimer = pfMkPairs().length ? setTimeout(pfMkTick, PF_MK_POLL_MS) : 0;
+}
+/* one read of the rows' fresh prices, written where Markets keeps quotes (MKT.quotes) so its rail and lists tick together, then every
+   [data-q] on the page written (markets.js mkPrices); then the next tick */
+async function pfMkTick() {
+  PF.mkTimer = 0;
+  if (!A || ROUTE.tab !== "portfolio" || (typeof document !== "undefined" && document.hidden)) return;
+  const pairs = pfMkPairs();
+  if (!pairs.length) return;
+  const body = await api(`/api/account/quotes?pairs=${encodeURIComponent(pairs.join(","))}`);
+  if (body && body.ok !== false && Array.isArray(body.quotes) && typeof MKT === "object" && MKT && MKT.quotes) {
+    const now = Date.now();
+    for (const q of body.quotes) if (q && q.market) MKT.quotes.set(`${q.venue}|${q.symbol}`, { at: now, market: q.market });
+    if (typeof mkPrices === "function") mkPrices();
+  }
+  if (ROUTE.tab === "portfolio" && !PF.mkTimer) PF.mkTimer = setTimeout(pfMkTick, PF_MK_POLL_MS);
 }
 
 // ---- Assets · Positions · Accounts ------------------------------------------------------------------------------------------------
@@ -800,13 +1053,21 @@ function pfWire(el) {
   if (el.dataset.pfWired) return;
   el.dataset.pfWired = "1";
   el.addEventListener("click", (e) => {
-    const t = e.target.closest && e.target.closest("[data-pf-act], [data-pf-range], [data-pf-tab]");
+    const t = e.target.closest && e.target.closest("[data-pf-act], [data-pf-range], [data-pf-tab], [data-pf-mkt]");
     if (!t || !el.contains(t) || t.disabled) return;
     if (t.dataset.pfRange) {
       if (PF.range === t.dataset.pfRange) return;
       PF.range = t.dataset.pfRange;
       pfAgain();
       return void pfReadHistory();
+    }
+    // the Markets card's class: kept in this browser; the perpetuals' table reads the positions for its Yours column
+    if (t.dataset.pfMkt) {
+      if (PF.mkt === t.dataset.pfMkt) return;
+      PF.mkt = t.dataset.pfMkt;
+      pfMktKeep(PF.mkt);
+      if (PF.mkt === "perps") pfReadPositions();
+      return void pfAgain();
     }
     if (t.dataset.pfTab) {
       if (PF.tab === t.dataset.pfTab) return;
@@ -913,6 +1174,19 @@ async function pfAct(act, d) {
     case "unwait": return void pfUnwait(d.venue);
     case "csv": return void (typeof downloadBalances === "function" && downloadBalances());
     case "statement": return void (typeof openStatement === "function" && openStatement());
+    // a row of the Markets card: the market's drawer (markets.js), or Markets itself where this page has no drawer
+    case "market": {
+      const it = PF.mkRows[Number(d.i)];
+      if (it && typeof openMarket === "function") return void openMarket(it);
+      return void go("markets", PF.mkt === "all" ? {} : { tab: PF.mkt });
+    }
+    // the pulse's Review: to the Waiting for you callout
+    case "waiting": {
+      const pane = $("pane-portfolio");
+      const w = pane && pane.querySelector ? pane.querySelector(".pf-wait") : null;
+      if (w && w.scrollIntoView) w.scrollIntoView({ block: "start", behavior: still() ? "auto" : "smooth" });
+      return;
+    }
     case "all":
       view.lens = "";
       return void render();
