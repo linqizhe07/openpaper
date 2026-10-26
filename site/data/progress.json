@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 35,
+      "title": "Markets on a slow network: a late source's last list stands in, US stocks never wait for all of Cboe, the heatmap keeps every market",
+      "mergedAt": "2026-10-26T19:34:27Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/35",
+      "branch": "feat/home-data"
+    },
+    {
       "number": 34,
       "title": "A heatmap on the home's Markets card",
       "mergedAt": "2026-10-26T15:28:57Z",
