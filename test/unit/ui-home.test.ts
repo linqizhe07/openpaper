@@ -290,9 +290,10 @@ describe("the Markets card", () => {
     expect(html).toContain('href="#/markets?sort=movers"');
     expect(html).toContain('href="#/markets">All markets →</a>');
     expect(html).toContain(`listed ${p.run('nyTime("2026-10-06T11:59:00.000Z")')}`);
-    // every row is a press to the market
-    expect(html.match(/data-pf-act="market"/g)).toHaveLength(10);
-    expect(p.run("PF.mkRows.length")).toBe(10);
+    // every row is a press to the market: the heatmap's twelve cells, then the lists' ten rows
+    expect(html.match(/data-pf-act="market"/g)).toHaveLength(22);
+    expect(p.run("PF.mkRows.length")).toBe(22);
+    expect(p.run("PF.mkPriced.length")).toBe(10);
     // one class: six stocks, five a list, the lists sorted their own way; the links keep the class
     p.run('PF.mkt = "stocks"');
     const stocks = String(p.run(`pfMarketsHtml(${ALL})`));
@@ -324,8 +325,10 @@ describe("the Markets card", () => {
     const html = String(p.run(`pfMarketsHtml(${ALL})`));
     expect(html).toContain('<table class="t pf-perps-t">');
     for (const h of ["Market", "Mark", "24h", "Funding", "24h volume", "Yours"]) expect(html).toContain(`<th scope="col"${h === "Market" || h === "Yours" ? "" : ' class="r"'}>${h}</th>`);
-    expect([...html.matchAll(/<tr class="click" data-pf-act="market" data-i="(\d+)" data-k="([^"]+)">/g)].map((m) => [m[1], m[2]])).toEqual([["0", "perp:BTC"], ["1", "perp:ETH"], ["2", "perp:AVAX"]]);
-    expect(p.run("PF.mkRows.map((x) => x.key)")).toEqual(["perp:BTC", "perp:ETH", "perp:AVAX"]);
+    // the heatmap's three cells come first (by volume), then the table's rows
+    expect([...html.matchAll(/<tr class="click" data-pf-act="market" data-i="(\d+)" data-k="([^"]+)">/g)].map((m) => [m[1], m[2]])).toEqual([["3", "perp:BTC"], ["4", "perp:ETH"], ["5", "perp:AVAX"]]);
+    expect(p.run("PF.mkRows.map((x) => x.key)")).toEqual(["perp:BTC", "perp:ETH", "perp:AVAX", "perp:BTC", "perp:ETH", "perp:AVAX"]);
+    expect(html).toContain('class="pf-heat"');
     // BTC: the exchange's fresh mark, funding +0.0100% paid next at 16:00 UTC said in New York time, $4.2B, the owner's long
     expect(html).toContain('data-q="ex|BTC/USDT:USDT" data-fmt="usd">$62,556.80</span>');
     expect(html).toContain(`<span class="pf-funding">+0.0100%</span><span class="why">next ${p.run('nyTime("2026-10-06T16:00:00.000Z")')}</span>`);
@@ -335,7 +338,7 @@ describe("the Markets card", () => {
     expect(html).toContain('<span class="pf-yours"><b>short</b> 10 · 2x <span class="tag paper">Paper</span></span><span class="why">liq 25.0% above · <span class="down"><span aria-hidden="true">▼</span><span class="sr">down</span> $1.20</span></span>');
     expect(html).toContain('<span class="pf-funding">−0.0020%</span>');
     // ETH: no position of the owner's
-    const eth = html.split('data-k="perp:ETH"')[1]?.split("</tr>")[0] ?? "";
+    const eth = html.split('data-k="perp:ETH">')[1]?.split("</tr>")[0] ?? "";
     expect(eth).toContain('<span class="flat">—</span>');
     expect(eth).not.toContain("pf-yours");
     // the star, the venue under the name, the note on what funding and Yours are
@@ -348,7 +351,7 @@ describe("the Markets card", () => {
     p.run("PF.pos = null; PF.mktBody.items[5].fundingRate = undefined");
     const bare = String(p.run(`pfMarketsHtml(${ALL})`));
     expect(bare).not.toContain("pf-yours");
-    expect(bare.split('data-k="perp:BTC"')[1]?.split("</tr>")[0]).toContain('<td class="r"><span class="flat">—</span></td>');
+    expect(bare.split('data-k="perp:BTC">')[1]?.split("</tr>")[0]).toContain('<td class="r"><span class="flat">—</span></td>');
     // the distance to liquidation: below the mark for a long, above for a short, none without both prices
     expect(p.run("[pfLiqDist({ markPrice: 100, liquidationPrice: 80 }), pfLiqDist({ markPrice: 100, liquidationPrice: 125 }), pfLiqDist({ markPrice: 100 }), pfLiqDist({ markPrice: 0, liquidationPrice: 5 })]")).toEqual([-20, 25, null, null]);
   });
@@ -362,7 +365,7 @@ describe("the Markets card", () => {
     // a watch with rows arms the poll; none disarms it
     p.run("pfMkWatch()");
     expect(p.run("PF.mkTimer")).not.toBe(0);
-    p.run("clearTimeout(PF.mkTimer); PF.mkRows = []; pfMkWatch()");
+    p.run("clearTimeout(PF.mkTimer); PF.mkPriced = []; pfMkWatch()");
     expect(p.run("PF.mkTimer")).toBe(0);
     // a tick: the read, the quotes kept where Markets keeps them, every price ticked, the next tick armed
     p.run(`pfMarketsHtml(${ALL}); ROUTE.tab = "portfolio"; globalThis.MKT = { quotes: new Map() }; var TICKED = 0; globalThis.mkPrices = () => TICKED++`);
@@ -380,7 +383,7 @@ describe("the Markets card", () => {
     expect(p.asked).toHaveLength(1);
     expect(p.run("PF.mkTimer")).toBe(0);
     // at most twelve markets a read
-    p.run('document.hidden = false; PF.mkRows = Array.from({ length: 20 }, (_, i) => ({ key: "coin:X" + i, kind: "coin", at: [{ venue: "ex", symbol: "X" + i + "/USDT", connected: true }] }))');
+    p.run('document.hidden = false; PF.mkPriced = Array.from({ length: 20 }, (_, i) => ({ key: "coin:X" + i, kind: "coin", at: [{ venue: "ex", symbol: "X" + i + "/USDT", connected: true }] }))');
     expect(p.run("pfMkPairs().length")).toBe(12);
   });
 
@@ -392,16 +395,81 @@ describe("the Markets card", () => {
     expect(p.run("pfMktKept()")).toBe("perps");
     p.kept.set("openpaper-home-markets", "bonds");
     expect(p.run("pfMktKept()")).toBe("all");
-    // a row: the drawer
+    // a row (or a cell of the heatmap: the first is the largest stock): the drawer
     p.run(`pfMarketsHtml(${ALL}); var OPENED = []; globalThis.openMarket = (it) => OPENED.push(it.key)`);
-    p.run('pfAct("market", { i: "0" })');
-    expect(p.run("OPENED")).toEqual(["coin:DOGE"]);
+    p.run('pfAct("market", { i: "0" }); pfAct("market", { i: "12" })');
+    expect(p.run("OPENED")).toEqual(["stock:NVDA", "coin:DOGE"]);
     // no drawer on this page: Markets, in the class
     p.run('globalThis.openMarket = undefined; PF.mkt = "perps"; pfAct("market", { i: "99" })');
     expect(p.run("location.hash")).toBe("#/markets?tab=perps");
     // Review scrolls to the callout
     p.run('var SCROLLED = []; document.getElementById = (id) => ({ querySelector: (sel) => (id === "pane-portfolio" && sel === ".pf-wait" ? { scrollIntoView: (o) => SCROLLED.push(o.block) } : null) }); pfAct("waiting", {})');
     expect(p.run("SCROLLED")).toEqual(["start"]);
+  });
+
+  it("lays a treemap the squarified way: every item's area its share of the box, nothing outside it, nothing overlapping, the box filled, largest first; nothing with no size", () => {
+    const p = home();
+    const laid = p.run<Array<{ item: { size: number; id: string }; x: number; y: number; w: number; h: number }>>('pfSquarify([{ id: "a", size: 6 }, { id: "b", size: 6 }, { id: "c", size: 4 }, { id: "d", size: 3 }, { id: "e", size: 2 }, { id: "f", size: 2 }, { id: "g", size: 1 }, { id: "z", size: 0 }], { x: 0, y: 0, w: 600, h: 400 })');
+    expect(laid.map((r) => r.item.id)).toEqual(["a", "b", "c", "d", "e", "f", "g"]);
+    const area = (r: { w: number; h: number }) => r.w * r.h;
+    for (const r of laid) {
+      expect(area(r) / 240000).toBeCloseTo(r.item.size / 24, 6);
+      expect(r.x).toBeGreaterThanOrEqual(-1e-6);
+      expect(r.y).toBeGreaterThanOrEqual(-1e-6);
+      expect(r.x + r.w).toBeLessThanOrEqual(600 + 1e-6);
+      expect(r.y + r.h).toBeLessThanOrEqual(400 + 1e-6);
+    }
+    expect(laid.reduce((s, r) => s + area(r), 0)).toBeCloseTo(240000, 4);
+    for (const a of laid) for (const b of laid) if (a !== b) expect(Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) <= 1e-6 || Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) <= 1e-6, `${a.item.id} over ${b.item.id}`).toBe(true);
+    // the cells are nearly square: no row is a sliver (the squarified bound in this box)
+    for (const r of laid) expect(Math.max(r.w / r.h, r.h / r.w)).toBeLessThan(3);
+    // one item fills the box; none, or none with a size, lays nothing
+    expect(p.run('pfSquarify([{ size: 5 }], { x: 10, y: 20, w: 100, h: 50 })')).toEqual([{ item: { size: 5 }, x: 10, y: 20, w: 100, h: 50 }]);
+    expect(p.run("pfSquarify([], { x: 0, y: 0, w: 100, h: 50 })")).toEqual([]);
+    expect(p.run("pfSquarify([{ size: 0 }, { size: -1 }], { x: 0, y: 0, w: 100, h: 50 })")).toEqual([]);
+  });
+
+  it("the heatmap: one cell a market sized by the day's volume and coloured by the 24-hour move, the three classes as labelled groups under All, a cell a press to the market named in full, a tiny cell without words, a market with no volume left out and counted", () => {
+    const p = home();
+    const html = String(p.run(`pfMarketsHtml(${ALL})`));
+    const map = html.split('class="pf-heat-map"')[1]?.split("</div>")[0] ?? "";
+    // the groups by their volumes: US stocks ($77.2B), crypto ($7.1B), perpetuals ($5.95B)
+    expect([...map.matchAll(/class="pf-heat-g"[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["US stocks", "Crypto", "Perps"]);
+    const cells = [...map.matchAll(/<button type="button" class="pf-heat-c (up|down|flat)" style="left:([\d.]+)%;top:([\d.]+)%;width:([\d.]+)%;height:([\d.]+)%;--heat:(\d+)%" data-pf-act="market" data-i="(\d+)" data-fk="heat:([^"]+)" data-k="([^"]+)" title="([^"]+)" aria-label="[^"]+">(.*?)<\/button>/g)].map((m) => ({ tone: m[1], x: +m[2], y: +m[3], w: +m[4], h: +m[5], heat: +m[6], i: +m[7], key: m[9], title: m[10], label: m[11] }));
+    expect(cells).toHaveLength(12);
+    expect(cells.map((c) => c.key)).toEqual(["stock:NVDA", "stock:SPY", "stock:AAPL", "stock:TSLA", "stock:KO", "stock:NFLX", "coin:BTC", "coin:ETH", "coin:DOGE", "perp:BTC", "perp:ETH", "perp:AVAX"]);
+    // the largest cell is NVDA's; every cell is inside the map
+    const nvda = cells[0]!;
+    for (const c of cells) {
+      expect(nvda.w * nvda.h).toBeGreaterThanOrEqual(c.w * c.h);
+      expect(c.x + c.w).toBeLessThanOrEqual(100.01);
+      expect(c.y + c.h).toBeLessThanOrEqual(100.01);
+    }
+    // colour: the move's direction, deeper with its size, full at 5%
+    const by = Object.fromEntries(cells.map((c) => [c.key, c]));
+    expect([by["coin:DOGE"]!.tone, by["coin:DOGE"]!.heat]).toEqual(["up", 100]);
+    expect([by["stock:SPY"]!.tone, by["stock:SPY"]!.heat]).toEqual(["up", 10]);
+    expect([by["stock:TSLA"]!.tone, by["stock:TSLA"]!.heat]).toEqual(["down", 61]);
+    // the words: the name, the price, the move, the volume — on the cell, and for the screen reader
+    expect(by["stock:NVDA"]!.title).toBe("NVIDIA Corporation common stock · $181.71 · up 1.19% in 24 hours · $29.4B traded");
+    expect(by["stock:NVDA"]!.label).toBe('<b>NVDA</b><span><span class="up"><span aria-hidden="true">▲</span><span class="sr">up</span> 1.2%</span></span>');
+    // a press names the row the cell is
+    expect(p.run(`PF.mkRows[${by["perp:AVAX"]!.i}].key`)).toBe("perp:AVAX");
+    // no move: a flat cell with a dash; no volume: left out and counted
+    p.run("PF.mktBody.items[1].changePct24h = undefined; PF.mktBody.items[10].volumeUsd24h = undefined");
+    const again = String(p.run(`pfMarketsHtml(${ALL})`));
+    expect(again).toMatch(/class="pf-heat-c flat" style="[^"]*--heat:0%"[^>]*data-k="stock:SPY"[^>]*><b>SPY<\/b><span>—<\/span><\/button>/);
+    expect(again).not.toMatch(/data-k="stock:NFLX"[^>]*title=/);
+    expect(again).toContain("Sized by the day's volume · coloured by the 24-hour move · 1 with no volume left out");
+    // one class: no group labels, its cells alone; a cell too small for its words carries none
+    p.run('PF.mkt = "stocks"; PF.mktBody.items[8].volumeUsd24h = 1e5');
+    const stocks = String(p.run(`pfMarketsHtml(${ALL})`)).split('class="pf-heat-map"')[1]?.split("</div>")[0] ?? "";
+    expect(stocks).not.toContain("pf-heat-g");
+    expect(stocks.match(/class="pf-heat-c/g)).toHaveLength(5);
+    expect(stocks).toMatch(/data-k="stock:KO"[^>]*><\/button>/);
+    // nothing with a volume: no map
+    p.run('PF.mkt = "crypto"; for (const it of PF.mktBody.items) if (it.kind === "coin") it.volumeUsd24h = undefined');
+    expect(String(p.run(`pfMarketsHtml(${ALL})`))).not.toContain("pf-heat");
   });
 
   it("the home's parts stand in their order on a connected account, and the seg's classes are the four", () => {
