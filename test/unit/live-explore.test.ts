@@ -779,6 +779,49 @@ describe("what did not answer", () => {
     ]);
   });
 
+  it("a source late this time shows its last whole list, said as that with its age, until it answers again; a late answer feeds the next ask; nothing stands in for a refusal, a search, or a list over a quarter of an hour old", async () => {
+    let t = NOW;
+    const clock = () => t;
+    const stand = trader({ markets: [mk("ETH/USDT", "spot", "ETH", "USDT", { price: 3000, volumeUsd24h: 5_000_000, changePct24h: 1 })] });
+    const real = stand.markets.bind(stand);
+    let mode: "ok" | "hang" | "refuse" | "slow" = "ok";
+    stand.markets = async (q) => (mode === "hang" ? never<Market[]>() : mode === "refuse" ? no("E_VENUE_UNREACHABLE", { venue: "bybit", message: "Bybit is rate-limiting this machine" }) : mode === "slow" ? new Promise<Market[] | Refusal>((go) => setTimeout(() => go(real(q)), 120)) : real(q));
+    const ask = (q?: string) => exploreAcross({ connected: [venue("bybit", "Bybit", stand)] }, { clock, timeoutMs: 50, ...(q ? { q } : {}) });
+    // answered: listed, nothing missing
+    const first = await ask();
+    expect(first.items.map((i) => i.key)).toEqual(["coin:ETH"]);
+    expect(first.missing).toEqual([]);
+    // late a minute and a half on: the last list stands in, said as that with its age
+    mode = "hang";
+    t = NOW + 90_000;
+    const late = await ask();
+    expect(late.items.map((i) => i.key)).toEqual(["coin:ETH"]);
+    expect(late.missing).toEqual([{ venue: "bybit", venueName: "Bybit", why: "did not answer in 0.05 s: its last list, 2 min old, is shown", code: "E_VENUE_UNREACHABLE", connected: true, part: "markets", listedAt: iso(NOW) }]);
+    // a search is never stood in for
+    const searched = await ask("eth");
+    expect(searched.items).toEqual([]);
+    expect(searched.missing).toEqual([{ venue: "bybit", venueName: "Bybit", why: "did not answer in 0.05 s", code: "E_VENUE_UNREACHABLE", connected: true }]);
+    // a refusal is the venue's own no: nothing stands in for it
+    mode = "refuse";
+    const refused = await ask();
+    expect(refused.items).toEqual([]);
+    expect(refused.missing.map((m) => m.why)).toEqual(["Bybit is rate-limiting this machine"]);
+    // a list over a quarter of an hour old is not shown
+    mode = "hang";
+    t = NOW + 16 * 60_000;
+    const old = await ask();
+    expect(old.items).toEqual([]);
+    expect(old.missing.map((m) => m.why)).toEqual(["did not answer in 0.05 s"]);
+    // a source that always answers after the time limit is listed one ask behind: its late answer feeds the next ask
+    mode = "slow";
+    expect((await ask()).items).toEqual([]);
+    await new Promise((go) => setTimeout(go, 200));
+    t += 1_000;
+    const second = await ask();
+    expect(second.items.map((i) => i.key)).toEqual(["coin:ETH"]);
+    expect(second.missing.map((m) => m.why)).toEqual(["did not answer in 0.05 s: its last list, under a minute old, is shown"]);
+  });
+
   it("says which call failed when the others answered", async () => {
     const k = trader({ markets: kalshi("KXA-1", "A?", 0.3), events: no("E_VENUE_REJECTED", { venue: "kalshi", message: "Kalshi refused the request (HTTP 400)" }) });
     const out = await exploreAcross({ connected: [venue("kalshi", "Kalshi", k)] }, { clock });

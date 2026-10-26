@@ -275,6 +275,8 @@ export interface ExploreMissing extends CompareMissing {
   said?: string | undefined;
   /** a market left out of a row: its price is far from the other venues' */
   symbol?: string | undefined;
+  /** the source was late this time and its last list stands in: when that list was read */
+  listedAt?: string | undefined;
 }
 
 export interface Exploration {
@@ -340,6 +342,26 @@ const DAY_MS = 86_400_000;
  * jumps are not news */
 const FLOOR_USD: Record<Exclude<ExploreKind, "event">, number> = { coin: 1_000_000, stock: 1_000_000, rwa: 1_000_000, perp: 10_000_000 };
 const HEX_ID = /^0x[0-9a-f]{64}$/i;
+
+/** what a source's calls gave: the listing and the events, one market per symbol (a market both list keeps every field either gave), with
+ * the 24-hour figures the stats call gave to those whose listing had none — from the slots that have answered */
+function harvest(r: Reader, slots: ReadonlyArray<{ part: Part; v?: unknown; done: boolean }>): Got[] {
+  const bySymbol = new Map<string, Listing>();
+  let stats: Map<string, MarketStats> | undefined;
+  for (const s of slots) {
+    if (!s.done) continue;
+    if (s.part === "stats" && s.v instanceof Map) stats = s.v as Map<string, MarketStats>;
+    if (s.part !== "stats" && Array.isArray(s.v))
+      for (const m of s.v.filter(isMarket)) {
+        const was = bySymbol.get(m.symbol);
+        bySymbol.set(m.symbol, was ? fill(was, m) : m);
+      }
+  }
+  return [...bySymbol.values()].map((m) => {
+    const st = stats?.get(m.symbol);
+    return { r, m: st && noDay(m) ? fill(m, { price: st.price, changePct24h: st.changePct24h, change24h: st.change24h, volumeUsd24h: st.volumeUsd24h }) : m };
+  });
+}
 
 /** a call as an answer, never a throw */
 function settle<T>(call: () => Promise<T | Refusal>): Promise<T | Refusal | Error> {
@@ -425,8 +447,19 @@ function notesOf(r: Reader, q: string): string[] {
   }
 }
 
+/** A SOURCE'S LAST WHOLE LISTING (no search), kept a quarter of an hour: when the source is late at a later ask — a slow network, a
+ * blip — its last list stands in, said as that in `missing` with how old it is, rather than its whole class vanishing from the screen for
+ * the length of the blip. A late answer, when it does come, refreshes it, so a source that always takes longer than the time limit is
+ * still listed, one ask behind. Nothing stands in for a refusal (the venue's own no), nor for a search */
+const LAST_LISTED = new Map<string, { at: number; got: Got[]; notes: string[] }>();
+const LAST_KEEP_MS = 15 * 60_000;
+const lastKey = (r: Reader): string => `${r.connected ? "venue" : "public"}|${r.id}`;
+/** how old a list is, in words: under a minute old · 3 min old */
+const oldWords = (ms: number): string => (ms < 60_000 ? "under a minute old" : `${Math.round(ms / 60_000)} min old`);
+
 /** one source's markets, inside its time limit; what failed or did not answer in time, said; and what the source says of its list */
-async function atSource(r: Reader, o: { q: string; ms: number; perSource: number; closingWithinMs: number }): Promise<{ got: Got[]; missing: ExploreMissing[]; notes: string[] }> {
+async function atSource(r: Reader, o: { q: string; ms: number; perSource: number; closingWithinMs: number; clock?: () => number }): Promise<{ got: Got[]; missing: ExploreMissing[]; notes: string[] }> {
+  const clock = o.clock ?? Date.now;
   const slots: Array<{ part: Part; v?: unknown; done: boolean }> = [];
   const run = <T>(part: Part, call: () => Promise<T | Refusal>): Promise<T | Refusal | Error> => {
     const s: { part: Part; v?: unknown; done: boolean } = { part, done: false };
@@ -458,39 +491,41 @@ async function atSource(r: Reader, o: { q: string; ms: number; perSource: number
     if (timer) clearTimeout(timer);
   }
   const seen = slots.map((s) => ({ ...s }));
-
-  // what came back: the listing and the events, one market per symbol (a market both list keeps every field either gave), with the 24-hour
-  // figures the stats call gave to those whose listing had none
-  const bySymbol = new Map<string, Listing>();
-  let stats: Map<string, MarketStats> | undefined;
-  for (const s of seen) {
-    if (!s.done) continue;
-    if (s.part === "stats" && s.v instanceof Map) stats = s.v as Map<string, MarketStats>;
-    if (s.part !== "stats" && Array.isArray(s.v))
-      for (const m of s.v.filter(isMarket)) {
-        const was = bySymbol.get(m.symbol);
-        bySymbol.set(m.symbol, was ? fill(was, m) : m);
-      }
+  // the listing answered (whole or late): what the slots hold is a list worth keeping
+  const listedIn = (ss: ReadonlyArray<{ part: Part; v?: unknown; done: boolean }>): boolean => ss.some((s) => s.part === "markets" && s.done && Array.isArray(s.v));
+  let got = harvest(r, seen);
+  const listed = listedIn(seen);
+  const wholeList = o.q === "";
+  if (wholeList && listed) LAST_LISTED.set(lastKey(r), { at: clock(), got, notes: notesOf(r, o.q) });
+  // late: its answer, when it comes, is kept for the next ask; and its last list stands in now, while it is young
+  let stale: { at: number } | undefined;
+  if (wholeList && !listed) {
+    void Promise.all(work).then(() => {
+      if (listedIn(slots)) LAST_LISTED.set(lastKey(r), { at: clock(), got: harvest(r, slots), notes: notesOf(r, o.q) });
+    }, () => undefined);
+    const kept = LAST_LISTED.get(lastKey(r));
+    const marketsLate = seen.some((s) => s.part === "markets" && !s.done);
+    if (kept && marketsLate && clock() - kept.at < LAST_KEEP_MS) {
+      got = [...kept.got.map((g) => ({ r, m: g.m })), ...got.filter((g) => !kept.got.some((k) => k.m.symbol === g.m.symbol))];
+      stale = { at: kept.at };
+    }
   }
-  const got: Got[] = [...bySymbol.values()].map((m) => {
-    const st = stats?.get(m.symbol);
-    return { r, m: st && noDay(m) ? fill(m, { price: st.price, changePct24h: st.changePct24h, change24h: st.change24h, volumeUsd24h: st.volumeUsd24h }) : m };
-  });
 
   const gone = (why: string, extra: Partial<ExploreMissing> = {}): ExploreMissing => ({ venue: r.id, venueName: r.name, why, connected: r.connected, ...extra });
   const failed: ExploreMissing[] = [];
   for (const s of seen) {
-    if (!s.done) failed.push(gone(`did not answer in ${seconds(o.ms)}`, { code: "E_VENUE_UNREACHABLE", part: s.part }));
+    if (!s.done && stale && s.part === "markets") failed.push(gone(`did not answer in ${seconds(o.ms)}: its last list, ${oldWords(clock() - stale.at)}, is shown`, { code: "E_VENUE_UNREACHABLE", part: s.part, listedAt: new Date(stale.at).toISOString() }));
+    else if (!s.done) failed.push(gone(`did not answer in ${seconds(o.ms)}`, { code: "E_VENUE_UNREACHABLE", part: s.part }));
     else if (isRefusal(s.v)) {
       const said = wordsOf(s.v);
       const scope = scopeOf(s.v);
       failed.push(gone(s.v.message, { code: s.v.code, part: s.part, ...(said ? { said } : {}), ...(scope ? { scope } : {}) }));
     } else if (s.v instanceof Error || (s.part === "stats" ? !(s.v instanceof Map) : !Array.isArray(s.v))) failed.push(gone("answered in a way this could not read", { part: s.part }));
   }
-  // what a source says its list is made of, only when its listing answered: a source that refused this network, timed out or could not be
-  // read is described by its line in `missing`, not by a list it did not give (nor by what an earlier network's listing showed)
-  const listed = seen.some((s) => s.part === "markets" && s.done && Array.isArray(s.v));
-  const notes = listed ? notesOf(r, o.q) : [];
+  // what a source says its list is made of, only when its listing answered (now, or the list standing in): a source that refused this
+  // network, timed out or could not be read is described by its line in `missing`, not by a list it did not give (nor by what an earlier
+  // network's listing showed)
+  const notes = listed ? notesOf(r, o.q) : stale ? (LAST_LISTED.get(lastKey(r))?.notes ?? []) : [];
   if (got.length) return { got, missing: dedupe(failed), notes };
   // nothing to show: the source is missing as a whole, for its listing's reason first
   const first = failed.find((f) => f.part === "markets") ?? failed[0];
@@ -919,7 +954,7 @@ export async function exploreAcross(sources: ExploreSources, opts: ExploreOption
   // the markets listed are the ones of the venues that serve the network the account runs on: the others are not asked, and named once
   const readers = opts.serves ? every.filter((r) => opts.serves!(r)) : every;
   const away = [...new Set(every.filter((r) => !readers.includes(r)).map((r) => r.name))];
-  const answers = await Promise.all(readers.map((r) => atSource(r, { q, ms, perSource, closingWithinMs: window })));
+  const answers = await Promise.all(readers.map((r) => atSource(r, { q, ms, perSource, closingWithinMs: window, clock })));
   const missing: ExploreMissing[] = answers.flatMap((a) => a.missing);
   const now = clock();
 
