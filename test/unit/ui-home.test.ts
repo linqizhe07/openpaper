@@ -248,6 +248,29 @@ describe("the pulse under the net worth", () => {
     expect(p.run("[pfLeft(90000), pfLeft(25 * 3600000), pfLeft(78839698), pfLeft(-5)]")).toEqual(["2m", "1d 1h", "21h 54m", "0m"]);
   });
 
+  it("a listing with a source that did not answer in time is asked again in 15 s, fresh, three times at most in a row; one with none stops that", async () => {
+    const asked: string[] = [];
+    const p = home({}, { fetch: async (path) => (asked.push(path), EXPLORE) });
+    // every timer the page sets is recorded; the retries are the ones that ask again (an ask sets its own timeout timer too, of 15 s as well)
+    p.run('var SCHEDULED = []; setTimeout = (fn, ms) => (SCHEDULED.push([fn, ms]), SCHEDULED.length); clearTimeout = () => {}; ROUTE.tab = "portfolio"; var RETRIES = () => SCHEDULED.filter((s) => String(s[0]).includes("pfReadMarkets(true)"))');
+    const late = { ok: true, items: [], missing: [{ venue: "cboe", venueName: "US stocks", why: "did not answer in 4 s", code: "E_VENUE_UNREACHABLE", connected: false }] };
+    p.set("LATE", late);
+    for (let i = 1; i <= 4; i++) {
+      p.run("pfMktSoon(LATE)");
+      expect(p.run("RETRIES().length")).toBe(Math.min(i, 3));
+    }
+    // the ask is fresh (the minute's cache passed over), and only while the Portfolio shows
+    await p.run("RETRIES()[0][0]()");
+    expect(asked).toEqual(["/api/account/explore?limit=200"]);
+    p.run('ROUTE.tab = "markets"');
+    await p.run("RETRIES()[1][0]()");
+    expect(asked).toHaveLength(1);
+    // a listing with every source in time stops the asking and starts the count over
+    p.run('pfMktSoon({ ok: true, items: [], missing: [{ venue: "binance", venueName: "Binance", why: "Binance does not serve this location", code: "E_VENUE_GEOBLOCKED", connected: false }] })');
+    expect(p.run("PF.mktRetries")).toBe(0);
+    expect(p.run("RETRIES().length")).toBe(3);
+  });
+
   it("the desk's day is read with the pane, the explore list once a minute, and the positions only where the perpetuals' table shows", async () => {
     const asked: string[] = [];
     const p = home({}, { fetch: async (path) => (asked.push(path), path.startsWith("/api/account/desk") ? { ok: true, desk: DESK } : path.startsWith("/api/account/explore") ? EXPLORE : path.startsWith("/api/account/positions") ? POSITIONS : { ok: true }) });
@@ -433,20 +456,28 @@ describe("the Markets card", () => {
     const p = home();
     const html = String(p.run(`pfMarketsHtml(${ALL})`));
     const map = html.split('class="pf-heat-map"')[1]?.split("</div>")[0] ?? "";
-    // the groups by their volumes: US stocks ($77.2B), crypto ($7.1B), perpetuals ($5.95B)
+    // the three classes as blocks of one size, in their order
     expect([...map.matchAll(/class="pf-heat-g"[^>]*>([^<]+)</g)].map((m) => m[1])).toEqual(["US stocks", "Crypto", "Perps"]);
-    const cells = [...map.matchAll(/<button type="button" class="pf-heat-c (up|down|flat)" style="left:([\d.]+)%;top:([\d.]+)%;width:([\d.]+)%;height:([\d.]+)%;--heat:(\d+)%" data-pf-act="market" data-i="(\d+)" data-fk="heat:([^"]+)" data-k="([^"]+)" title="([^"]+)" aria-label="[^"]+">(.*?)<\/button>/g)].map((m) => ({ tone: m[1], x: +m[2], y: +m[3], w: +m[4], h: +m[5], heat: +m[6], i: +m[7], key: m[9], title: m[10], label: m[11] }));
+    const strips = [...map.matchAll(/class="pf-heat-g" style="left:([\d.]+)%;top:([\d.]+)%;width:([\d.]+)%;height:([\d.]+)%"/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]) }));
+    expect(strips).toHaveLength(3);
+    expect(strips.map((s) => s.w)).toEqual([strips[0]!.w, strips[0]!.w, strips[0]!.w]);
+    const cells = [...map.matchAll(/<button type="button" class="pf-heat-c (up|down|flat)" style="left:([\d.]+)%;top:([\d.]+)%;width:([\d.]+)%;height:([\d.]+)%;--heat:(\d+)%" data-pf-act="market" data-i="(\d+)" data-fk="heat:([^"]+)" data-k="([^"]+)" title="([^"]+)" aria-label="[^"]+">(.*?)<\/button>/g)].map((m) => ({ tone: m[1], x: Number(m[2]), y: Number(m[3]), w: Number(m[4]), h: Number(m[5]), heat: Number(m[6]), i: Number(m[7]), key: m[9], title: m[10], label: m[11] }));
     expect(cells).toHaveLength(12);
     expect(cells.map((c) => c.key)).toEqual(["stock:NVDA", "stock:SPY", "stock:AAPL", "stock:TSLA", "stock:KO", "stock:NFLX", "coin:BTC", "coin:ETH", "coin:DOGE", "perp:BTC", "perp:ETH", "perp:AVAX"]);
-    // the largest cell is NVDA's; every cell is inside the map
-    const nvda = cells[0]!;
+    // within its block a cell's area is its share of the class's volume: NVDA's ($29.4B of $77.2B) the largest stock, BTC's coin ($5B of
+    // $7.1B) the largest coin and four times ETH's, BTC's perpetual the largest perpetual; every cell is inside the map
+    const by = Object.fromEntries(cells.map((c) => [c.key, c]));
+    const area = (k: string) => by[k]!.w * by[k]!.h;
     for (const c of cells) {
-      expect(nvda.w * nvda.h).toBeGreaterThanOrEqual(c.w * c.h);
       expect(c.x + c.w).toBeLessThanOrEqual(100.01);
       expect(c.y + c.h).toBeLessThanOrEqual(100.01);
     }
+    for (const k of ["stock:SPY", "stock:AAPL", "stock:TSLA", "stock:KO", "stock:NFLX"]) expect(area("stock:NVDA")).toBeGreaterThan(area(k));
+    expect(area("coin:BTC") / area("coin:ETH")).toBeCloseTo(5 / 1.25, 1);
+    expect(area("perp:BTC")).toBeGreaterThan(area("perp:ETH"));
+    // the three blocks are one size: BTC's perpetual (71% of its block) and BTC's coin (70% of its) are near one size
+    expect(area("perp:BTC") / area("coin:BTC")).toBeCloseTo((4.24 / 5.95) / (5 / 7.1), 1);
     // colour: the move's direction, deeper with its size, full at 5%
-    const by = Object.fromEntries(cells.map((c) => [c.key, c]));
     expect([by["coin:DOGE"]!.tone, by["coin:DOGE"]!.heat]).toEqual(["up", 100]);
     expect([by["stock:SPY"]!.tone, by["stock:SPY"]!.heat]).toEqual(["up", 10]);
     expect([by["stock:TSLA"]!.tone, by["stock:TSLA"]!.heat]).toEqual(["down", 61]);
@@ -455,21 +486,34 @@ describe("the Markets card", () => {
     expect(by["stock:NVDA"]!.label).toBe('<b>NVDA</b><span><span class="up"><span aria-hidden="true">▲</span><span class="sr">up</span> 1.2%</span></span>');
     // a press names the row the cell is
     expect(p.run(`PF.mkRows[${by["perp:AVAX"]!.i}].key`)).toBe("perp:AVAX");
-    // no move: a flat cell with a dash; no volume: left out and counted
+    // no move: a flat cell with a dash; no volume: still a market, sized at its class's smallest volume, said so, and counted
     p.run("PF.mktBody.items[1].changePct24h = undefined; PF.mktBody.items[10].volumeUsd24h = undefined");
     const again = String(p.run(`pfMarketsHtml(${ALL})`));
     expect(again).toMatch(/class="pf-heat-c flat" style="[^"]*--heat:0%"[^>]*data-k="stock:SPY"[^>]*><b>SPY<\/b><span>—<\/span><\/button>/);
-    expect(again).not.toMatch(/data-k="stock:NFLX"[^>]*title=/);
-    expect(again).toContain("Sized by the day's volume · coloured by the 24-hour move · 1 with no volume left out");
-    // one class: no group labels, its cells alone; a cell too small for its words carries none
+    const cellArea = (re: RegExp) => {
+      const m = re.exec(again);
+      return m ? Number(m[1]) * Number(m[2]) : NaN;
+    };
+    const nflx = cellArea(/class="pf-heat-c down" style="left:[\d.]+%;top:[\d.]+%;width:([\d.]+)%;height:([\d.]+)%;--heat:18%"[^>]*data-k="stock:NFLX"[^>]*title="Netflix, Inc\. common stock · \$100\.00 · down 0\.88% in 24 hours · no volume given"/);
+    const ko = cellArea(/class="pf-heat-c down" style="left:[\d.]+%;top:[\d.]+%;width:([\d.]+)%;height:([\d.]+)%;--heat:9%"[^>]*data-k="stock:KO"/);
+    // NFLX, with no volume, is sized as KO, the smallest stock with one
+    expect(Math.abs(nflx - ko)).toBeLessThan(0.05);
+    expect(again).toContain("Sized by the day's volume · coloured by the 24-hour move · 1 with no volume sized small");
+    // one class: no group labels, its cells alone (the six stocks, NFLX sized at KO's volume, the smallest); a cell too small for its
+    // words carries none
     p.run('PF.mkt = "stocks"; PF.mktBody.items[8].volumeUsd24h = 1e5');
     const stocks = String(p.run(`pfMarketsHtml(${ALL})`)).split('class="pf-heat-map"')[1]?.split("</div>")[0] ?? "";
     expect(stocks).not.toContain("pf-heat-g");
-    expect(stocks.match(/class="pf-heat-c/g)).toHaveLength(5);
+    expect(stocks.match(/class="pf-heat-c/g)).toHaveLength(6);
     expect(stocks).toMatch(/data-k="stock:KO"[^>]*><\/button>/);
-    // nothing with a volume: no map
+    expect(stocks).toMatch(/data-k="stock:NFLX"[^>]*><\/button>/);
+    // nothing with a volume: every market an equal cell, said so
     p.run('PF.mkt = "crypto"; for (const it of PF.mktBody.items) if (it.kind === "coin") it.volumeUsd24h = undefined');
-    expect(String(p.run(`pfMarketsHtml(${ALL})`))).not.toContain("pf-heat");
+    const equal = String(p.run(`pfMarketsHtml(${ALL})`));
+    const areas = [...equal.matchAll(/class="pf-heat-c [a-z]+" style="left:[\d.]+%;top:[\d.]+%;width:([\d.]+)%;height:([\d.]+)%/g)].map((m) => Number(m[1]) * Number(m[2]));
+    expect(areas).toHaveLength(3);
+    expect(Math.max(...areas) - Math.min(...areas)).toBeLessThan(0.05);
+    expect(equal).toContain("3 with no volume sized small");
   });
 
   it("the home's parts stand in their order on a connected account, and the seg's classes are the four", () => {

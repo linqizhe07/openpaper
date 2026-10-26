@@ -115,6 +115,9 @@ const BOOK_WAIT_MS = 1_500;
  * Cboe that is slow or hangs does not hold back the lines the chain priced past the callers' four seconds. Where the chain priced nothing,
  * Cboe is waited for in full: its answer, or its refusal, is then the listing's */
 const CBOE_WAIT_MS = 2_500;
+/** with no real-time price at all, Cboe is waited for this long from the start at most — inside the four seconds a source is allowed
+ * (explore.ts, paper.ts SOURCE_MS); the quotes it has not answered by then keep loading for the next ask */
+const CBOE_ALL_WAIT_MS = 3_500;
 /** a real-time quote said to be the phase's own live quote: in the phase that is on, and no older than FRESH_MS and the minute to which
  * Nasdaq stamps a trade */
 const SAID_LIVE_MS = FRESH_MS + 60_000;
@@ -542,6 +545,7 @@ export function usStocksPublic(deps: PublicDeps = {}): PublicSource {
       const got = new Map<string, Quote>();
       let refused: Refusal | undefined;
       const cboeFor = pool.filter((e) => e.symbol !== unlisted);
+      let cboeDone = false;
       const cboe = (async () => {
         for (let i = 0; i < cboeFor.length; i += 8)
           await Promise.all(
@@ -551,6 +555,7 @@ export function usStocksPublic(deps: PublicDeps = {}): PublicSource {
               else if (q) got.set(e.symbol, q);
             }),
           );
+        cboeDone = true;
       })();
       // real time within its one deadline: Robinhood's one answer for the tickers the book lists, then Nasdaq for the first lines it did not
       // price (us-quotes.ts). With no book to check against, Robinhood's quote is taken only for the well-known few, tickers this file
@@ -566,11 +571,16 @@ export function usStocksPublic(deps: PublicDeps = {}): PublicSource {
       // price; where it has not, that line carries no day's change this time
       if (cboeFor.some((e) => !rt.has(e.symbol))) {
         if (rt.size) await within(cboe, started + CBOE_WAIT_MS - Date.now());
-        else await cboe.catch(() => undefined);
+        // nothing real-time: Cboe is waited for in full, but never past the time a source is allowed — what it has answered by then is the
+        // list, and the rest keeps loading into the keeper for the next ask (a slow network: 2026-10-26, Cboe at 1.6 s a quote)
+        else await within(cboe, started + CBOE_ALL_WAIT_MS - Date.now());
       }
       const cb = new Map(got);
       // nothing priced and Cboe refused (a place rule, an edge, a ban, no answer): that is the answer, not a list with no prices
       if (!rt.size && !cb.size && refused) return refused;
+      // nothing priced yet and Cboe still on its way: said so — never an empty list, which would read as no US stocks at all (Cboe having
+      // answered with nothing listable, an index say, is an empty list as before)
+      if (!rt.size && !cb.size && !cboeDone && cboeFor.length) return no("E_VENUE_UNREACHABLE", { venue: id, message: `no US stock price answered in ${CBOE_ALL_WAIT_MS / 1000} s: Cboe's quotes are still on their way` });
       const now = clock();
       const out = pool.filter((e) => rt.has(e.symbol) || cb.has(e.symbol)).map((e) => listing(e.symbol, rt.get(e.symbol), cb.get(e.symbol), names.get(e.symbol) ?? (e.company !== e.symbol ? e.company : undefined), now));
       if (!Q) shown = { of: out.length, total: US_SHARES.length };

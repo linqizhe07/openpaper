@@ -18,7 +18,7 @@
 /* what the pane keeps between draws: the segment and the curve's range, the last answer of each read, what the curve last drew, the key
    of the intents last mounted under Agents at work, the card a "Review" elsewhere asked to be shown, the Markets card's class and rows
    and its poll, and the desk's day (undefined until read, null with none hired) */
-const PF = { tab: "assets", range: "1w", hold: null, holdErr: "", hist: new Map(), histPaper: new Map(), book: "", pos: null, agents: null, earn: null, curve: null, intentsKey: "", hiWant: "", soon: false, hover: null, mkt: "all", mktBody: null, mktErr: "", mkRows: [], mkPriced: [], mkTimer: 0, desk: undefined };
+const PF = { tab: "assets", range: "1w", hold: null, holdErr: "", hist: new Map(), histPaper: new Map(), book: "", pos: null, agents: null, earn: null, curve: null, intentsKey: "", hiWant: "", soon: false, hover: null, mkt: "all", mktBody: null, mktErr: "", mktRetry: 0, mktRetries: 0, mkRows: [], mkPriced: [], mkTimer: 0, desk: undefined };
 const PF_RANGES = [["1d", "1D"], ["1w", "1W"], ["1m", "1M"], ["all", "All"]];
 const PF_TABS = [["assets", "Assets"], ["positions", "Positions"]];
 const PF_RANGE_WORDS = { "1d": "past day", "1w": "past week", "1m": "past month", all: "since the start" };
@@ -327,12 +327,9 @@ function pfRead() {
   pfReadHistory();
   if (PF.tab === "positions" || PF.mkt === "perps") pfReadPositions();
   if (A.keys.length) api("/api/account/agents", { ttl: 15_000 }).then((b) => { if (b && b.ok) PF.agents = b; pfAgain(); });
-  // the Markets card: the one explore read the rail and Markets make too (cached a minute); a failure keeps what was drawn
-  api(typeof MKT_ALL === "string" ? MKT_ALL : "/api/account/explore?limit=200", { ttl: 60_000 }).then((b) => {
-    if (b && b.ok !== false && Array.isArray(b.items)) [PF.mktBody, PF.mktErr] = [b, ""];
-    else if (!PF.mktBody) PF.mktErr = refusalOf(b) || "The markets could not be read.";
-    pfAgain();
-  });
+  // the Markets card's listing (and, with sources late in it, the sooner asks after it)
+  PF.mktRetries = 0;
+  pfReadMarkets();
   // the desk's day, for its tile: null where the account keeps no desk
   api("/api/account/desk", { ttl: 15_000 }).then((b) => {
     PF.desk = b && b.ok && b.desk ? b.desk : null;
@@ -359,6 +356,36 @@ function pfReadPositions() {
     PF.pos = b && b.ok ? b : { error: refusalOf(b) || "The account did not answer.", positions: [], missing: [] };
     pfAgain();
   });
+}
+/* the Markets card's listing: the one explore read the rail and Markets make too (cached a minute); a failure keeps what was drawn. A
+   listing with sources that did not answer in time is asked again sooner — in 15 s, fresh, three times at most in a row — so on a slow
+   network the late sources, which the account keeps for its next ask, come in without the minute being waited out */
+const PF_MKT_RETRY_MS = 15_000;
+const PF_MKT_RETRIES = 3;
+function pfReadMarkets(fresh = false) {
+  const path = typeof MKT_ALL === "string" ? MKT_ALL : "/api/account/explore?limit=200";
+  api(path, { ttl: fresh ? 0 : 60_000 }).then((b) => {
+    if (b && b.ok !== false && Array.isArray(b.items)) [PF.mktBody, PF.mktErr] = [b, ""];
+    else if (!PF.mktBody) PF.mktErr = refusalOf(b) || "The markets could not be read.";
+    pfAgain();
+    pfMktSoon(b);
+  });
+}
+/* a listing with a source that did not answer in time */
+const pfMktLate = (b) => !!b && Array.isArray(b.missing) && b.missing.some((m) => m && m.code === "E_VENUE_UNREACHABLE" && /did not answer/.test(String(m.why || "")));
+function pfMktSoon(b) {
+  clearTimeout(PF.mktRetry);
+  PF.mktRetry = 0;
+  if (!pfMktLate(b)) {
+    PF.mktRetries = 0;
+    return;
+  }
+  if (PF.mktRetries >= PF_MKT_RETRIES) return;
+  PF.mktRetries++;
+  PF.mktRetry = setTimeout(() => {
+    PF.mktRetry = 0;
+    if (A && ROUTE.tab === "portfolio" && !(typeof document !== "undefined" && document.hidden)) pfReadMarkets(true);
+  }, PF_MKT_RETRY_MS);
 }
 
 /* a toggle of the pane's own (Range, Assets/Positions/Accounts): its markup stays the same from draw to draw, so a part is drawn again
@@ -896,16 +923,24 @@ function pfLayRow(row, box, k, out) {
 }
 /** THE HEATMAP of a class (after OpenStock's sector treemap, in this page's own grammar): one cell a market, sized by the day's dollar
  * volume, coloured by the 24-hour move — the up or down colour, deeper the bigger the move, full at 5%; flat where the listing gives no
- * move. Under All the three classes are groups, each with its label and its own treemap, the groups themselves laid by their volumes. A
- * cell is a button to the market's drawer, named in full for the pointer and the screen reader; a cell too small for its words carries
- * none. A market with no volume is left out and counted under the map */
+ * move. Under All the three classes are blocks of one size each, in their order, each with its label and its own treemap: a class's day
+ * is read against its own markets, not against another class's dollars (an exchange's coin volume and a few listed shares' are not one
+ * measure). A cell is a button to the market's drawer, named in full for the pointer and the screen reader; a cell too small for its
+ * words carries none. A market the listing gives no volume for is still a market (a US stock's real-time quote says no dollar volume, and
+ * none is estimated): it takes its class's smallest volume (every row's, where none in the class has one), so it shows as a small cell,
+ * and how many are sized so is said under the map */
 function pfHeatHtml(rows, cls) {
-  const sized = rows.filter((it) => pfFin(it.volumeUsd24h) > 0);
-  const left = rows.length - sized.length;
-  if (!sized.length) return "";
+  if (!rows.length) return "";
+  const unsized = rows.filter((it) => !(pfFin(it.volumeUsd24h) > 0)).length;
+  const floorOf = (items) => {
+    const vols = items.map((it) => pfFin(it.volumeUsd24h)).filter((v) => v > 0);
+    return vols.length ? Math.min(...vols) : 1;
+  };
+  const sizeOf = (it, floor) => (pfFin(it.volumeUsd24h) > 0 ? it.volumeUsd24h : floor);
+  const grouped = (items) => ({ items, floor: floorOf(items), size: 1 });
   const groups = cls === "all"
-    ? PF_MKT.slice(1).map(([id, label]) => ({ id, label, items: sized.filter((it) => pfMktKind(it) === id) })).filter((g) => g.items.length).map((g) => ({ ...g, size: g.items.reduce((s, it) => s + it.volumeUsd24h, 0) }))
-    : [{ id: cls, label: "", items: sized, size: 1 }];
+    ? PF_MKT.slice(1).map(([id, label]) => ({ id, label, ...grouped(rows.filter((it) => pfMktKind(it) === id)) })).filter((g) => g.items.length)
+    : [{ id: cls, label: "", ...grouped(rows) }];
   const box = { x: 0, y: 0, w: PF_HEAT_W, h: PF_HEAT_H };
   const laid = groups.length > 1 ? pfSquarify(groups, box) : [{ item: groups[0], ...box }];
   const px = (r) => [(r.w / PF_HEAT_W) * PF_HEAT_PX[0], (r.h / PF_HEAT_H) * PF_HEAT_PX[1]];
@@ -917,19 +952,19 @@ function pfHeatHtml(rows, cls) {
     const strip = groups.length > 1 && g.h >= PF_HEAT_STRIP * 2.5 && px(g)[0] >= 60;
     if (strip) html += `<span class="pf-heat-g" style="${at({ x: g.x, y: g.y, w: g.w, h: PF_HEAT_STRIP })}">${esc(g.item.label)}</span>`;
     const inner = strip ? { x: g.x, y: g.y + PF_HEAT_STRIP, w: g.w, h: g.h - PF_HEAT_STRIP } : { x: g.x, y: g.y, w: g.w, h: g.h };
-    for (const c of pfSquarify(g.item.items.map((it) => ({ it, size: it.volumeUsd24h })), inner)) {
+    for (const c of pfSquarify(g.item.items.map((it) => ({ it, size: sizeOf(it, g.item.floor) })), inner)) {
       const it = c.item.it;
       const i = PF.mkRows.push(it) - 1;
       const pct = pfFin(it.changePct24h);
       const tone = pct === undefined || !(Math.abs(pct) >= 0.005) ? "flat" : pct > 0 ? "up" : "down";
       const heat = pct === undefined ? 0 : Math.min(100, Math.round((Math.abs(pct) / PF_HEAT_FULL_PCT) * 100));
       const [cw, ch] = px(c);
-      const words = `${it.name} · ${usd(it.price)} · ${pct === undefined ? "no 24-hour move" : `${pct > 0 ? "up" : pct < 0 ? "down" : "flat"} ${Math.abs(pct).toFixed(2)}% in 24 hours`} · ${pfVol(it.volumeUsd24h)} traded`;
+      const words = `${it.name} · ${usd(it.price)} · ${pct === undefined ? "no 24-hour move" : `${pct > 0 ? "up" : pct < 0 ? "down" : "flat"} ${Math.abs(pct).toFixed(2)}% in 24 hours`} · ${pfFin(it.volumeUsd24h) > 0 ? `${pfVol(it.volumeUsd24h)} traded` : "no volume given"}`;
       const label = cw >= 44 && ch >= 30 ? `<b>${esc(it.base || it.name)}</b><span>${pct === undefined ? "—" : chg(pct)}</span>` : cw >= 30 && ch >= 16 ? `<b>${esc(it.base || it.name)}</b>` : "";
       html += `<button type="button" class="pf-heat-c ${tone}" style="${at(c)};--heat:${heat}%" data-pf-act="market" data-i="${i}" data-fk="heat:${esc(it.key)}" data-k="${esc(it.key)}" title="${esc(words)}" aria-label="${esc(words)}">${label}</button>`;
     }
   }
-  return `<div class="pf-heat" role="group" aria-label="Heatmap"><div class="pf-heat-map">${html}</div><p class="dim small pf-heat-l">Sized by the day's volume · coloured by the 24-hour move${left ? ` · ${left} with no volume left out` : ""}</p></div>`;
+  return `<div class="pf-heat" role="group" aria-label="Heatmap"><div class="pf-heat-map">${html}</div><p class="dim small pf-heat-l">Sized by the day's volume · coloured by the 24-hour move${unsized ? ` · ${unsized} with no volume sized small` : ""}</p></div>`;
 }
 /* how far the mark is from liquidation, in percent of the mark: below it for a long (negative), above it for a short; null without both */
 function pfLiqDist(p) {
