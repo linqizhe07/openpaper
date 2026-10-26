@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 33,
+      "title": "The home at a glance: pulse tiles and a Markets card of US stocks, crypto and perpetuals",
+      "mergedAt": "2026-10-26T14:59:36Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/33",
+      "branch": "feat/home-dashboard"
+    },
+    {
       "number": 32,
       "title": "A recorded day replayed through the desk: tardis.dev's free day of Hyperliquid on the paper account, with the momentum script for a brain",
       "mergedAt": "2026-10-24T22:18:10Z",
