@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 43,
+      "title": "A test's cast the type check refused, after the walk-forward API",
+      "mergedAt": "2026-10-29T17:46:13Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/43",
+      "branch": "fix/backtest-test-cast"
+    },
+    {
       "number": 42,
       "title": "Walk-forward for agents and the page",
       "mergedAt": "2026-10-29T17:41:35Z",
