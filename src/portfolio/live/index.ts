@@ -76,6 +76,9 @@ export interface LiveDeps {
   /** the venues' live market-data streams (live/stream-hub.ts), as the service runs them — asked each time, none until it runs them: what a
    * paper account takes its prices from first (paper.ts) */
   streams?: (() => MarketHub | undefined) | undefined;
+  /** a paper account STEPPED OVER RECORDED BARS (the desk backtested, backtest/desk.ts): its book judges the time between two looks against
+   * its source's bars (paper.ts PaperRequest.bars) — a stop, a limit or a liquidation inside the bar that reached it */
+  paperBars?: true | undefined;
 }
 
 export interface LiveRequest {
@@ -276,7 +279,7 @@ const paper: Connector = {
   async open(req, deps) {
     const cash = parsePaperCash(req.reference, req.venue);
     if (isRefusal(cash)) return cash;
-    const opened = await paperSource({ home: deps.home, venue: req.venue, label: req.label, cashUsd: cash, sources: () => deps.publicSources?.() ?? [], clock: deps.clock, ...(deps.streams ? { hub: deps.streams } : {}) });
+    const opened = await paperSource({ home: deps.home, venue: req.venue, label: req.label, cashUsd: cash, sources: () => deps.publicSources?.() ?? [], clock: deps.clock, ...(deps.streams ? { hub: deps.streams } : {}), ...(deps.paperBars ? { bars: true as const } : {}) });
     return isRefusal(opened) ? opened : { ...opened, summary: `${opened.source.name}: ${opened.source.probe.note}` };
   },
 };

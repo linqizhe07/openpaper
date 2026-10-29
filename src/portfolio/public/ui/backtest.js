@@ -161,7 +161,8 @@ function btFormHtml(cat, holdout) {
 <details class="bt-costs"><summary>The cost model</summary><div class="bt-grid"><label class="fld">Half spread (bps)<input name="halfSpreadBps" type="number" min="0" max="500" step="any" value="${costs.halfSpreadBps ?? 1}"><span class="bt-hint">either side of each bar's open</span></label><label class="fld">Participation<input name="participation" type="number" min="0.0001" max="1" step="any" value="${costs.participation ?? 0.05}"><span class="bt-hint">the share of the bar before's dollars the book holds</span></label><label class="fld">Level gap (bps)<input name="levelBps" type="number" min="0" max="500" step="any" value="${costs.levelBps ?? 2}"><span class="bt-hint">between the book's five levels</span></label></div></details>
 <label class="chk1"><input type="checkbox" name="benchmark"${d.benchmark === false ? "" : " checked"}> Buy and hold beside it</label>
 <div class="msg" data-bt-msg role="status"></div>
-<button type="submit" class="btn btn-primary btn-block" data-bt-go>Run backtest</button>`;
+<button type="submit" class="btn btn-primary btn-block" data-bt-go>Run backtest</button>
+<p class="dim small">The desk itself — its seats, Risk, the plan's exits — runs over the bars at your terminal, in an account of its own: <span class="mono">npm run account:backtest -- --strategy desk</span>. Its runs are listed below with the rest.</p>`;
 }
 
 /* another strategy picked: its words and its numbers, in place of the last one's */

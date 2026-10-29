@@ -35,6 +35,7 @@ import { runBacktest, type BacktestRun } from "./engine.ts";
 import { stepReturns } from "./metrics.ts";
 import { DEFAULT_COSTS, type BacktestCosts } from "./source.ts";
 import { makeStrategy, STRATEGIES, strategySpec, type StrategySpec } from "./strategies.ts";
+import { DESK_NAME, deskParams, type DeskParams } from "./desk-params.ts";
 import { dsr, moments, pbo, psr } from "./stats.ts";
 
 const DAY_MS = 86_400_000;
@@ -284,8 +285,20 @@ export function overfit(home: string, rows: readonly LabRow[], t: TrialEntry): O
 
 // ---- a run ----
 
+/** the desk itself as a run's strategy (backtest/desk.ts): its numbers read as deskParams reads them */
+export interface DeskSpec {
+  id: "desk";
+  params: DeskParams;
+}
+export const isDesk = (s: StrategySpec | DeskSpec): s is DeskSpec => s.id === "desk";
+export function deskSpec(raw: Record<string, number | string> = {}): DeskSpec | string {
+  const p = deskParams(raw);
+  return typeof p === "string" ? p : { id: "desk", params: p };
+}
+
 export interface LabAsk {
-  spec: StrategySpec;
+  /** a strategy (backtest/strategies.ts), or the desk itself (backtest/desk.ts: the owner's terminal and the owner's look only) */
+  spec: StrategySpec | DeskSpec;
   refs: MarketRef[];
   interval: CandleInterval;
   /** the window, ms. A training run: its end at the holdout's start at the latest (and there when none is said), its start the 180 days
@@ -335,7 +348,7 @@ export interface LabOutcome {
 }
 
 /** the run's id: when it ran, and a hash of what it was (the same spec, markets, window and costs, the same hash) */
-export function runId(o: { spec: StrategySpec; refs: MarketRef[]; interval: CandleInterval; from: number; to: number; cashUsd: number; feeBps: number; leverage?: number | undefined; costs: BacktestCosts }, at: number): string {
+export function runId(o: { spec: StrategySpec | DeskSpec; refs: MarketRef[]; interval: CandleInterval; from: number; to: number; cashUsd: number; feeBps: number; leverage?: number | undefined; costs: BacktestCosts }, at: number): string {
   const what = JSON.stringify([o.spec, o.refs.map(marketText), o.interval, o.from, o.to, o.cashUsd, o.feeBps, o.leverage ?? null, o.costs]);
   return `${iso(at).replace(/[-:]/g, "").slice(0, 15)}-${createHash("sha256").update(what).digest("hex").slice(0, 10)}`;
 }
@@ -352,7 +365,11 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
   if (isRefusal(holdout)) return holdout;
   const cut = holdoutStartMs(holdout);
   const step = INTERVAL_MS[ask.interval];
-  const strategy = makeStrategy(ask.spec);
+  const desk = isDesk(ask.spec);
+  if (desk && ask.refs.some((r) => r.cls !== "perp")) return no("E_ACCOUNT_BAD_ACTION", { message: "the desk trades perpetuals here: perp:COIN markets only" });
+  if (desk && ask.interval === "1d") return no("E_ACCOUNT_BAD_ACTION", { message: "the desk steps over 1h or 4h bars: a day's bar is longer than its longest cycle" });
+  // what the run reads before its first step (the desk reads none: its brain is a script that names the markets in turn)
+  const strategy = desk ? { name: DESK_NAME, warmupMs: 0 } : makeStrategy(ask.spec as StrategySpec);
   const notes: string[] = [];
   let from: number;
   let to: number;
@@ -372,14 +389,18 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
   // the run starts once every market has the history its strategy reads first
   const ready = Math.max(...loaded.markets.map((m) => (m.bars[0]?.t ?? from) + strategy.warmupMs));
   const start = Math.max(from, ready);
-  if (start > from) notes.push(`the run starts at the first bar after ${iso(start).slice(0, 16).replace("T", " ")} UTC, not ${dayOf(from)}: the ${strategy.name.toLowerCase()} reads ${Math.round(strategy.warmupMs / DAY_MS)} days of bars first, and the bars start ${dayOf(ready - strategy.warmupMs)}`);
+  if (start > from) notes.push(strategy.warmupMs > 0 ? `the run starts at the first bar after ${iso(start).slice(0, 16).replace("T", " ")} UTC, not ${dayOf(from)}: the ${strategy.name.toLowerCase()} reads ${Math.round(strategy.warmupMs / DAY_MS)} days of bars first, and the bars start ${dayOf(ready - strategy.warmupMs)}` : `the run starts at its markets' first bar, ${iso(start).slice(0, 16).replace("T", " ")} UTC, not ${dayOf(from)}: their bars start then`);
   if (!(to > start)) return no("E_ACCOUNT_BAD_ACTION", { message: `nothing is left to run: the history the strategy needs first reaches to ${dayOf(start)}` });
   if (ask.window === "train") notes.push(`the data from ${holdout.start} on is held out${holdout.setBy === "default" ? ` (the ${HOLDOUT_DEFAULT_DAYS} days before the first run)` : ""}: this run ends ${iso(to).slice(0, 16).replace("T", " ")} UTC`);
   else notes.push(`a look at the held-out data, from ${holdout.start}: counted, since a holdout looked at often is a holdout no more`);
   const work = mkdtempSync(join(tmpdir(), "openpaper-backtest-"));
   try {
-    const base = { markets: loaded.markets, from: start, to, cashUsd: ask.cashUsd, feeBps: ask.feeBps, costs: ask.costs, ...(ask.maxSteps !== undefined ? { maxSteps: ask.maxSteps } : {}) };
-    const run = await runBacktest({ ...base, ...(ask.leverage !== undefined ? { leverage: ask.leverage } : {}), strategy: ask.spec, home: join(work, "run"), say: deps.say });
+    // the desk fills at its paper account's own fee: the buy-and-hold beside it pays the same
+    const feeBps = desk ? PAPER_FEE_BPS : ask.feeBps;
+    const base = { markets: loaded.markets, from: start, to, cashUsd: ask.cashUsd, feeBps, costs: ask.costs, ...(ask.maxSteps !== undefined ? { maxSteps: ask.maxSteps } : {}) };
+    const run = desk
+      ? await (await import("./desk.ts")).runDeskBacktest({ markets: loaded.markets, from: start, to, cashUsd: ask.cashUsd, costs: ask.costs, params: (ask.spec as DeskSpec).params, work: join(work, "desk"), ...(ask.maxSteps !== undefined ? { maxSteps: ask.maxSteps } : {}), say: deps.say })
+      : await runBacktest({ ...base, ...(ask.leverage !== undefined ? { leverage: ask.leverage } : {}), strategy: ask.spec as StrategySpec, home: join(work, "run"), say: deps.say });
     if (isRefusal(run)) return run;
     let benchmark: BacktestRun | undefined;
     if (ask.benchmark && ask.spec.id !== "hold") {
@@ -407,8 +428,8 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
       from: iso(start),
       to: iso(to),
       cashUsd: ask.cashUsd,
-      feeBps: ask.feeBps,
-      ...(ask.leverage !== undefined ? { leverage: ask.leverage } : {}),
+      feeBps,
+      ...(ask.leverage !== undefined && !desk ? { leverage: ask.leverage } : {}),
       costs: ask.costs,
       steps: m.steps,
       perYear: m.perYear,
@@ -463,6 +484,7 @@ export function askOf(body: Record<string, unknown>): Omit<LabAsk, "by" | "windo
   if (body.params !== undefined && (typeof body.params !== "object" || body.params === null || Array.isArray(body.params))) return "params is {name: number}";
   const params = (body.params ?? {}) as Record<string, unknown>;
   for (const [k, v] of Object.entries(params)) if (typeof v !== "number" && typeof v !== "string") return `params.${k.slice(0, 30)} is a number`;
+  if (body.strategy === "desk") return "the desk runs at the owner's terminal (npm run account:backtest -- --strategy desk), where it builds a whole account to trade in: a request runs a strategy";
   const spec = strategySpec(typeof body.strategy === "string" ? body.strategy : "tsmom", params as Record<string, number | string>);
   if (typeof spec === "string") return spec;
   const markets = body.markets === undefined ? "perp:BTC" : typeof body.markets === "string" ? body.markets : Array.isArray(body.markets) && body.markets.every((m) => typeof m === "string") ? body.markets.join(",") : undefined;
@@ -641,7 +663,7 @@ export async function labEvaluate(run: string, deps: LabDeps, by: LabWho): Promi
   const t = readTrials(deps.home).rows.filter(isTrial).find((r) => r.run === run);
   if (!t) return no("E_ACCOUNT_BAD_ACTION", { message: `no trial ran as ${run}` });
   if (t.window !== "train") return no("E_ACCOUNT_BAD_ACTION", { message: `${run} was itself a look at the holdout: look again from the training run it tried` });
-  const spec = strategySpec(t.strategy, t.params);
+  const spec = t.strategy === "desk" ? deskSpec(t.params) : strategySpec(t.strategy, t.params);
   if (typeof spec === "string") return no("E_ACCOUNT_BAD_ACTION", { message: spec });
   const refs = parseMarkets(t.markets.join(","));
   if (typeof refs === "string") return no("E_ACCOUNT_BAD_ACTION", { message: refs });

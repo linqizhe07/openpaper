@@ -18,7 +18,9 @@
  * <home>/backtest/trials.jsonl, whose distinct strategies deflate the Sharpe of the next.
  *
  *   npm run account:backtest -- --strategy tsmom --markets perp:BTC,perp:ETH --interval 1h --from 2026-02-01 --to 2026-07-31 --cash 10000
- *   --strategy   hold · sma · tsmom · carry (default tsmom)           --markets  perp:COIN, spot:COIN, stock:TICKER, comma-separated (perp:BTC)
+ *   --strategy   hold · sma · tsmom · carry (default tsmom), or desk: the account's own desk over the bars (backtest/desk.ts: perp: markets,
+ *                1h or 4h, its numbers sizeUsd · tpPct · slPct · maxHours · riskPct · maxOpen)
+ *   --markets    perp:COIN, spot:COIN, stock:TICKER, comma-separated (perp:BTC)
  *   --interval   1h · 4h · 1d for the coins and perpetuals (1h; a share is read in daily bars)    --param name=value  a strategy's number, again for each
  *   --from --to  the window, YYYY-MM-DD (the 180 days before --to; --to: the holdout's start)    --cash  the paper money (10000)
  *   --fee-bps    the paper account's fee a fill (10; 0 when every market is a share)   --leverage  a perpetual's (the strategy's own need)
@@ -32,7 +34,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isRefusal, type Refusal } from "../core/errors.ts";
 import { parseMarkets, realHistorySources, type HistorySources, type MarketRef } from "./backtest/data.ts";
-import { labList, labRun, setHoldout, type Holdout, type LabOutcome } from "./backtest/lab.ts";
+import { DESK_PARAMS } from "./backtest/desk-params.ts";
+import { deskSpec, labList, labRun, setHoldout, type DeskSpec, type Holdout, type LabOutcome } from "./backtest/lab.ts";
 import type { Metrics } from "./backtest/metrics.ts";
 import { DEFAULT_COSTS, type BacktestCosts } from "./backtest/source.ts";
 import { STRATEGIES, STRATEGY_IDS, strategySpec, type StrategySpec } from "./backtest/strategies.ts";
@@ -44,7 +47,7 @@ const DAY_MS = 86_400_000;
 export const BACKTEST_INTERVALS: readonly CandleInterval[] = ["1h", "4h", "1d"];
 
 export interface BacktestOptions {
-  spec: StrategySpec;
+  spec: StrategySpec | DeskSpec;
   refs: MarketRef[];
   interval: CandleInterval;
   /** the window asked, ms: none, the lab's (backtest/lab.ts LabAsk) */
@@ -155,12 +158,14 @@ export function trialsWords(list: ReturnType<typeof labList>): string {
 
 // ---- the command ----
 
-const USAGE = `usage: npm run account:backtest -- [--strategy ${STRATEGY_IDS.join("|")}] [--markets perp:BTC,spot:ETH,stock:AAPL] [--interval ${BACKTEST_INTERVALS.join("|")}] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--cash 10000] [--fee-bps 10] [--leverage N] [--param name=value]… [--half-spread-bps 1] [--participation 0.05] [--level-bps 2] [--holdout] [--no-benchmark] [--json] [--no-save] [--cache DIR] [--home DIR] [--quiet]
+const USAGE = `usage: npm run account:backtest -- [--strategy ${STRATEGY_IDS.join("|")}|desk] [--markets perp:BTC,spot:ETH,stock:AAPL] [--interval ${BACKTEST_INTERVALS.join("|")}] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--cash 10000] [--fee-bps 10] [--leverage N] [--param name=value]… [--half-spread-bps 1] [--participation 0.05] [--level-bps 2] [--holdout] [--no-benchmark] [--json] [--no-save] [--cache DIR] [--home DIR] [--quiet]
        npm run account:backtest -- --trials [--json] [--home DIR]
        npm run account:backtest -- --set-holdout YYYY-MM-DD [--home DIR]
 A strategy backtested on recorded bars through the paper account itself, beside buying and holding the same markets. Every run is counted
 in <home>/backtest/trials.jsonl; the data from the holdout's start on is held out, and only --holdout (or the owner's signature) runs on it.
-${STRATEGY_IDS.map((id) => `  ${id.padEnd(6)} ${STRATEGIES[id].name}: ${STRATEGIES[id].words}${Object.keys(STRATEGIES[id].params).length ? `\n         ${Object.entries(STRATEGIES[id].params).map(([k, p]) => `${k}=${p.default} (${p.min}–${p.max})`).join(" · ")}` : ""}`).join("\n")}`;
+${STRATEGY_IDS.map((id) => `  ${id.padEnd(6)} ${STRATEGIES[id].name}: ${STRATEGIES[id].words}${Object.keys(STRATEGIES[id].params).length ? `\n         ${Object.entries(STRATEGIES[id].params).map(([k, p]) => `${k}=${p.default} (${p.min}–${p.max})`).join(" · ")}` : ""}`).join("\n")}
+  desk   The desk: the account's own desk over the bars, hired at a paper account with the momentum script for a brain (perp: markets, 1h or 4h)
+         ${Object.entries(DESK_PARAMS).map(([k, p]) => `${k}=${p.default} (${p.min}–${p.max})`).join(" · ")}`;
 
 export function parseBacktestArgs(argv: readonly string[], env: Record<string, string | undefined> = process.env, now = Date.now()): BacktestOptions | { error: string } | { help: true } | { trials: true; home: string; json: boolean } | { setHoldout: string; home: string } {
   const flags = new Map<string, string | true>();
@@ -210,7 +215,8 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
     const n = Number(v);
     return Number.isFinite(n) ? n : `${name} is a number, not "${v.slice(0, 20)}"`;
   };
-  const spec = strategySpec(str("--strategy", "tsmom"), params);
+  const id = str("--strategy", "tsmom");
+  const spec = id === "desk" ? deskSpec(params) : strategySpec(id, params);
   if (typeof spec === "string") return { error: spec };
   const refs = parseMarkets(str("--markets", "perp:BTC"));
   if (typeof refs === "string") return { error: refs };
