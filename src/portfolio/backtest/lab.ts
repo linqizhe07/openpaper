@@ -19,7 +19,7 @@
  * A run itself is the engine's (backtest/engine.ts) over the history kept in the home (backtest/data.ts), with the same markets bought and
  * held beside it, and it is kept in <home>/backtest/runs/<id>.json. Who asked is said, not proven: an unsigned request names the seat it
  * says it is (the service's routes take no signature to run a backtest, and an unsigned run never reaches the holdout); the owner's look at
- * the holdout is theirs by signature. */
+ * the holdout is theirs by signature, and so is a run of the desk itself (deskAskOf), which builds a whole account to trade in. */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -297,7 +297,7 @@ export function deskSpec(raw: Record<string, number | string> = {}): DeskSpec | 
 }
 
 export interface LabAsk {
-  /** a strategy (backtest/strategies.ts), or the desk itself (backtest/desk.ts: the owner's terminal and the owner's look only) */
+  /** a strategy (backtest/strategies.ts), or the desk itself (backtest/desk.ts: the owner's signature and terminal only) */
   spec: StrategySpec | DeskSpec;
   refs: MarketRef[];
   interval: CandleInterval;
@@ -484,7 +484,7 @@ export function askOf(body: Record<string, unknown>): Omit<LabAsk, "by" | "windo
   if (body.params !== undefined && (typeof body.params !== "object" || body.params === null || Array.isArray(body.params))) return "params is {name: number}";
   const params = (body.params ?? {}) as Record<string, unknown>;
   for (const [k, v] of Object.entries(params)) if (typeof v !== "number" && typeof v !== "string") return `params.${k.slice(0, 30)} is a number`;
-  if (body.strategy === "desk") return "the desk runs at the owner's terminal (npm run account:backtest -- --strategy desk), where it builds a whole account to trade in: a request runs a strategy";
+  if (body.strategy === "desk") return "the desk runs by the owner's signature (the Backtest page's desk mode: setBacktest desk) or at their terminal (npm run account:backtest -- --strategy desk): it builds a whole account to trade in, so no unsigned request runs it";
   const spec = strategySpec(typeof body.strategy === "string" ? body.strategy : "tsmom", params as Record<string, number | string>);
   if (typeof spec === "string") return spec;
   const markets = body.markets === undefined ? "perp:BTC" : typeof body.markets === "string" ? body.markets : Array.isArray(body.markets) && body.markets.every((m) => typeof m === "string") ? body.markets.join(",") : undefined;
@@ -533,6 +533,39 @@ export function askOf(body: Record<string, unknown>): Omit<LabAsk, "by" | "windo
     benchmark: body.benchmark !== false,
     ...(typeof seat === "string" ? { seat } : {}),
   };
+}
+
+const DESK_FIELDS = ["markets", "interval", "from", "to", "cash", "params", "halfSpreadBps", "participation", "levelBps"] as const;
+/** the bars the desk steps over: a day's bar is longer than its longest cycle */
+export const DESK_INTERVALS: readonly CandleInterval[] = ["1h", "4h"];
+
+/** WHAT THE OWNER'S SIGNATURE ASKS OF THE DESK (setBacktest desk, the Backtest page's desk mode): the signed value is the ask as JSON, read
+ * as strictly as a request is — the markets (perpetuals), the bars (1h or 4h), the window, the money, the desk's own numbers
+ * (desk-params.ts) and the cost model, a field it does not know refused. What it leaves out is a request's default. A training run like any
+ * other: its window ends at the holdout's start at the latest. The desk fills at its paper account's own fee */
+export function deskAskOf(value: string): (Omit<LabAsk, "by" | "window" | "save" | "maxSteps" | "benchmark" | "spec"> & { spec: DeskSpec }) | string {
+  if (value.length > 2_000) return "the desk's ask is 2,000 characters of JSON at most";
+  let body: unknown;
+  try {
+    body = JSON.parse(value);
+  } catch {
+    return `the desk's ask is JSON: {${DESK_FIELDS.join(", ")}}`;
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return `the desk's ask is {${DESK_FIELDS.join(", ")}}`;
+  const b = body as Record<string, unknown>;
+  for (const k of Object.keys(b)) if (!(DESK_FIELDS as readonly string[]).includes(k)) return `the desk is asked with ${DESK_FIELDS.join(", ")} — not "${k.slice(0, 30)}"`;
+  const { params, ...rest } = b;
+  if (params !== undefined && (typeof params !== "object" || params === null || Array.isArray(params))) return "params is {name: number}";
+  for (const [k, v] of Object.entries(params ?? {})) if (typeof v !== "number") return `params.${k.slice(0, 30)} is a number`;
+  const spec = deskSpec((params ?? {}) as Record<string, number>);
+  if (typeof spec === "string") return spec;
+  // the rest is read as a request's is, its words and its defaults
+  const ask = askOf({ ...rest, strategy: "hold" });
+  if (typeof ask === "string") return ask;
+  if (ask.refs.some((r) => r.cls !== "perp")) return "the desk trades perpetuals here: perp:COIN markets only";
+  if (!DESK_INTERVALS.includes(ask.interval)) return "the desk steps over 1h or 4h bars: a day's bar is longer than its longest cycle";
+  const { benchmark: _benchmark, ...run } = ask;
+  return { ...run, spec, feeBps: PAPER_FEE_BPS };
 }
 
 /** WHAT CAN BE ASKED, for a form (the page's Backtest) and an agent alike: the strategies with each number's default, bounds and words, the

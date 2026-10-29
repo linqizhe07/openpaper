@@ -16,8 +16,12 @@
                                             strategies with each number's default, bounds and words; the bar sizes; the markets)
      POST /api/account/backtest             a run: the form's fields as the account reads them (a refusal said in its words), the page
                                             named as who asked
+     POST /api/account/backtest/walk        a walk-forward: the form's grid walked through the folds of the training window
      GET  /api/account/backtest?id=         a kept training run in full: its curve, the buy-and-hold's, its fills
-   What the owner signs (quoteDialog: the words first, then the fields signed): setBacktest evaluate <run id> · setBacktest holdout <day>.
+   What the owner signs (quoteDialog: the words first, then the fields signed): setBacktest evaluate <run id> · setBacktest holdout <day> ·
+   setBacktest desk <the form's ask as JSON> — THE DESK ITSELF, its seats, Risk and the plan's exits, hired in an account of its own and
+   played over the training data: a whole account built to trade in and a minute and more of stepping, so the owner's signature runs it,
+   never an unsigned request. Its run is a training run like any other, read back and opened as one.
 
    THE PAGE: a header (what this is in a line; the holdout and its looks, Move… for the owner; the ledger's state) · the form (strategy, its
    numbers, markets, bars, the window — its end at the holdout's start at the latest —, money, fee, leverage, the cost model, the
@@ -26,8 +30,10 @@
    the fills) · the trials (the ledger's latest runs, newest first: Open, and the owner's Look at the holdout…). Nothing is made up: every
    figure is the account's. */
 
-/* what the form runs: "run" (one strategy over the window) or "walk" (a grid walked forward through the folds) */
+/* what the form runs: "run" (one strategy over the window), "walk" (a grid walked forward through the folds) or "desk" (the desk itself,
+   by the owner's signature) */
 const BT = { list: null, listErr: "", view: null, running: false, soon: false, mode: "run" };
+const BT_MODES = ["run", "walk", "desk"];
 /* the owner's looks at the held-out data, as their signature was answered, kept in this browser by run id (the latest BT_LOOKS_MOST) */
 const BT_LOOKS_KEY = "openpaper-backtest-looks";
 const BT_LOOKS_MOST = 12;
@@ -85,7 +91,7 @@ function btDraw(el, owner) {
     form.innerHTML = btFormHtml(L.catalog, L.holdout);
     form.dataset.drawn = "1";
   }
-  if (form) btModeSync(form);
+  if (form) btModeSync(form, owner);
   btPut(el, "result", btResultHtml(BT.view));
   btPut(el, "trials", btTrialsHtml(L, owner, btLooks()));
 }
@@ -100,9 +106,9 @@ function btWire(el) {
     if (t.dataset.btAct === "look") return void btLook(id);
     if (t.dataset.btAct === "holdout") return void btMoveHoldout();
     if (t.dataset.btAct === "mode") {
-      BT.mode = t.dataset.mode === "walk" ? "walk" : "run";
+      BT.mode = BT_MODES.includes(t.dataset.mode) ? t.dataset.mode : "run";
       const form = el.querySelector("[data-bt-form]");
-      if (form) btModeSync(form);
+      if (form) btModeSync(form, owns());
     }
   });
   el.addEventListener("change", (e) => {
@@ -115,31 +121,49 @@ function btWire(el) {
     e.preventDefault();
     const checked = (name) => !!(f.querySelector(`[name="${name}"]`) || {}).checked;
     if (BT.mode === "walk") btWalkSend(btWalkAskOf(formFields(f), checked("rolling")), f);
+    else if (BT.mode === "desk") btDeskSend(btDeskAskOf(formFields(f)));
     else btSend(btAskOf(formFields(f), checked("benchmark")), f);
   });
 }
 
 // ---- the form ----
 
-/* a number's name as a person reads it: lookbackDays → Lookback days, enterApr → Enter APR */
+/* a number's name as a person reads it: lookbackDays → Lookback days, enterApr → Enter APR, tpPct → Take-profit (%), sizeUsd → Size ($) */
 const btParamLabel = (k) => {
-  const w = String(k).replace(/([A-Z])/g, " $1").toLowerCase().replace(/\bapr\b/g, "APR");
+  const w = String(k)
+    .replace(/([A-Z])/g, " $1")
+    .toLowerCase()
+    .replace(/\bapr\b/g, "APR")
+    .replace(/^tp\b/, "take-profit")
+    .replace(/^sl\b/, "stop")
+    .replace(/ pct$/, " (%)")
+    .replace(/ usd$/, " ($)");
   return w.charAt(0).toUpperCase() + w.slice(1);
 };
 /* a day (YYYY-MM-DD) `days` before another */
 const btDayBefore = (day, days) => new Date(Date.parse(`${day}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
 
-/** a strategy's numbers as fields, each with its default, its bounds and its words; none for a strategy that takes none */
-function btParamsHtml(def) {
+/** a strategy's numbers as fields, each with its default, its bounds and its words; none for a strategy that takes none. `prefix`: the
+ * fields' names ("p." a strategy's, "d." the desk's) */
+function btParamsHtml(def, prefix = "p.") {
   const P = (def && def.params) || {};
   const keys = Object.keys(P);
   if (!keys.length) return '<p class="dim small">It takes no numbers.</p>';
   return `<div class="bt-grid">${keys
     .map((k) => {
       const p = P[k];
-      return `<label class="fld">${esc(btParamLabel(k))}<input name="p.${esc(k)}" type="number" min="${p.min}" max="${p.max}" step="${p.integer ? 1 : "any"}" value="${p.default}" inputmode="decimal" required><span class="bt-hint">${esc(p.words)} · ${p.min} to ${p.max}</span></label>`;
+      return `<label class="fld">${esc(btParamLabel(k))}<input name="${esc(prefix)}${esc(k)}" type="number" min="${p.min}" max="${p.max}" step="${p.integer ? 1 : "any"}" value="${p.default}" inputmode="decimal" required><span class="bt-hint">${esc(p.words)} · ${p.min} to ${p.max}</span></label>`;
     })
     .join("")}</div>`;
+}
+
+/** THE DESK'S PART of the form: what it is, its numbers (the catalog's desk, as a strategy's are drawn), who runs it and how far; the
+ * markets, bars, window, money and cost model are the form's own */
+function btDeskHtml(desk) {
+  if (!desk) return '<p class="dim small">This account does not run the desk from here: <span class="mono">npm run account:backtest -- --strategy desk</span> at your terminal.</p>';
+  const most = Number(desk.mostSteps) || 0;
+  const words = String(desk.words || "");
+  return `<p class="dim small bt-words">${esc(words.charAt(0).toUpperCase() + words.slice(1))}.</p>${btParamsHtml(desk, "d.")}<p class="dim small">Perpetuals only (<span class="mono">perp:BTC, perp:ETH</span>), in ${esc((desk.intervals || ["1h", "4h"]).join(" or "))} bars, at the paper account's own fee, beside buying and holding them. Your signature runs it: it builds a whole account to trade in, about a minute for a hundred and eighty days of hourly bars${most ? ` — ${esc(most.toLocaleString("en-US"))} steps at most here` : ""}. Longer runs: <span class="mono">npm run account:backtest -- --strategy desk</span> at your terminal.</p><p class="msg wait" data-bt-desk-owner hidden>This browser does not sign for the account: the desk runs by the owner's signature.</p>`;
 }
 
 /** the form, from the catalog: the strategy and its numbers, the markets, the bars, the window ending at the holdout's start at the latest,
@@ -154,23 +178,23 @@ function btFormHtml(cat, holdout) {
   const kinds = (cat && cat.markets && cat.markets.kinds) || [];
   const most = (cat && cat.markets && cat.markets.most) || 12;
   const walk = (cat && cat.walk) || { folds: [2, 10], combosMost: 50 };
-  return `<div class="seg bt-modes" role="group" aria-label="What to run"><button type="button" data-bt-act="mode" data-mode="run" aria-pressed="true">One run</button><button type="button" data-bt-act="mode" data-mode="walk" aria-pressed="false">Walk forward</button></div>
+  return `<div class="seg bt-modes" role="group" aria-label="What to run"><button type="button" data-bt-act="mode" data-mode="run" aria-pressed="true">One run</button><button type="button" data-bt-act="mode" data-mode="walk" aria-pressed="false">Walk forward</button><button type="button" data-bt-act="mode" data-mode="desk" aria-pressed="false">The desk</button></div>
 <p class="dim small" data-bt-mode-words>${esc(BT_MODE_WORDS.run)}</p>
-<label class="fld">Strategy${select("strategy", ids.map((id) => [id, S[id].name]), first)}</label>
+<div class="bt-strategy" data-bt-strategy><label class="fld">Strategy${select("strategy", ids.map((id) => [id, S[id].name]), first)}</label>
 <p class="dim small bt-words" data-bt-words>${esc((S[first] || {}).words || "")}</p>
-<div data-bt-params>${btParamsHtml(S[first])}</div>
+<div data-bt-params>${btParamsHtml(S[first])}</div></div>
+<div class="bt-desk" data-bt-desk hidden>${btDeskHtml(cat && cat.desk)}</div>
 <div class="bt-walk" data-bt-walk hidden><div data-bt-grid>${btGridHtml(S[first])}</div><div class="row2"><label class="fld">Folds<input name="folds" type="number" min="${walk.folds[0]}" max="${walk.folds[1]}" step="1" value="4" inputmode="numeric"><span class="bt-hint">the window is cut into folds + 1 stretches</span></label><label class="chk1 bt-rolling"><input type="checkbox" name="rolling"> Rolling: each fold picks on the stretch before it only</label></div><p class="dim small">On each fold every combination runs on its past and the best Sharpe runs on the fold; the folds chained are the walk. ${esc(walk.combosMost)} combinations at most. Every run is a row of the ledger.</p></div>
 <label class="fld">Markets<input name="markets" value="${esc(d.markets || "perp:BTC")}" autocomplete="off" spellcheck="false" placeholder="perp:BTC, spot:ETH, stock:SPY" aria-describedby="bt-markets-h"></label>
 <p class="dim small" id="bt-markets-h">${kinds.map((k) => `<span class="mono">${esc(k.example)}</span> ${esc(k.words)}`).join(" · ")}. ${most} at most, comma-separated.</p>
 <div class="row2"><label class="fld">Bars${select("interval", ((cat && cat.intervals) || ["1h", "4h", "1d"]).map((i) => [i, i]), d.interval || "1h")}</label><label class="fld">Paper money ($)<input name="cash" type="number" min="100" max="100000000" step="any" value="${d.cash || 10000}" inputmode="decimal"></label></div>
 <div class="row2"><label class="fld">From<input name="from" type="date" value="${end ? btDayBefore(end, d.windowDays || 180) : ""}"${end ? ` max="${end}"` : ""}></label><label class="fld">To<input name="to" type="date" value="${end}"${end ? ` max="${end}"` : ""}></label></div>
 <p class="dim small">${end ? `The window ends at the holdout's start, ${esc(end)}, at the latest: the data from then on is the owner's to run on, by signature.` : "The window ends at the holdout's start at the latest."}</p>
-<div class="row2"><label class="fld">Fee a fill (bps)<input name="feeBps" type="number" min="0" max="500" step="any" value="${d.feeBps ?? 10}" inputmode="decimal"></label><label class="fld">Leverage<input name="leverage" type="number" min="1" max="50" step="any" placeholder="the strategy's" inputmode="decimal"></label></div>
+<div class="row2" data-bt-fee><label class="fld">Fee a fill (bps)<input name="feeBps" type="number" min="0" max="500" step="any" value="${d.feeBps ?? 10}" inputmode="decimal"></label><label class="fld">Leverage<input name="leverage" type="number" min="1" max="50" step="any" placeholder="the strategy's" inputmode="decimal"></label></div>
 <details class="bt-costs"><summary>The cost model</summary><div class="bt-grid"><label class="fld">Half spread (bps)<input name="halfSpreadBps" type="number" min="0" max="500" step="any" value="${costs.halfSpreadBps ?? 1}"><span class="bt-hint">either side of each bar's open</span></label><label class="fld">Participation<input name="participation" type="number" min="0.0001" max="1" step="any" value="${costs.participation ?? 0.05}"><span class="bt-hint">the share of the bar before's dollars the book holds</span></label><label class="fld">Level gap (bps)<input name="levelBps" type="number" min="0" max="500" step="any" value="${costs.levelBps ?? 2}"><span class="bt-hint">between the book's five levels</span></label></div></details>
 <label class="chk1" data-bt-benchmark><input type="checkbox" name="benchmark"${d.benchmark === false ? "" : " checked"}> Buy and hold beside it</label>
 <div class="msg" data-bt-msg role="status"></div>
-<button type="submit" class="btn btn-primary btn-block" data-bt-go>Run backtest</button>
-<p class="dim small">The desk itself — its seats, Risk, the plan's exits — runs over the bars at your terminal, in an account of its own: <span class="mono">npm run account:backtest -- --strategy desk</span>. Its runs are listed below with the rest.</p>`;
+<button type="submit" class="btn btn-primary btn-block" data-bt-go>Run backtest</button>`;
 }
 
 /* another strategy picked: its words and its numbers, in place of the last one's */
@@ -188,21 +212,38 @@ function btStrategy(form, cat, id) {
 const BT_MODE_WORDS = {
   run: "One strategy over the window, beside buying and holding the same markets.",
   walk: "Walk forward: the numbers picked on each fold's past, then tried on the fold — what picking would have earned, had it been done as time went.",
+  desk: "The desk itself, played over the bars in an account of its own: how its machinery fares on those prices — not any model's judgement.",
 };
-/** the form as its mode shows it: the switch pressed, the walk's fields shown or not, the buy-and-hold (a walk runs none), the button's word */
-function btModeSync(form) {
-  const walk = BT.mode === "walk";
-  for (const b of form.querySelectorAll('[data-bt-act="mode"]')) b.setAttribute("aria-pressed", String((b.dataset.mode === "walk") === walk));
+/* the button's word in each mode, and while it runs */
+const BT_GO = { run: ["Run backtest", "Running…"], walk: ["Walk forward", "Walking…"], desk: ["Run the desk…", "Running…"] };
+/** the form as its mode shows it: the switch pressed; the walk's fields, or the desk's in place of the strategy, shown or not; the
+ * buy-and-hold checkbox (a walk runs none, the desk always runs it), the fee and the leverage (the desk's are its paper account's and its
+ * own) shown or not; a day's bar not offered to the desk; the button's word — off for the desk where this browser does not sign */
+function btModeSync(form, owner) {
+  const mode = BT_MODES.includes(BT.mode) ? BT.mode : "run";
+  const desk = mode === "desk";
+  for (const b of form.querySelectorAll('[data-bt-act="mode"]')) b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
   const words = form.querySelector("[data-bt-mode-words]");
-  if (words) setText(words, walk ? BT_MODE_WORDS.walk : BT_MODE_WORDS.run);
-  const block = form.querySelector("[data-bt-walk]");
-  if (block) block.hidden = !walk;
-  const bench = form.querySelector("[data-bt-benchmark]");
-  if (bench) bench.hidden = walk;
+  if (words) setText(words, BT_MODE_WORDS[mode]);
+  const show = (q, on) => {
+    const n = form.querySelector(q);
+    if (n) n.hidden = !on;
+  };
+  show("[data-bt-walk]", mode === "walk");
+  show("[data-bt-strategy]", !desk);
+  show("[data-bt-desk]", desk);
+  show("[data-bt-benchmark]", mode === "run");
+  show("[data-bt-fee]", !desk);
+  show("[data-bt-desk-owner]", desk && !owner);
+  const bars = form.querySelector('select[name="interval"]');
+  if (bars) {
+    for (const o of bars.querySelectorAll("option")) o.disabled = desk && o.value === "1d";
+    if (desk && bars.value === "1d") bars.value = "4h";
+  }
   const go = form.querySelector("[data-bt-go]");
   if (go) {
-    go.disabled = BT.running;
-    setText(go, BT.running ? (walk ? "Walking…" : "Running…") : walk ? "Walk forward" : "Run backtest");
+    go.disabled = BT.running || (desk && !owner);
+    setText(go, BT_GO[mode][BT.running ? 1 : 0]);
   }
 }
 
@@ -237,6 +278,16 @@ function btAskOf(f, benchmark) {
   for (const [k, v] of Object.entries(f)) if (k.startsWith("p.") && String(v).trim() !== "") params[k.slice(2)] = Number(v);
   const num = (k) => (String(f[k] ?? "").trim() === "" ? undefined : Number(f[k]));
   const body = { strategy: f.strategy, params, markets: String(f.markets || "").trim(), interval: f.interval, from: f.from || undefined, to: f.to || undefined, cash: num("cash"), feeBps: num("feeBps"), leverage: num("leverage"), halfSpreadBps: num("halfSpreadBps"), participation: num("participation"), levelBps: num("levelBps"), benchmark, seat: "page" };
+  return Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined && v !== ""));
+}
+
+/** what the desk is asked to run, from the form as typed: its numbers, the markets, the bars, the window, the money and the cost model (the
+ * fee is its paper account's, the buy-and-hold always beside it); a field left empty is the account's default */
+function btDeskAskOf(f) {
+  const params = {};
+  for (const [k, v] of Object.entries(f)) if (k.startsWith("d.") && String(v).trim() !== "") params[k.slice(2)] = Number(v);
+  const num = (k) => (String(f[k] ?? "").trim() === "" ? undefined : Number(f[k]));
+  const body = { markets: String(f.markets || "").trim(), interval: f.interval, from: f.from || undefined, to: f.to || undefined, cash: num("cash"), params, halfSpreadBps: num("halfSpreadBps"), participation: num("participation"), levelBps: num("levelBps") };
   return Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined && v !== ""));
 }
 
@@ -288,6 +339,29 @@ async function btWalkSend(body, form) {
     btRead(true);
     btAgain();
   }
+}
+
+/** THE DESK, BY THE OWNER'S SIGNATURE: what it would run said in words first (the steps, about how long), then signed; the sheet waits while
+ * it runs — the account takes other instructions meanwhile — and its run, kept as any, is read for the curves and the fills */
+function btDeskSend(body) {
+  if (BT.running || typeof quoteDialog !== "function") return;
+  quoteDialog({
+    title: "Run the desk over the bars",
+    sub: "The account's own desk is hired at a paper account in an account of its own and played over the training data, the momentum script thinking for it: what comes of it is how the desk's machinery fares on those prices, not any model's judgement. A training run, counted in the trials like any other.",
+    draft: () => ({ type: "setBacktest", change: "desk", value: JSON.stringify(body) }),
+    go: "Sign and run",
+    sending: "Running the desk over the bars: a minute or more. The account takes other instructions meanwhile.",
+    done: async (r) => {
+      const res = r && r.body && r.body.result;
+      if (res && res.id) {
+        const kept = await api(`/api/account/backtest?id=${encodeURIComponent(res.id)}`);
+        BT.view = kept && kept.ok ? btViewOfKept(kept) : { ...res };
+        btShowResult();
+      }
+      btRead(true);
+      return res && res.metrics ? `The desk: ${btPctText(res.metrics.returnPct)} over the window` : "The desk ran";
+    },
+  });
 }
 
 // ---- the runs kept ----

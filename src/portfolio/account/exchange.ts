@@ -648,8 +648,9 @@ export class AccountEngine {
     if (MONEY_TYPES.has(action.type) && Math.abs(now - action.nonce) > MONEY_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a money instruction is good for ${MONEY_TTL_MS / 60_000} minutes` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a money instruction is good for ${MONEY_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
     // a paper account started again or topped up: signed and sent at once, never an envelope kept to wipe the book days later
     if (PAPER_TYPES.has(action.type) && Math.abs(now - action.nonce) > PAPER_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a paper account's reset or paper money added is good for ${PAPER_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a paper account's reset or paper money added is good for ${PAPER_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
-    // the lab's holdout moved or looked at: signed and sent at once, never an envelope kept to spend a look at the held-out data later
-    if (LAB_TYPES.has(action.type) && Math.abs(now - action.nonce) > LAB_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a look at the held-out data, or the holdout moved, is good for ${LAB_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a look at the held-out data, or the holdout moved, is good for ${LAB_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
+    // the lab's holdout moved or looked at, or the desk run: signed and sent at once, never an envelope kept to spend a look at the held-out
+    // data, or a minute of the desk's stepping, later
+    if (LAB_TYPES.has(action.type) && Math.abs(now - action.nonce) > LAB_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a backtest the owner signs (a look at the held-out data, the holdout moved, the desk's run) is good for ${LAB_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a backtest the owner signs (a look at the held-out data, the holdout moved, the desk's run) is good for ${LAB_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
     // a browser signs only ITSELF out: another device's signature, or an owner's wallet key, signs no device out (Devices lets a browser
     // in; a change of signers is convertToMultiSigUser) — and a sign-out is signed and sent at once, never an envelope kept for later
     if (action.type === "signOut" && action.device !== signer) return this.refused(no("E_ACCOUNT_BAD_ACTION", { message: "a browser signs only itself out: this sign-out names another device", detail: { signer, device: action.device } }), envelope, signer);
@@ -846,7 +847,7 @@ export class AccountEngine {
         return { ok: true, kind: "account", summary: r.summary };
       }
       case "setBacktest": {
-        // the lab (backtest/lab.ts): the holdout moved, or a training run tried on the held-out data — the owner's, by signature
+        // the lab (backtest/lab.ts): the holdout moved, a training run tried on the held-out data, or the desk run — the owner's, by signature
         if (!this.host.backtest) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no backtests" });
         const r = await this.host.backtest(action);
         if (isRefusal(r)) return r;
@@ -1682,7 +1683,7 @@ export class AccountEngine {
         if (isRefusal(w)) return w;
         quote = { words: w.words, feeUsd: 0, receiveUsd: w.usd, lands: "at once", access: "owner", final: true, legs: [] };
       }
-      // the lab's holdout moved, or a look at the held-out data: what it would do, in words, before the dialog shows it to be signed
+      // the lab's holdout moved, a look at the held-out data, or the desk run: what it would do, in words, before the dialog shows it to be signed
       if (action.type === "setBacktest") {
         const wrong = malformed(action);
         if (wrong) return no("E_ACCOUNT_BAD_ACTION", { message: wrong });

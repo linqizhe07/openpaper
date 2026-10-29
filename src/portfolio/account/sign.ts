@@ -176,7 +176,8 @@ export type OwnerAction =
    * in (its curve and what it made or lost since it started count it as put in, never as a gain) */
   | { type: "topUpPaper"; venue: string; usd: string; nonce: number }
   /** THE LAB (backtest/lab.ts): `holdout` holds out the data from the day `value` (YYYY-MM-DD) on; `evaluate` tries the training run
-   * `value` (its id) on the held-out data — the owner's look, counted */
+   * `value` (its id) on the held-out data — the owner's look, counted; `desk` runs the desk itself over the training data, `value` its ask
+   * as JSON (lab.ts deskAskOf) */
   | { type: "setBacktest"; change: string; value: string; nonce: number };
 
 export type AgentAction =
@@ -246,8 +247,8 @@ export const BRAIN_KEY_TTL_MS = MONEY_TTL_MS;
  * envelope is good for as long as a money instruction, around the moment it is dated — never one kept to start the book again days later */
 export const PAPER_TYPES: ReadonlySet<string> = new Set(["resetPaper", "topUpPaper"]);
 export const PAPER_TTL_MS = MONEY_TTL_MS;
-/** the lab's holdout moved or looked at (setBacktest): signed and sent at once — an envelope kept for later is never one that spends a look
- * at the held-out data, or moves the holdout, days after it was signed */
+/** the lab's holdout moved or looked at, or the desk run over the bars (setBacktest holdout · evaluate · desk): signed and sent at once — an
+ * envelope kept for later is never one that spends a look at the held-out data, moves the holdout or runs the desk days after it was signed */
 export const LAB_TYPES: ReadonlySet<string> = new Set(["setBacktest"]);
 export const LAB_TTL_MS = MONEY_TTL_MS;
 /** a sign-out is signed and sent at once: an envelope kept for later is never one that signs a browser out of the account days after */

@@ -104,9 +104,10 @@ import { BOOK_TOP, joinHubs, StreamHub, type HubTick, type HubVenue, type Market
 import { applyBrainKey, BrainKeyStage, envBlocksOf, envWinsOf, type BrainKeyDone } from "./account/brain-keys.ts";
 import { DETECT_BODY_WORDS, detectBrain, type Detected } from "./account/brain-detect.ts";
 import { brainProviders, presetBest, presetHost, testBrain } from "./account/brains.ts";
-import { realHistorySources, type HistorySources } from "./backtest/data.ts";
+import { marketText, realHistorySources, type HistorySources } from "./backtest/data.ts";
 import { labWalkForward, WALK_COMBOS_MOST, WALK_FOLDS, WALK_RUNS_MOST, walkAskOf, walkSummary } from "./backtest/walk.ts";
-import { askOf, labCatalog, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, type LabDeps, type TrialRow } from "./backtest/lab.ts";
+import { askOf, DESK_INTERVALS, deskAskOf, holdoutStartMs, labCatalog, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, WINDOW_DEFAULT_DAYS, type LabDeps, type TrialRow } from "./backtest/lab.ts";
+import { DESK_NAME, DESK_PARAMS, deskParamWords, DESK_WORDS } from "./backtest/desk-params.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** the most work a backtest the service is asked for may take, in steps times markets: 200,000 is two years of hourly bars on ten markets
@@ -116,6 +117,14 @@ export const BACKTEST_API_WORK = 200_000;
 /** the most work a walk-forward the service is asked for may take, over all its runs, in steps times markets: twice a run's, since a walk is
  * many short runs (some fifty seconds at the speed measured on this machine) */
 export const BACKTEST_WALK_WORK = 400_000;
+/** the most steps the desk may take when the owner's signature runs it (setBacktest desk): 4,500 holds the 180 days of hourly bars a run
+ * takes when it names no start (4,320). The desk is a whole account stepping — about twenty milliseconds a step measured on this machine
+ * (2,823 steps in 57 seconds), some ninety seconds at the most; the command at the owner's terminal may take more */
+export const BACKTEST_DESK_STEPS = 4_500;
+/** a desk step's time as measured on this machine, for the words before the owner signs: how long the run will take, about */
+const DESK_STEP_MS = 20;
+/** a setBacktest whose change is none of the three, in words */
+const LAB_CHANGES = (change: unknown): string => `a backtest's change is holdout (a day), evaluate (a training run's id) or desk (the desk's run, as JSON), not "${String(change).slice(0, 30)}"`;
 export const FIXTURES = join(ROOT, "fixtures", "home", "portfolio");
 
 export interface Seeds {
@@ -180,8 +189,9 @@ export interface ServiceOptions {
    * starts its own instead (watchStreams), and without either nothing is streamed — every price is a REST read, as before */
   streams?: MarketHub | undefined;
   /** THE LAB (backtest/lab.ts): the history its backtests read (default: Hyperliquid's perpetuals, Coinbase's coins and the US stocks line,
-   * keyless, over the service's own network; stand-ins in tests) and the most steps a run the service is asked for may take */
-  backtest?: { sources?: HistorySources | undefined; maxSteps?: number | undefined; maxWalkWork?: number | undefined } | undefined;
+   * keyless, over the service's own network; stand-ins in tests), the most steps a run the service is asked for may take, the most work a
+   * walk-forward may, and the most steps the desk may when the owner signs for it */
+  backtest?: { sources?: HistorySources | undefined; maxSteps?: number | undefined; maxWalkWork?: number | undefined; maxDeskSteps?: number | undefined } | undefined;
 }
 
 /** one slice of an order (or any step an agent flies): where, what, and the agent's words for it */
@@ -1892,14 +1902,23 @@ export class PortfolioService {
   /** THE LEDGER as it stands: the holdout, the rows and whether their chain holds, how many runs and distinct strategies, the latest runs */
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
-    return { ...labList(this.opts.home, Date.parse(this.now()), limit), catalog: { ...labCatalog(), walk: { folds: WALK_FOLDS, combosMost: WALK_COMBOS_MOST, runsMost: WALK_RUNS_MOST, mostWork: this.opts.backtest?.maxWalkWork ?? BACKTEST_WALK_WORK } } };
+    return {
+      ...labList(this.opts.home, Date.parse(this.now()), limit),
+      catalog: {
+        ...labCatalog(),
+        walk: { folds: WALK_FOLDS, combosMost: WALK_COMBOS_MOST, runsMost: WALK_RUNS_MOST, mostWork: this.opts.backtest?.maxWalkWork ?? BACKTEST_WALK_WORK },
+        // the desk itself: its numbers as a strategy's are shown, run by the owner's signature only
+        desk: { name: DESK_NAME, words: DESK_WORDS, params: DESK_PARAMS, intervals: DESK_INTERVALS, mostSteps: this.opts.backtest?.maxDeskSteps ?? BACKTEST_DESK_STEPS, by: "the owner's signature" },
+      },
+    };
   }
   /** one kept run in full — its trades, its curve, its notes — with its trial and how it is judged against the ledger now */
   backtestKept(id: string): Record<string, unknown> | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     return labRead(this.opts.home, id.trim());
   }
-  /** the owner's signed setBacktest, once the door has checked it: the holdout moved, or a training run tried on the held-out data */
+  /** the owner's signed setBacktest, once the door has checked it: the holdout moved, a training run tried on the held-out data, or the
+   * desk run over the training data */
   private async labAct(a: Extract<OwnerAction, { type: "setBacktest" }>): Promise<Refusal | { ok: true; summary: string; data?: unknown }> {
     if (a.change === "holdout") {
       // never while a backtest runs: a run that read the holdout before it moved would be counted as tried before it, over days it now holds out
@@ -1911,9 +1930,20 @@ export class PortfolioService {
       if (isRefusal(out)) return out;
       return { ok: true, summary: `run ${a.value.trim()} tried on the held-out data from ${out.holdout.start}: look ${out.looks ?? 1} at it`, data: outcomeSummary(out, { curve: true }) };
     }
-    return no("E_ACCOUNT_BAD_ACTION", { message: `a backtest's change is holdout (a day) or evaluate (a training run's id), not "${String(a.change).slice(0, 30)}"` });
+    if (a.change === "desk") {
+      // THE DESK ITSELF over the training data, by the owner's signature: a whole account built to trade in and let go (backtest/desk.ts), a
+      // minute and more of stepping — not for an unsigned request, which any program that reaches the account can send. A training run like
+      // any other, counted and kept, its figures read back by anyone; the owner looks at the held-out data with it after, as with any
+      const ask = deskAskOf(a.value);
+      if (typeof ask === "string") return no("E_ACCOUNT_BAD_ACTION", { message: ask });
+      const out = await this.labOnce(() => labRun({ ...ask, window: "train", benchmark: true, save: true, by: "owner", maxSteps: this.opts.backtest?.maxDeskSteps ?? BACKTEST_DESK_STEPS }, this.labDeps()));
+      if (isRefusal(out)) return out;
+      return { ok: true, summary: `the desk ran over ${out.trial.markets.join(", ")} from ${out.trial.from.slice(0, 10)} to ${out.trial.to.slice(0, 10)} as run ${out.id}`, data: outcomeSummary(out) };
+    }
+    return no("E_ACCOUNT_BAD_ACTION", { message: LAB_CHANGES(a.change) });
   }
-  /** what a setBacktest would do, in words, for the dialog before it is signed — or why not, as the door would say it */
+  /** what a setBacktest would do, in words, for the dialog before it is signed — or why not, as the door would say it (the desk's steps
+   * counted from its window, so a run past them is refused before it is signed) */
   private labWords(a: Extract<OwnerAction, { type: "setBacktest" }>): Refusal | { words: string } {
     const now = Date.parse(this.now());
     const h = readHoldout(this.opts.home, now);
@@ -1933,7 +1963,24 @@ export class PortfolioService {
       const looks = trials.filter((r) => r.window === "holdout").length;
       return { words: `Run ${t.strategy}${params ? ` (${params})` : ""} on ${t.markets.join(", ")} in ${t.interval} bars over the held-out data, from ${h.start} to now — look ${looks + 1} at it. A holdout looked at often is a holdout no more.` };
     }
-    return no("E_ACCOUNT_BAD_ACTION", { message: `a backtest's change is holdout (a day) or evaluate (a training run's id), not "${String(a.change).slice(0, 30)}"` });
+    if (a.change === "desk") {
+      const ask = deskAskOf(a.value);
+      if (typeof ask === "string") return no("E_ACCOUNT_BAD_ACTION", { message: ask });
+      // the window as the run will take it, and its steps: a run past them refused before it is signed, not after a minute of stepping
+      const cut = holdoutStartMs(h);
+      const to = ask.to ?? cut;
+      if (to > cut) return no("E_ACCOUNT_BAD_ACTION", { message: `the data from ${h.start} on is held out: the desk is tried before it (a window ending ${h.start} at the latest), and Look at the holdout… on the run it makes looks at it after` });
+      const from = ask.from ?? to - WINDOW_DEFAULT_DAYS * 86_400_000;
+      if (!(to > from)) return no("E_ACCOUNT_BAD_ACTION", { message: "a backtest's window ends after it starts" });
+      const steps = Math.floor((to - from) / INTERVAL_MS[ask.interval]);
+      const most = this.opts.backtest?.maxDeskSteps ?? BACKTEST_DESK_STEPS;
+      if (steps > most) return no("E_ACCOUNT_LIMIT", { message: `the desk steps ${most.toLocaleString("en-US")} times at most when it runs from here; this one would step about ${steps.toLocaleString("en-US")} — ${ask.interval === "1h" ? "4h bars or a shorter window" : "a shorter window"} (the terminal runs it longer)`, detail: { steps, most } });
+      const secs = Math.round((steps * DESK_STEP_MS) / 1000);
+      const took = secs < 2 ? "a second or two" : secs < 120 ? `some ${secs} seconds` : `some ${Math.round(secs / 60)} minutes`;
+      const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+      return { words: `Run the desk (${deskParamWords(ask.spec.params)}) on ${ask.refs.map(marketText).join(", ")} in ${ask.interval} bars from ${day(from)} to ${day(to)}, with $${ask.cashUsd.toLocaleString("en-US")} on paper beside buying and holding them: about ${steps.toLocaleString("en-US")} steps, ${took}. A training run, counted in the trials like any other.` };
+    }
+    return no("E_ACCOUNT_BAD_ACTION", { message: LAB_CHANGES(a.change) });
   }
 
   private liveDeps(): LiveDeps {
