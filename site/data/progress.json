@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 39,
+      "title": "The desk backtested: its seats over recorded bars, in an account of its own",
+      "mergedAt": "2026-10-29T17:08:07Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/39",
+      "branch": "feat/backtest-desk"
+    },
+    {
       "number": 38,
       "title": "The Backtest page: run a strategy, see it beside buy-and-hold, look at the holdout by signature",
       "mergedAt": "2026-10-29T16:52:05Z",
