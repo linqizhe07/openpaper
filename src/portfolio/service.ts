@@ -104,8 +104,14 @@ import { BOOK_TOP, joinHubs, StreamHub, type HubTick, type HubVenue, type Market
 import { applyBrainKey, BrainKeyStage, envBlocksOf, envWinsOf, type BrainKeyDone } from "./account/brain-keys.ts";
 import { DETECT_BODY_WORDS, detectBrain, type Detected } from "./account/brain-detect.ts";
 import { brainProviders, presetBest, presetHost, testBrain } from "./account/brains.ts";
+import { realHistorySources, type HistorySources } from "./backtest/data.ts";
+import { askOf, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, type LabDeps, type TrialRow } from "./backtest/lab.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+/** the most work a backtest the service is asked for may take, in steps times markets: 200,000 is two years of hourly bars on ten markets
+ * (some twenty-five seconds at the eight thousand market-steps a second measured on this machine); the command at the owner's terminal
+ * may take more */
+export const BACKTEST_API_WORK = 200_000;
 export const FIXTURES = join(ROOT, "fixtures", "home", "portfolio");
 
 export interface Seeds {
@@ -169,6 +175,9 @@ export interface ServiceOptions {
   /** THE VENUES' LIVE STREAMS as a test hands them in (a hub over a stand-in WebSocket, or test/standin's stand-in prices): the real server
    * starts its own instead (watchStreams), and without either nothing is streamed — every price is a REST read, as before */
   streams?: MarketHub | undefined;
+  /** THE LAB (backtest/lab.ts): the history its backtests read (default: Hyperliquid's perpetuals, Coinbase's coins and the US stocks line,
+   * keyless, over the service's own network; stand-ins in tests) and the most steps a run the service is asked for may take */
+  backtest?: { sources?: HistorySources | undefined; maxSteps?: number | undefined } | undefined;
 }
 
 /** one slice of an order (or any step an agent flies): where, what, and the agent's words for it */
@@ -621,6 +630,9 @@ export class PortfolioService {
       // a paper account the account keeps itself, as its owner runs it (live/paper.ts): started again, or paper money added
       paper: (action) => this.paperControl(action),
       paperWords: (action) => this.paperControlWords(action),
+      // the lab (backtest/lab.ts), as its owner runs it: the holdout moved, or a training run tried on the held-out data
+      backtest: (action) => this.labAct(action),
+      backtestWords: (action) => this.labWords(action),
       ...(real && this.opts.liveWrites
         ? {
             agentWalletAddress: (name: string) => {
@@ -1826,6 +1838,86 @@ export class PortfolioService {
   }
 
   /** what a live connection reaches: the real network, unless a test handed in stand-ins */
+  // ---- THE LAB (backtest/lab.ts): backtests run, kept and counted ----
+
+  /** a backtest under way: the service runs one at a time */
+  private labBusy = false;
+  private labSources: HistorySources | undefined;
+  /** the lab's reach: the home, the bars kept in it, the keyless sources they are read from (over the service's own network), its clock */
+  private labDeps(): LabDeps {
+    const deps = this.liveDeps();
+    return { home: this.opts.home, cache: join(this.opts.home, "history"), sources: this.opts.backtest?.sources ?? (this.labSources ??= realHistorySources({ http: deps.http, open: deps.openExchange, clock: deps.clock })), clock: () => Date.parse(this.now()) };
+  }
+  /** one backtest at a time, whoever asks */
+  private async labOnce<T>(run: () => Promise<T | Refusal>): Promise<T | Refusal> {
+    if (this.labBusy) return no("E_ACCOUNT_LIMIT", { message: "a backtest is running: the account runs one at a time — ask again when it is done", detail: { busy: true } });
+    this.labBusy = true;
+    try {
+      return await run();
+    } finally {
+      this.labBusy = false;
+    }
+  }
+
+  /** A BACKTEST AN UNSIGNED REQUEST ASKS FOR (POST /api/account/backtest; an agent's portfolio_backtest): a TRAINING run — its window
+   * ends at the holdout's start at the latest, and nothing unsigned runs on the held-out data — counted in the ledger with the seat it
+   * names, and kept in the home. The answer is the run's figures and how it is judged; its trades and curve are in the kept run. One at a
+   * time, at most BACKTEST_API_WORK steps across its markets */
+  async backtestRun(body: Record<string, unknown>): Promise<Record<string, unknown> | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const ask = askOf(body);
+    if (typeof ask === "string") return no("E_ACCOUNT_BAD_ACTION", { message: ask });
+    return this.labOnce(async () => {
+      const out = await labRun({ ...ask, window: "train", save: true, by: "request", maxSteps: this.opts.backtest?.maxSteps ?? Math.floor(BACKTEST_API_WORK / ask.refs.length) }, this.labDeps());
+      return isRefusal(out) ? out : outcomeSummary(out);
+    });
+  }
+  /** THE LEDGER as it stands: the holdout, the rows and whether their chain holds, how many runs and distinct strategies, the latest runs */
+  backtests(limit = 50): ReturnType<typeof labList> | Refusal {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return labList(this.opts.home, Date.parse(this.now()), limit);
+  }
+  /** one kept run in full — its trades, its curve, its notes — with its trial and how it is judged against the ledger now */
+  backtestKept(id: string): Record<string, unknown> | Refusal {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return labRead(this.opts.home, id.trim());
+  }
+  /** the owner's signed setBacktest, once the door has checked it: the holdout moved, or a training run tried on the held-out data */
+  private async labAct(a: Extract<OwnerAction, { type: "setBacktest" }>): Promise<Refusal | { ok: true; summary: string; data?: unknown }> {
+    if (a.change === "holdout") {
+      const h = setHoldout(this.opts.home, a.value, "owner", Date.parse(this.now()));
+      return isRefusal(h) ? h : { ok: true, summary: `the data from ${h.start} on is held out` };
+    }
+    if (a.change === "evaluate") {
+      const out = await this.labOnce(() => labEvaluate(a.value.trim(), this.labDeps(), "owner"));
+      if (isRefusal(out)) return out;
+      return { ok: true, summary: `run ${a.value.trim()} tried on the held-out data from ${out.holdout.start}: look ${out.looks ?? 1} at it`, data: outcomeSummary(out) };
+    }
+    return no("E_ACCOUNT_BAD_ACTION", { message: `a backtest's change is holdout (a day) or evaluate (a training run's id), not "${String(a.change).slice(0, 30)}"` });
+  }
+  /** what a setBacktest would do, in words, for the dialog before it is signed — or why not, as the door would say it */
+  private labWords(a: Extract<OwnerAction, { type: "setBacktest" }>): Refusal | { words: string } {
+    const now = Date.parse(this.now());
+    const h = readHoldout(this.opts.home, now);
+    if (isRefusal(h)) return h;
+    const ledger = readTrials(this.opts.home).rows;
+    if (a.change === "holdout") {
+      const day = a.value.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return no("E_ACCOUNT_BAD_ACTION", { message: `a holdout starts on a day, YYYY-MM-DD, not "${day.slice(0, 20)}"` });
+      return { words: `Hold out the data from ${day} on (it is held out from ${h.start} now). Strategies are tried only on what came before it; ${day > h.start ? `the days from ${h.start} to ${day} become data to try strategies on` : `the days from ${day} to ${h.start} are held out from now on`}.` };
+    }
+    if (a.change === "evaluate") {
+      const trials = ledger.filter((r): r is TrialRow => r.kind === "trial");
+      const t = trials.find((r) => r.run === a.value.trim());
+      if (!t) return no("E_ACCOUNT_BAD_ACTION", { message: `no trial ran as ${a.value.trim().slice(0, 40)}` });
+      if (t.window !== "train") return no("E_ACCOUNT_BAD_ACTION", { message: `${t.run} was itself a look at the holdout: look again from the training run it tried` });
+      const params = Object.entries(t.params).map(([k, v]) => `${k} ${v}`).join(" · ");
+      const looks = trials.filter((r) => r.window === "holdout").length;
+      return { words: `Run ${t.strategy}${params ? ` (${params})` : ""} on ${t.markets.join(", ")} in ${t.interval} bars over the held-out data, from ${h.start} to now — look ${looks + 1} at it. A holdout looked at often is a holdout no more.` };
+    }
+    return no("E_ACCOUNT_BAD_ACTION", { message: `a backtest's change is holdout (a day) or evaluate (a training run's id), not "${String(a.change).slice(0, 30)}"` });
+  }
+
   private liveDeps(): LiveDeps {
     // made once: the chain clients and the price cache are kept between connections
     // a paper account prices itself at the same public sources Markets reads (live/paper.ts), through the service's own keeping of them

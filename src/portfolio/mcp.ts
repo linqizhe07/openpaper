@@ -21,7 +21,10 @@
  * seat's limit and the owner's mode and not to the server's cap, and nothing of it is in the totals. What the seat remembers about the owner, kept by the account across sessions
  * (account/memory.ts): portfolio_memory reads it, portfolio_remember · portfolio_forget keep and forget what it learned, with its key. THE DESK
  * (account/desk.ts), the account's own team of agents, on which the owner may give this seat a role: portfolio_desk reads it (the seat's
- * charter, the objective, the funnel, the room), portfolio_desk_say speaks in its room with this seat's key. A layered simulation (tests: the account layer over simulated venues) also has
+ * charter, the objective, the funnel, the room), portfolio_desk_say speaks in its room with this seat's key. BACKTESTS (backtest/lab.ts):
+ * portfolio_backtest runs a strategy over recorded bars through a paper account — a training run before the holdout, counted in the
+ * account's trials ledger with this seat named; the held-out data is the owner's to run on — and portfolio_backtests reads the ledger and a
+ * kept run. A layered simulation (tests: the account layer over simulated venues) also has
  * portfolio_transfer, which signs a move between the simulated venues at the door.
  * On the simulated statement (--classic), and on a layered simulation: portfolio_read · portfolio_markets · portfolio_quote ·
  * portfolio_openness · portfolio_execute · portfolio_order — the fixture's venues, catalogue and router. They are registered only when the
@@ -963,6 +966,50 @@ server.registerTool(
     const { ok: _f, ...financials } = fb;
     return text({ ok: true, symbol, ...(cNo ? { companyRefused: cNo } : { company }), ...(fNo ? { financialsRefused: fNo } : { financials }) });
   },
+);
+
+server.registerTool(
+  "portfolio_backtest",
+  {
+    description: "A BACKTEST: a strategy played over recorded bars through a paper account kept in memory — the account's own paper rules for every fill, fee, hour of funding and liquidation, a bar judged as the paper account judges time it did not watch — beside the same markets bought and held. Strategies are declarations with bounded numbers, never code: hold; sma {fast, slow, weight}; tsmom {lookbackDays, volTarget, volDays, rebalanceHours, maxWeight, buffer} (time-series momentum sized to a volatility target); carry {lookbackHours, enterApr, exitApr, weight} (long a coin's spot and short its perpetual while the funding pays). Markets: perp:COIN (Hyperliquid's perpetuals with their hourly funding; it keeps about 208 days of 1h bars, 833 of 4h, daily since 2023), spot:COIN (Coinbase), stock:TICKER (US stocks in daily bars, split-adjusted, no dividends); at most 12. EVERY RUN IS COUNTED in the account's trials ledger, and the data from the holdout's start on is HELD OUT: a run's window ends there at the latest (and there when `to` is left out; `from` defaults to 180 days before); only the owner's signature runs a strategy on the held-out data, so a strategy found here is judged on data it was never fitted to. The answer: `metrics` (return, CAGR, Sharpe ± one standard error, Sortino, volatility, max drawdown and days under, Calmar, exposure, fills, turnover, fees, funding, slippage), `benchmark.metrics` (the buy-and-hold's), `deflated` (`dsr`: the probability the Sharpe is real once every distinct strategy tried before the holdout is counted; `sr0`: the Sharpe a year the best of that many would show by chance alone), `overfit` (where several runs on these markets and bars are kept: `pbo`, how often the run best on one half of the history ranked in the bottom half of the other), `notes`, and `id` — its trades and curve are portfolio_backtests with it. The account runs one backtest at a time (a busy answer says so: ask again after). Not a read: a row in the ledger.",
+    inputSchema: {
+      strategy: z.enum(["hold", "sma", "tsmom", "carry"]).optional().describe("default tsmom"),
+      params: z.record(z.string(), z.number()).optional().describe("the strategy's numbers, each in its bounds (a refusal names them); the rest default"),
+      markets: z.string().max(400).optional().describe("comma-separated: perp:BTC,spot:ETH,stock:AAPL (default perp:BTC)"),
+      interval: z.enum(["1h", "4h", "1d"]).optional().describe("the bars (default 1h; a share is read in daily bars whatever is asked)"),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("the window's first day (default: 180 days before `to`)"),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("the day the window ends, at the holdout's start at the latest (the default)"),
+      cash: z.number().min(100).max(100_000_000).optional().describe("the paper money (default 10000)"),
+      feeBps: z.number().min(0).max(500).optional().describe("a fill's fee in basis points (default the paper account's 10; 0 when every market is a share)"),
+      leverage: z.number().min(1).max(50).optional().describe("a perpetual's leverage, at most the market's own (default: what the strategy's weights need)"),
+      halfSpreadBps: z.number().min(0).max(500).optional().describe("the cost model: the half spread around each bar's open (default 1)"),
+      participation: z.number().gt(0).max(1).optional().describe("the cost model: the share of the bar before's dollars the book holds (default 0.05)"),
+      levelBps: z.number().min(0).max(500).optional().describe("the cost model: how far apart the book's five levels are (default 2)"),
+      benchmark: z.boolean().optional().describe("the buy-and-hold beside it (default true)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
+  async (args) => {
+    if (!(await layer())) return text({ ok: false, error: "this service runs without the account layer (--classic)" }, true);
+    const r = await call("POST", "/api/account/backtest", { ...args, seat: seatKey().address });
+    const b = r.body as Record<string, unknown> & { refusal?: { code: string; message: string; detail?: unknown }; error?: string };
+    if (b.refusal) return text({ ok: false, code: b.refusal.code, message: b.refusal.message, ...(b.refusal.detail !== undefined ? { detail: b.refusal.detail } : {}) }, true);
+    if (r.status >= 400) return text({ ok: false, error: b.error ?? `HTTP ${r.status}` }, true);
+    return text(b);
+  },
+);
+
+server.registerTool(
+  "portfolio_backtests",
+  {
+    description: "THE BACKTESTS KEPT ON THE ACCOUNT. Without `id`: the holdout (`start`: the first held-out day — runs end before it; `setBy`: the default, or the owner), the trials ledger (`rows`; `intact`: its hash chain holds, else `brokenAt` and `why`; `trials` run, `distinct` strategies tried before the holdout, `looks` the owner took at the held-out data) and the latest runs, newest first, each with what was tried, by whom (`by`: request, terminal or owner; `seat` as a request named it), its window and its figures. With `id`: that run in full — its `run` (every fill with its price and fee, the equity curve, the funding, the orders not filled, the notes), its `benchmark`, its `trial`, and how it is judged against the ledger now (`deflated`, `overfit`: more strategies tried since lower it). A read.",
+    inputSchema: {
+      id: z.string().max(40).optional().describe("a run's id, as portfolio_backtest answered it or the list names it"),
+      limit: z.number().int().min(1).max(500).optional().describe("the most runs listed (default 50)"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ id, limit }) => (id ? read(`/api/account/backtest?id=${encodeURIComponent(id)}`) : read(`/api/account/backtests${limit ? `?limit=${limit}` : ""}`)),
 );
 
 server.registerTool(

@@ -13,29 +13,32 @@
  * isolated. Bars older than a source keeps are not there (Hyperliquid keeps the latest 5,000 of a size). No model's judgement is tested: a
  * model asked about a past it was trained on would be judged with hindsight, so the strategies are rules.
  *
- *   npm run account:backtest -- --strategy tsmom --markets perp:BTC,perp:ETH --interval 1h --from 2026-05-01 --to 2026-10-28 --cash 10000
+ * EVERY RUN IS COUNTED, and none reaches the held-out data unless the owner says so (backtest/lab.ts): the data from the holdout's start on
+ * (the 90 days before the first run, unless moved) is held back, a run's window ends there at the latest, and each run is a row of
+ * <home>/backtest/trials.jsonl, whose distinct strategies deflate the Sharpe of the next.
+ *
+ *   npm run account:backtest -- --strategy tsmom --markets perp:BTC,perp:ETH --interval 1h --from 2026-02-01 --to 2026-07-31 --cash 10000
  *   --strategy   hold · sma · tsmom · carry (default tsmom)           --markets  perp:COIN, spot:COIN, stock:TICKER, comma-separated (perp:BTC)
  *   --interval   1h · 4h · 1d for the coins and perpetuals (1h; a share is read in daily bars)    --param name=value  a strategy's number, again for each
- *   --from --to  the window, YYYY-MM-DD (the 180 days before --to; --to: now)        --cash  the paper money (10000)
+ *   --from --to  the window, YYYY-MM-DD (the 180 days before --to; --to: the holdout's start)    --cash  the paper money (10000)
  *   --fee-bps    the paper account's fee a fill (10; 0 when every market is a share)   --leverage  a perpetual's (the strategy's own need)
  *   --half-spread-bps · --participation · --level-bps   the cost model (1 · 0.05 · 2)  --no-benchmark  no buy-and-hold beside it
- *   --json       the run as JSON         --no-save  keep nothing         --cache DIR  the bars' cache (<home>/history)   --home DIR   the home
- *   --quiet      no progress lines */
-import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+ *   --holdout    run on the held-out data instead, from the holdout's start to --to (now): the owner's own look, counted
+ *   --set-holdout YYYY-MM-DD   hold out the data from that day on (never back over days already tried on)
+ *   --trials     the ledger: the holdout, the runs tried, newest first
+ *   --json       the run as JSON         --no-save  keep no run (it is counted still)   --cache DIR  the bars' cache (<home>/history)
+ *   --home DIR   the home                --quiet    no progress lines */
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isRefusal, type Refusal } from "../core/errors.ts";
-import { loadHistory, marketText, parseMarkets, realHistorySources, type HistorySources, type MarketRef } from "./backtest/data.ts";
-import { runBacktest, type BacktestRun } from "./backtest/engine.ts";
+import { parseMarkets, realHistorySources, type HistorySources, type MarketRef } from "./backtest/data.ts";
+import { labList, labRun, setHoldout, type Holdout, type LabOutcome } from "./backtest/lab.ts";
 import type { Metrics } from "./backtest/metrics.ts";
 import { DEFAULT_COSTS, type BacktestCosts } from "./backtest/source.ts";
-import { makeStrategy, STRATEGIES, STRATEGY_IDS, strategySpec, type StrategySpec } from "./backtest/strategies.ts";
+import { STRATEGIES, STRATEGY_IDS, strategySpec, type StrategySpec } from "./backtest/strategies.ts";
 import { defaultHome } from "./home.ts";
-import { INTERVAL_MS, type CandleInterval } from "./live/trade.ts";
+import type { CandleInterval } from "./live/trade.ts";
 import { PAPER_FEE_BPS } from "./live/paper.ts";
-import { no } from "./refuse.ts";
 
 const DAY_MS = 86_400_000;
 export const BACKTEST_INTERVALS: readonly CandleInterval[] = ["1h", "4h", "1d"];
@@ -44,8 +47,11 @@ export interface BacktestOptions {
   spec: StrategySpec;
   refs: MarketRef[];
   interval: CandleInterval;
-  from: number;
-  to: number;
+  /** the window asked, ms: none, the lab's (backtest/lab.ts LabAsk) */
+  from?: number | undefined;
+  to?: number | undefined;
+  /** run on the held-out data: the owner's look at their own terminal */
+  holdout: boolean;
   cashUsd: number;
   feeBps: number;
   leverage?: number | undefined;
@@ -58,61 +64,12 @@ export interface BacktestOptions {
   say?: ((line: string) => void) | undefined;
 }
 
-export interface BacktestOutcome {
-  id: string;
-  run: BacktestRun;
-  benchmark?: BacktestRun | undefined;
-  /** what was said before the run: a window moved for the history, a source's words */
-  notes: string[];
-  saved?: string | undefined;
-}
+export type BacktestOutcome = LabOutcome;
+export { runId } from "./backtest/lab.ts";
 
-/** the run's id: when it ran, and a hash of what it was (the same spec, markets, window and costs, the same hash) */
-export function runId(o: Pick<BacktestOptions, "spec" | "refs" | "interval" | "from" | "to" | "cashUsd" | "feeBps" | "leverage" | "costs">, at: number): string {
-  const what = JSON.stringify([o.spec, o.refs.map(marketText), o.interval, o.from, o.to, o.cashUsd, o.feeBps, o.leverage ?? null, o.costs]);
-  return `${new Date(at).toISOString().replace(/[-:]/g, "").slice(0, 15)}-${createHash("sha256").update(what).digest("hex").slice(0, 10)}`;
-}
-
-/** the backtest, from its options to its outcome (see the top of this file) */
+/** the backtest, from its options to its outcome, at the owner's terminal (see the top of this file) */
 export async function backtest(o: BacktestOptions, sources: HistorySources = realHistorySources(), clock: () => number = Date.now): Promise<BacktestOutcome | Refusal> {
-  const strategy = makeStrategy(o.spec);
-  const notes: string[] = [];
-  const loaded = await loadHistory({ refs: o.refs, interval: o.interval, from: o.from - strategy.warmupMs, to: o.to, cache: o.cache, sources, clock, say: o.say });
-  if (isRefusal(loaded)) return loaded;
-  notes.push(...loaded.notes);
-  // the run starts once every market has the history its strategy reads first
-  const ready = Math.max(...loaded.markets.map((m) => (m.bars[0]?.t ?? o.from) + strategy.warmupMs));
-  const from = Math.max(o.from, ready);
-  if (from > o.from) notes.push(`the run starts at the first bar after ${new Date(from).toISOString().slice(0, 16).replace("T", " ")} UTC, not ${new Date(o.from).toISOString().slice(0, 10)}: the ${strategy.name.toLowerCase()} reads ${Math.round(strategy.warmupMs / DAY_MS)} days of bars first, and the bars start ${new Date(ready - strategy.warmupMs).toISOString().slice(0, 10)}`);
-  if (!(o.to > from)) return no("E_ACCOUNT_BAD_ACTION", { message: `nothing is left to run: the history the strategy needs first reaches to ${new Date(from).toISOString().slice(0, 10)}` });
-  const work = mkdtempSync(join(tmpdir(), "openpaper-backtest-"));
-  try {
-    const base = { markets: loaded.markets, from, to: o.to, cashUsd: o.cashUsd, feeBps: o.feeBps, ...(o.leverage !== undefined ? { leverage: o.leverage } : {}), costs: o.costs };
-    const run = await runBacktest({ ...base, strategy: o.spec, home: join(work, "run"), say: o.say });
-    if (isRefusal(run)) return run;
-    let benchmark: BacktestRun | undefined;
-    if (o.benchmark && o.spec.id !== "hold") {
-      const hold = strategySpec("hold");
-      if (typeof hold !== "string") {
-        const b = await runBacktest({ ...base, leverage: undefined, strategy: hold, home: join(work, "hold") });
-        if (!isRefusal(b)) benchmark = b;
-        else notes.push(`the buy-and-hold beside it did not run: ${b.message ?? b.code}`);
-      }
-    }
-    const id = runId(o, clock());
-    let saved: string | undefined;
-    if (o.save) {
-      const dir = join(o.home, "backtest", "runs");
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      saved = join(dir, `${id}.json`);
-      const tmp = `${saved}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ version: 1, id, at: new Date(clock()).toISOString(), markets: o.refs.map(marketText), interval: o.interval, notes, run, ...(benchmark ? { benchmark } : {}) }), { mode: 0o600 });
-      renameSync(tmp, saved);
-    }
-    return { id, run, ...(benchmark ? { benchmark } : {}), notes, ...(saved ? { saved } : {}) };
-  } finally {
-    rmSync(work, { recursive: true, force: true });
-  }
+  return labRun({ spec: o.spec, refs: o.refs, interval: o.interval, from: o.from, to: o.to, window: o.holdout ? "holdout" : "train", cashUsd: o.cashUsd, feeBps: o.feeBps, ...(o.leverage !== undefined ? { leverage: o.leverage } : {}), costs: o.costs, benchmark: o.benchmark, save: o.save, by: "terminal" }, { home: o.home, cache: o.cache, sources, clock, say: o.say });
 }
 
 // ---- the words ----
@@ -156,6 +113,7 @@ export function backtestWords(out: BacktestOutcome): string {
   lines.push("");
   lines.push(...metricRows(r.metrics, out.benchmark?.metrics));
   lines.push("");
+  lines.push(...judgedLines(out), "");
   if (r.refused.length) lines.push(`Not filled: ${r.refused.length} order${r.refused.length === 1 ? "" : "s"} — the first at ${day(r.refused[0]!.at)}: ${r.refused[0]!.why}`);
   for (const n of [...out.notes, ...r.notes]) lines.push(`· ${n}`);
   lines.push(`· a Sharpe's ± is one standard error (Lo 2002): ${r.metrics.steps.toLocaleString("en-US")} steps of ${r.metrics.perYear.toFixed(0)} a year · ${r.wallMs.toLocaleString("en-US")} ms`);
@@ -163,17 +121,52 @@ export function backtestWords(out: BacktestOutcome): string {
   return lines.join("\n");
 }
 
+/** how the run is judged against every run tried: a training run's Sharpe deflated by them, its kin's odds of overfitting; a look at the
+ * holdout, the odds its Sharpe is above zero and how many looks there have been */
+export function judgedLines(out: BacktestOutcome): string[] {
+  const lines: string[] = [];
+  if (out.window === "holdout") {
+    lines.push(`Holdout      look ${out.looks ?? 1} at the data held out from ${out.holdout.start} · the probability its Sharpe is above zero: ${out.psr === undefined || Number.isNaN(out.psr) ? "—" : out.psr.toFixed(2)}`);
+  } else {
+    const d = out.deflated;
+    if (d) lines.push(`Deflated     ${d.dsr.toFixed(2)}: the probability the Sharpe is real, counting the ${d.trials} distinct strateg${d.trials === 1 ? "y" : "ies"} tried before the holdout${d.trials > 1 ? ` (the best of ${d.trials} would show ${num(d.sr0)} a year by chance alone)` : ""}`);
+    const o = out.overfit;
+    if (o) lines.push(`Overfitting  PBO ${o.pbo.toFixed(2)}: across ${o.combinations.toLocaleString("en-US")} ways of halving the ${o.steps.toLocaleString("en-US")} steps these ${o.trials} runs share, the run best on one half ranked in the bottom half of the other ${Math.round(o.pbo * 100)}% of the time`);
+  }
+  const l = out.ledger;
+  lines.push(`Trials       row ${out.trial.seq} of the ledger · ${l.rows} rows, ${l.intact ? "the chain intact" : `the chain BROKEN at row ${l.brokenAt}: ${l.why}`}`);
+  return lines;
+}
+
+/** the ledger in words (--trials): the holdout, how many runs and strategies, and the latest runs, newest first */
+export function trialsWords(list: ReturnType<typeof labList>): string {
+  const lines: string[] = [];
+  const h = list.holdout as Holdout | Refusal;
+  lines.push(isRefusal(h) ? `Holdout: ${h.message}` : `Holdout: the data from ${h.start} on (${h.setBy === "default" ? `the default, written ${h.setAt.slice(0, 10)}` : `set by the ${h.setBy} ${h.setAt.slice(0, 10)}`}) · ${list.ledger.looks} look${list.ledger.looks === 1 ? "" : "s"} at it`);
+  const l = list.ledger;
+  lines.push(`Ledger: ${l.rows} rows, ${l.intact ? "the chain intact" : `the chain BROKEN at row ${l.brokenAt}: ${l.why}`} · ${l.trials} run${l.trials === 1 ? "" : "s"}, ${l.distinct} distinct strateg${l.distinct === 1 ? "y" : "ies"} tried before the holdout`);
+  for (const t of list.runs) {
+    const params = Object.entries(t.params).map(([k, v]) => `${k} ${v}`).join(" · ");
+    const head = `  ${String(t.seq).padStart(4)}  ${day(t.ts)}  ${t.by.padEnd(8)} ${t.window.padEnd(7)} ${t.strategy.padEnd(5)} ${t.markets.join(",")} ${t.interval}  ${t.from.slice(0, 10)} → ${t.to.slice(0, 10)}`;
+    lines.push("figures" in t ? `${head}  (what came of it is the owner's)${params ? `  (${params})` : ""}` : `${head}  ${pct(t.returnPct).padStart(8)}  Sharpe ${num(t.sharpe).padStart(5)}  DD ${pct(-t.maxDrawdownPct)}  ${t.fills} fills${params ? `  (${params})` : ""}${t.kept ? `  ${t.run}` : ""}`);
+  }
+  return lines.join("\n");
+}
+
 // ---- the command ----
 
-const USAGE = `usage: npm run account:backtest -- [--strategy ${STRATEGY_IDS.join("|")}] [--markets perp:BTC,spot:ETH,stock:AAPL] [--interval ${BACKTEST_INTERVALS.join("|")}] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--cash 10000] [--fee-bps 10] [--leverage N] [--param name=value]… [--half-spread-bps 1] [--participation 0.05] [--level-bps 2] [--no-benchmark] [--json] [--no-save] [--cache DIR] [--home DIR] [--quiet]
-A strategy backtested on recorded bars through the paper account itself, beside buying and holding the same markets.
+const USAGE = `usage: npm run account:backtest -- [--strategy ${STRATEGY_IDS.join("|")}] [--markets perp:BTC,spot:ETH,stock:AAPL] [--interval ${BACKTEST_INTERVALS.join("|")}] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--cash 10000] [--fee-bps 10] [--leverage N] [--param name=value]… [--half-spread-bps 1] [--participation 0.05] [--level-bps 2] [--holdout] [--no-benchmark] [--json] [--no-save] [--cache DIR] [--home DIR] [--quiet]
+       npm run account:backtest -- --trials [--json] [--home DIR]
+       npm run account:backtest -- --set-holdout YYYY-MM-DD [--home DIR]
+A strategy backtested on recorded bars through the paper account itself, beside buying and holding the same markets. Every run is counted
+in <home>/backtest/trials.jsonl; the data from the holdout's start on is held out, and only --holdout (or the owner's signature) runs on it.
 ${STRATEGY_IDS.map((id) => `  ${id.padEnd(6)} ${STRATEGIES[id].name}: ${STRATEGIES[id].words}${Object.keys(STRATEGIES[id].params).length ? `\n         ${Object.entries(STRATEGIES[id].params).map(([k, p]) => `${k}=${p.default} (${p.min}–${p.max})`).join(" · ")}` : ""}`).join("\n")}`;
 
-export function parseBacktestArgs(argv: readonly string[], env: Record<string, string | undefined> = process.env, now = Date.now()): BacktestOptions | { error: string } | { help: true } {
+export function parseBacktestArgs(argv: readonly string[], env: Record<string, string | undefined> = process.env, now = Date.now()): BacktestOptions | { error: string } | { help: true } | { trials: true; home: string; json: boolean } | { setHoldout: string; home: string } {
   const flags = new Map<string, string | true>();
   const params: Record<string, string> = {};
-  const switches = new Set(["--no-benchmark", "--json", "--no-save", "--quiet", "--help", "-h"]);
-  const known = new Set(["--strategy", "--markets", "--interval", "--from", "--to", "--cash", "--fee-bps", "--leverage", "--param", "--half-spread-bps", "--participation", "--level-bps", "--cache", "--home", ...switches]);
+  const switches = new Set(["--no-benchmark", "--json", "--no-save", "--quiet", "--holdout", "--trials", "--help", "-h"]);
+  const known = new Set(["--strategy", "--markets", "--interval", "--from", "--to", "--cash", "--fee-bps", "--leverage", "--param", "--half-spread-bps", "--participation", "--level-bps", "--cache", "--home", "--set-holdout", ...switches]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     const eq = a.indexOf("=");
@@ -198,6 +191,19 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
     const v = flags.get(name);
     return typeof v === "string" ? v : fallback;
   };
+  // the ledger read, or the holdout moved: nothing else is said with them
+  const alone = (what: string, allowed: string[]): string | undefined => {
+    const other = [...flags.keys()].find((k) => k !== what && !allowed.includes(k));
+    return other ? `${what} goes with ${allowed.length ? allowed.join(" and ") : "nothing else"}, not ${other}` : Object.keys(params).length ? `${what} goes with no --param` : undefined;
+  };
+  if (flags.has("--trials")) {
+    const wrong = alone("--trials", ["--json", "--home"]);
+    return wrong ? { error: wrong } : { trials: true, home: str("--home", defaultHome(env)), json: flags.has("--json") };
+  }
+  if (flags.has("--set-holdout")) {
+    const wrong = alone("--set-holdout", ["--home"]);
+    return wrong ? { error: wrong } : { setHoldout: str("--set-holdout", ""), home: str("--home", defaultHome(env)) };
+  }
   const numberOf = (name: string, fallback: number | undefined): number | undefined | string => {
     const v = flags.get(name);
     if (typeof v !== "string") return fallback;
@@ -210,19 +216,20 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
   if (typeof refs === "string") return { error: refs };
   const interval = str("--interval", "1h") as CandleInterval;
   if (!BACKTEST_INTERVALS.includes(interval)) return { error: `--interval is ${BACKTEST_INTERVALS.join(", ")}, not "${interval.slice(0, 10)}"` };
-  const date = (name: string, fallback: number): number | string => {
+  const date = (name: string): number | undefined | string => {
     const v = flags.get(name);
-    if (typeof v !== "string") return fallback;
+    if (typeof v !== "string") return undefined;
     const ms = /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T00:00:00Z`) : Number.NaN;
     return Number.isFinite(ms) ? ms : `${name} is YYYY-MM-DD, not "${v.slice(0, 20)}"`;
   };
-  const step = INTERVAL_MS[interval];
-  const to = date("--to", Math.floor(now / step) * step);
+  const to = date("--to");
   if (typeof to === "string") return { error: to };
-  const from = date("--from", to - 180 * DAY_MS);
+  const from = date("--from");
   if (typeof from === "string") return { error: from };
-  if (!(to > from)) return { error: "--to is after --from" };
-  if (to > now + DAY_MS) return { error: "--to is not in the future" };
+  const holdout = flags.has("--holdout");
+  if (holdout && from !== undefined) return { error: "--holdout runs from the holdout's start: no --from" };
+  if (from !== undefined && to !== undefined && !(to > from)) return { error: "--to is after --from" };
+  if (to !== undefined && to > now + DAY_MS) return { error: "--to is not in the future" };
   const shares = refs.every((r) => r.cls === "stock");
   const nums = { cash: numberOf("--cash", 10_000), fee: numberOf("--fee-bps", shares ? 0 : PAPER_FEE_BPS), leverage: numberOf("--leverage", undefined), half: numberOf("--half-spread-bps", DEFAULT_COSTS.halfSpreadBps), part: numberOf("--participation", DEFAULT_COSTS.participation), level: numberOf("--level-bps", DEFAULT_COSTS.levelBps) };
   for (const v of Object.values(nums)) if (typeof v === "string") return { error: v };
@@ -238,8 +245,9 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
     spec,
     refs,
     interval,
-    from,
-    to,
+    ...(from !== undefined ? { from } : {}),
+    ...(to !== undefined ? { to } : {}),
+    holdout,
     cashUsd: cash!,
     feeBps: fee!,
     ...(leverage !== undefined ? { leverage } : {}),
@@ -263,6 +271,20 @@ if (isMain) {
   if ("error" in parsed) {
     console.error(parsed.error);
     process.exit(2);
+  }
+  if ("trials" in parsed) {
+    const list = labList(parsed.home, Date.now(), 50, { owner: true });
+    console.log(parsed.json ? JSON.stringify(list, null, 1) : trialsWords(list));
+    process.exit(0);
+  }
+  if ("setHoldout" in parsed) {
+    const h = setHoldout(parsed.home, parsed.setHoldout, "terminal", Date.now());
+    if (isRefusal(h)) {
+      console.error(`${h.code}: ${h.message}`);
+      process.exit(1);
+    }
+    console.log(`The data from ${h.start} on is held out.`);
+    process.exit(0);
   }
   const out = await backtest(parsed);
   if (isRefusal(out)) {

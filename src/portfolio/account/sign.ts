@@ -174,7 +174,10 @@ export type OwnerAction =
   | { type: "resetPaper"; venue: string; usd: string; nonce: number }
   /** paper money added to a paper account the account keeps itself: `usd` dollars more in its cash, written in its book as paper money put
    * in (its curve and what it made or lost since it started count it as put in, never as a gain) */
-  | { type: "topUpPaper"; venue: string; usd: string; nonce: number };
+  | { type: "topUpPaper"; venue: string; usd: string; nonce: number }
+  /** THE LAB (backtest/lab.ts): `holdout` holds out the data from the day `value` (YYYY-MM-DD) on; `evaluate` tries the training run
+   * `value` (its id) on the held-out data — the owner's look, counted */
+  | { type: "setBacktest"; change: string; value: string; nonce: number };
 
 export type AgentAction =
   | { type: "agentSendAsset"; destination: string; sourceDex: string; destinationDex: string; token: string; amount: string; fromSubAccount: string; maxFee: string; nonce: number }
@@ -224,7 +227,7 @@ export type AgentAction =
 
 export type Action = OwnerAction | AgentAction;
 
-export const OWNER_TYPES = ["sendAsset", "swap", "approveAgent", "approveBuilderFee", "approveSpend", "createSubAccount", "userSetAbstraction", "convertToMultiSigUser", "setDestination", "approveCard", "setPolicy", "connectVenue", "disconnectVenue", "liveMove", "liveOrder", "liveCancel", "liveAmend", "liveClose", "liveLeverage", "setWatch", "setAlert", "setIntent", "liveEarn", "answerAsk", "setMemory", "forgetMemory", "setMemoryRules", "setDesk", "setBrainKey", "resetPaper", "topUpPaper", "signOut"] as const;
+export const OWNER_TYPES = ["sendAsset", "swap", "approveAgent", "approveBuilderFee", "approveSpend", "createSubAccount", "userSetAbstraction", "convertToMultiSigUser", "setDestination", "approveCard", "setPolicy", "connectVenue", "disconnectVenue", "liveMove", "liveOrder", "liveCancel", "liveAmend", "liveClose", "liveLeverage", "setWatch", "setAlert", "setIntent", "liveEarn", "answerAsk", "setMemory", "forgetMemory", "setMemoryRules", "setDesk", "setBrainKey", "resetPaper", "topUpPaper", "setBacktest", "signOut"] as const;
 export const AGENT_TYPES = ["agentSendAsset", "agentSwap", "agentPay", "agentExecute", "agentOrder", "agentLiveMove", "agentLiveOrder", "agentLiveCancel", "agentLiveAmend", "agentLiveClose", "agentLiveLeverage", "agentReport", "agentAsk", "agentLiveEarn", "agentRemember", "agentForget", "agentDeskSay"] as const;
 /** an instruction that moves money — or, like a leverage change, changes what a position risks — is good for minutes after it is signed,
  * not for the two days of the nonce window */
@@ -243,6 +246,10 @@ export const BRAIN_KEY_TTL_MS = MONEY_TTL_MS;
  * envelope is good for as long as a money instruction, around the moment it is dated — never one kept to start the book again days later */
 export const PAPER_TYPES: ReadonlySet<string> = new Set(["resetPaper", "topUpPaper"]);
 export const PAPER_TTL_MS = MONEY_TTL_MS;
+/** the lab's holdout moved or looked at (setBacktest): signed and sent at once — an envelope kept for later is never one that spends a look
+ * at the held-out data, or moves the holdout, days after it was signed */
+export const LAB_TYPES: ReadonlySet<string> = new Set(["setBacktest"]);
+export const LAB_TTL_MS = MONEY_TTL_MS;
 /** a sign-out is signed and sent at once: an envelope kept for later is never one that signs a browser out of the account days after */
 export const SIGN_OUT_TTL_MS = MONEY_TTL_MS;
 
@@ -336,6 +343,7 @@ const OWNER_FIELDS: Record<OwnerAction["type"], { primary: string; fields: Field
   setBrainKey: { primary: "AccountBrain:SetKey", fields: [{ name: "provider", type: "string" }, { name: "baseUrl", type: "string" }, { name: "model", type: "string" }, { name: "keyHash", type: "string" }, { name: "salt", type: "string" }, NONCE] },
   resetPaper: { primary: "AccountPaper:Reset", fields: [{ name: "venue", type: "string" }, { name: "usd", type: "string" }, NONCE] },
   topUpPaper: { primary: "AccountPaper:TopUp", fields: [{ name: "venue", type: "string" }, { name: "usd", type: "string" }, NONCE] },
+  setBacktest: { primary: "AccountBacktest:Set", fields: [{ name: "change", type: "string" }, { name: "value", type: "string" }, NONCE] },
   signOut: { primary: "AccountDevice:SignOut", fields: [{ name: "device", type: "string" }, NONCE] },
 };
 /** a spending approval that answers an intent names it: one more signed field, before the nonce */

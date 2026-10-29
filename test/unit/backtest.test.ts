@@ -288,7 +288,7 @@ describe("the strategies' specs", () => {
   });
 });
 
-/** a stand-in public source: hourly bars from `first` on (a price of 100 + the hour), funding of 0.00001 an hour, every ask written down */
+/** a stand-in public source: hourly bars from `first` on (a price of 20,000 + the hours since 2026), funding of 0.00001 an hour, every ask written down */
 function standIn(id: string, symbol: string, o: { first?: number; now: () => number; refuse?: boolean; ends?: string } = { now: () => T0 + 1000 * H }): PublicSource & { asked: string[] } {
   const asked: string[] = [];
   const first = o.first ?? T0 - 10_000 * H;
@@ -308,7 +308,7 @@ function standIn(id: string, symbol: string, o: { first?: number; now: () => num
       if (o.refuse) return { ok: false, code: "E_VENUE_UNREACHABLE", layer: "VENUE", message: "the stand-in does not answer" } as unknown as Refusal;
       const step = interval === "1d" ? D : H;
       const bars: Candle[] = [];
-      for (let t = Math.max(w.since!, first); t < w.until! && t <= o.now(); t += step) bars.push({ t, o: 100 + t / H - T0 / H, h: 101 + t / H - T0 / H, l: 99 + t / H - T0 / H, c: 100.5 + t / H - T0 / H, v: 10 });
+      for (let t = Math.max(w.since!, first); t < w.until! && t <= o.now(); t += step) bars.push({ t, o: 20_000 + (t - T0) / H, h: 20_001 + (t - T0) / H, l: 19_999 + (t - T0) / H, c: 20_000.5 + (t - T0) / H, v: 10 });
       return { bars, more: false, source: `Stand-in ${id} · ${s}`, ...(o.ends && !bars.length ? { ends: o.ends } : {}), ...(id === "us" ? { adjustment: "split-adjusted, not dividend-adjusted" } : {}) };
     },
     fundingHistory: async (s, from, to) => {
@@ -372,11 +372,13 @@ describe("the command", () => {
   const NOW = Date.parse("2026-10-24T12:34:00Z");
   const parse = (argv: string[]) => parseBacktestArgs(argv, { OPENPAPER_HOME: "/h" }, NOW);
 
-  it("defaults to momentum on Bitcoin's perpetual, hourly, the 180 days to now, $10,000 at the paper account's fee, with the buy-and-hold beside it; reads each option, = or not", () => {
+  it("defaults to momentum on Bitcoin's perpetual, hourly, $10,000 at the paper account's fee, with the buy-and-hold beside it, the window left to the lab (the 180 days before the holdout); reads each option, = or not", () => {
     const d = parse([]) as BacktestOptions;
-    expect(d).toMatchObject({ spec: { id: "tsmom" }, refs: [{ cls: "perp", base: "BTC" }], interval: "1h", to: Date.parse("2026-10-24T12:00:00Z"), cashUsd: 10_000, feeBps: 10, benchmark: true, json: false, save: true, home: "/h", cache: join("/h", "history") });
-    expect(d.from).toBe(d.to - 180 * D);
-    expect(d.leverage).toBeUndefined();
+    expect(d).toMatchObject({ spec: { id: "tsmom" }, refs: [{ cls: "perp", base: "BTC" }], interval: "1h", holdout: false, cashUsd: 10_000, feeBps: 10, benchmark: true, json: false, save: true, home: "/h", cache: join("/h", "history") });
+    expect([d.from, d.to, d.leverage]).toEqual([undefined, undefined, undefined]);
+    expect(parse(["--holdout", "--to", "2026-10-01"])).toMatchObject({ holdout: true, to: Date.parse("2026-10-01T00:00:00Z") });
+    expect(parse(["--trials", "--json"])).toEqual({ trials: true, home: "/h", json: true });
+    expect(parse(["--set-holdout", "2026-08-01", "--home", "/x"])).toEqual({ setHoldout: "2026-08-01", home: "/x" });
     const o = parse(["--strategy=sma", "--markets", "perp:ETH,spot:SOL", "--interval", "4h", "--from", "2026-01-01", "--to=2026-06-01", "--cash", "5000", "--fee-bps", "4.5", "--leverage", "3", "--param", "fast=10", "--param=slow=40", "--half-spread-bps", "2", "--participation", "0.01", "--level-bps", "3", "--no-benchmark", "--json", "--no-save", "--cache", "/c", "--quiet"]) as BacktestOptions;
     expect(o).toMatchObject({ spec: { id: "sma", params: { fast: 10, slow: 40, weight: 1 } }, refs: [{ cls: "perp", base: "ETH" }, { cls: "spot", base: "SOL" }], interval: "4h", from: Date.parse("2026-01-01T00:00:00Z"), to: Date.parse("2026-06-01T00:00:00Z"), cashUsd: 5000, feeBps: 4.5, leverage: 3, costs: { halfSpreadBps: 2, participation: 0.01, levelBps: 3, levels: 5 }, benchmark: false, json: true, save: false, cache: "/c" });
     expect(o.say).toBeUndefined();
@@ -397,6 +399,9 @@ describe("the command", () => {
     expect(err(["--leverage", "100"])).toBe("--leverage is 1 to 50");
     expect(err(["--participation", "0"])).toBe("--participation is more than 0, at most 1");
     expect(err(["--markets"])).toMatch(/^--markets needs a value/);
+    expect(err(["--holdout", "--from", "2026-01-01"])).toBe("--holdout runs from the holdout's start: no --from");
+    expect(err(["--trials", "--strategy", "sma"])).toBe("--trials goes with --json and --home, not --strategy");
+    expect(err(["--set-holdout", "2026-08-01", "--param", "fast=3"])).toBe("--set-holdout goes with no --param");
     expect(parse(["--help"])).toEqual({ help: true });
   });
 
@@ -404,7 +409,8 @@ describe("the command", () => {
     const now = T0 + 2000 * H;
     const sources: HistorySources = { perp: standIn("hl", "BTC-PERP", { now: () => now }), spot: standIn("cb", "BTC/USD", { now: () => now }), stock: standIn("us", "AAPL", { now: () => now }) };
     const home = tmp();
-    const o = parseBacktestArgs(["--strategy", "sma", "--param", "fast=5", "--param", "slow=20", "--markets", "perp:BTC", "--from", "2026-02-01", "--to", "2026-03-01", "--quiet"], { OPENPAPER_HOME: home }, now) as BacktestOptions;
+    // the holdout is the 90 days before the first run (2025-12-25 on): the window ends before it
+    const o = parseBacktestArgs(["--strategy", "sma", "--param", "fast=5", "--param", "slow=20", "--markets", "perp:BTC", "--from", "2025-06-01", "--to", "2025-07-01", "--quiet"], { OPENPAPER_HOME: home }, now) as BacktestOptions;
     const out = await backtest(o, sources, () => now);
     if (isRefusal(out)) throw new Error(out.message);
     expect(out.run.strategy).toMatchObject({ id: "sma", name: "Moving-average cross", paramWords: "fast 5 · slow 20 · weight 1" });
@@ -412,13 +418,21 @@ describe("the command", () => {
     expect(out.saved).toBe(join(home, "backtest", "runs", `${out.id}.json`));
     expect(statSync(out.saved!).mode & 0o777).toBe(0o600);
     const kept = JSON.parse(readFileSync(out.saved!, "utf8")) as { version: number; id: string; markets: string[]; run: BacktestRun; benchmark: BacktestRun };
-    expect(kept).toMatchObject({ version: 1, id: out.id, markets: ["perp:BTC"] });
+    expect(kept).toMatchObject({ version: 1, id: out.id, by: "terminal", window: "train", holdout: "2025-12-25", markets: ["perp:BTC"] });
+    // counted: the default holdout's row, then this run's, chained
+    expect(out.trial).toMatchObject({ seq: 2, kind: "trial", by: "terminal", window: "train", strategy: "sma", markets: ["perp:BTC"], run: out.id, kept: true });
+    expect(out.ledger).toEqual({ rows: 2, intact: true });
+    expect(out.deflated).toMatchObject({ trials: 1, sr0: 0 });
     expect(kept.run.metrics).toEqual(out.run.metrics);
     const words = backtestWords(out);
     expect(words).toMatch(new RegExp(`^Backtest ${out.id} · Moving-average cross \\(sma\\) · fast 5 · slow 20 · weight 1`));
     expect(words).toContain("BTC-PERP    Stand-in hl · BTC-PERP · 1h");
     expect(words).toMatch(/Strategy +Buy and hold/);
     expect(words).toContain(`Kept: ${out.saved}`);
+    expect(words).toContain("Deflated     ");
+    expect(words).toContain("counting the 1 distinct strategy tried before the holdout");
+    expect(words).toContain("Trials       row 2 of the ledger · 2 rows, the chain intact");
+    expect(words).toContain("· the data from 2025-12-25 on is held out (the 90 days before the first run): this run ends 2025-07-01 00:00 UTC");
     // the cache was written in the home, beside the run
     expect(existsSync(join(home, "history", "hl", "BTC-PERP", "1h.json"))).toBe(true);
   });

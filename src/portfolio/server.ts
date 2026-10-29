@@ -136,6 +136,20 @@
  *                                                        a key from SEC EDGAR's XBRL company facts (live/edgar.ts); the SEC asks every reader
  *                                                        to say who they are, so SEC_CONTACT (an email address) names this account to it —
  *                                                        unset, a refusal that says so. Nothing estimated; kept twelve hours in memory
+ *   POST /api/account/backtest {strategy, params, markets, interval, from, to, cash, feeBps, leverage, halfSpreadBps, participation,
+ *                               levelBps, benchmark, seat}   A BACKTEST (backtest/lab.ts): a strategy (hold · sma · tsmom · carry, numbers
+ *                                                        and never code) played over recorded bars through a paper account kept in memory,
+ *                                                        beside the same markets bought and held — a TRAINING run, its window ending at
+ *                                                        the holdout's start at the latest (the held-out data is run on only by the
+ *                                                        owner's signed setBacktest), counted in <home>/backtest/trials.jsonl with the
+ *                                                        seat it names, kept in <home>/backtest/runs/. The answer: the figures, the
+ *                                                        buy-and-hold's, the Sharpe deflated by every distinct strategy tried, the odds of
+ *                                                        overfitting among its kin. Unsigned; one at a time (429 while one runs), at most
+ *                                                        BACKTEST_API_WORK steps across its markets
+ *   GET  /api/account/backtests?limit=                   the lab as it stands: the holdout, the ledger (its rows, its chain intact or where
+ *                                                        it broke, runs, distinct strategies, looks at the holdout), the latest runs
+ *   GET  /api/account/backtest?id=                       one kept run in full — its trades, its curve, its notes — with its trial and how
+ *                                                        it is judged against the ledger now
  *   GET  /api/account/book?venue=&symbol=&depth=20        one market's order book, best first (a market whose source has no book: its best
  *                                                        bid and ask only, depth "top"); kept a second and a half
  *   GET  /api/account/trades?venue=&symbol=&limit=30      one market's latest trades, newest first; kept three seconds (a source that
@@ -844,6 +858,31 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { symbol: 12 });
     if (!q) return;
     answerOf(res, await svc.financials(q.symbol));
+  }));
+
+  // THE LAB (backtest/lab.ts, service.ts backtestRun): a backtest an unsigned request asks for — a training run, before the holdout,
+  // counted and kept — and what is kept: the ledger and the latest runs, one run in full. The held-out data is the owner's to run on, by
+  // signature (setBacktest through the door)
+  app.post("/api/account/backtest", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const body = req.body as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return void bad(res, "need {strategy, params, markets, interval, from, to, cash, feeBps, leverage, …}");
+    const r = await svc.backtestRun(body as Record<string, unknown>);
+    if (isRefusal(r) && (r.detail as { busy?: unknown } | undefined)?.busy === true) return void res.status(429).json({ ok: false, refusal: r });
+    answerOf(res, r);
+  }));
+  app.get("/api/account/backtests", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { limit: 4 });
+    if (!q) return;
+    if (q.limit !== "" && !(/^\d{1,3}$/.test(q.limit) && Number(q.limit) >= 1 && Number(q.limit) <= 500)) return void bad(res, "a limit is a count of runs, 1 to 500");
+    answerOf(res, svc.backtests(q.limit ? Number(q.limit) : 50));
+  }));
+  app.get("/api/account/backtest", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { id: 40 });
+    if (!q) return;
+    answerOf(res, svc.backtestKept(q.id));
   }));
 
   // COMPANY: a US company's own record as the SEC keeps it — who it is, its fiscal year end, where it is incorporated, its latest reports
