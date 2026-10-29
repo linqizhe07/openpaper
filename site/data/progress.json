@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 45,
+      "title": "The desk runs from the Backtest page, by the owner's signature",
+      "mergedAt": "2026-10-29T18:21:04Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/45",
+      "branch": "feat/backtest-desk-signed"
+    },
+    {
       "number": 44,
       "title": "A signed backtest runs outside the door's line once it is taken",
       "mergedAt": "2026-10-29T17:57:10Z",
