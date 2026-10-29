@@ -147,7 +147,10 @@
  *                                                        overfitting among its kin. Unsigned; one at a time (429 while one runs), at most
  *                                                        BACKTEST_API_WORK steps across its markets
  *   GET  /api/account/backtests?limit=                   the lab as it stands: the holdout, the ledger (its rows, its chain intact or where
- *                                                        it broke, runs, distinct strategies, looks at the holdout), the latest runs
+ *                                                        it broke, runs, distinct strategies, looks at the holdout), the latest runs (a
+ *                                                        look at the holdout without its figures: the owner's), and the catalog — the
+ *                                                        strategies with each number's default, bounds and words, the bar sizes, the
+ *                                                        markets, the defaults
  *   GET  /api/account/backtest?id=                       one kept run in full — its trades, its curve, its notes — with its trial and how
  *                                                        it is judged against the ledger now
  *   GET  /api/account/book?venue=&symbol=&depth=20        one market's order book, best first (a market whose source has no book: its best

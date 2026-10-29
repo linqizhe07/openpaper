@@ -1,0 +1,39 @@
+/* BACKTEST (ui/backtest.js): the lab's pane. Colours, radii and type only from ui/tokens.css, Light and Black alike; the cards, tables,
+   fields and pills are the shell's own (ui/shell.css) */
+.bt { display: flex; flex-direction: column; gap: 20px; min-width: 0; container-type: inline-size; }
+/* the columns stacked (a narrow page): the form first, the result under it */
+@container (max-width: 930px) { .bt .col-side { order: -1; max-width: none; } }
+.bt-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.bt-top p { margin: 6px 0 0; max-width: 64ch; }
+.bt-chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.bt-form { display: flex; flex-direction: column; gap: 12px; }
+.bt-form > p { margin: -4px 0 0; }
+.bt-words { min-height: 1.4em; }
+.bt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.bt-hint { font-weight: 400; font-size: 11px; color: var(--dim); line-height: 1.35; }
+.bt-costs summary, .bt-fills summary, .bt-notes-box summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--dim); }
+.bt-costs[open] summary { margin-bottom: 12px; }
+
+.bt-result { min-width: 0; }
+.bt-plot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.bt-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.bt-legend .sw { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--text); vertical-align: middle; margin-right: 6px; }
+.bt-legend .sw.bench { border-top: 2px dashed var(--dim); }
+.bt-chart { width: 100%; height: 220px; display: block; }
+.bt-chart .line { fill: none; stroke: var(--text); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.bt-chart .bench { fill: none; stroke: var(--dim); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.bt-dd { width: 100%; height: 56px; display: block; }
+.bt-dd .area { fill: var(--down-fill); }
+.bt-axis { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+.bt-figs th[scope="row"] { font-weight: 600; color: var(--dim); font-size: 13px; }
+.bt-judged p { margin: 6px 0 0; font-size: 14px; line-height: 1.45; }
+.bt-notes { margin: 8px 0 0; padding-left: 18px; }
+.bt-notes li { margin: 4px 0; }
+.bt-fills .t-wrap { margin-top: 8px; }
+
+@media (max-width: 720px) {
+  .bt-grid { grid-template-columns: 1fr; }
+  .bt-chart { height: 180px; }
+}
