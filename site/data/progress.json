@@ -1,7 +1,14 @@
 {
-  "asOf": "2026-10-26",
+  "asOf": "2026-10-29",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 36,
+      "title": "A backtest: a strategy played over recorded bars through the paper account itself",
+      "mergedAt": "2026-10-29T16:03:14Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/36",
+      "branch": "feat/backtest"
+    },
     {
       "number": 35,
       "title": "Markets on a slow network: a late source's last list stands in, US stocks never wait for all of Cboe, the heatmap keeps every market",
