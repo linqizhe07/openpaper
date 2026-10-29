@@ -26,7 +26,8 @@
    the fills) · the trials (the ledger's latest runs, newest first: Open, and the owner's Look at the holdout…). Nothing is made up: every
    figure is the account's. */
 
-const BT = { list: null, listErr: "", view: null, running: false, soon: false };
+/* what the form runs: "run" (one strategy over the window) or "walk" (a grid walked forward through the folds) */
+const BT = { list: null, listErr: "", view: null, running: false, soon: false, mode: "run" };
 /* the owner's looks at the held-out data, as their signature was answered, kept in this browser by run id (the latest BT_LOOKS_MOST) */
 const BT_LOOKS_KEY = "openpaper-backtest-looks";
 const BT_LOOKS_MOST = 12;
@@ -84,11 +85,7 @@ function btDraw(el, owner) {
     form.innerHTML = btFormHtml(L.catalog, L.holdout);
     form.dataset.drawn = "1";
   }
-  const go = form && form.querySelector("[data-bt-go]");
-  if (go) {
-    go.disabled = BT.running;
-    setText(go, BT.running ? "Running…" : "Run backtest");
-  }
+  if (form) btModeSync(form);
   btPut(el, "result", btResultHtml(BT.view));
   btPut(el, "trials", btTrialsHtml(L, owner, btLooks()));
 }
@@ -102,6 +99,11 @@ function btWire(el) {
     if (t.dataset.btAct === "seen") return void btSeen(id);
     if (t.dataset.btAct === "look") return void btLook(id);
     if (t.dataset.btAct === "holdout") return void btMoveHoldout();
+    if (t.dataset.btAct === "mode") {
+      BT.mode = t.dataset.mode === "walk" ? "walk" : "run";
+      const form = el.querySelector("[data-bt-form]");
+      if (form) btModeSync(form);
+    }
   });
   el.addEventListener("change", (e) => {
     const sel = e.target.closest && e.target.closest('select[name="strategy"]');
@@ -111,7 +113,9 @@ function btWire(el) {
     const f = e.target.closest && e.target.closest("form[data-bt-form]");
     if (!f) return;
     e.preventDefault();
-    btSend(btAskOf(formFields(f), !!(f.querySelector('[name="benchmark"]') || {}).checked), f);
+    const checked = (name) => !!(f.querySelector(`[name="${name}"]`) || {}).checked;
+    if (BT.mode === "walk") btWalkSend(btWalkAskOf(formFields(f), checked("rolling")), f);
+    else btSend(btAskOf(formFields(f), checked("benchmark")), f);
   });
 }
 
@@ -149,9 +153,13 @@ function btFormHtml(cat, holdout) {
   const costs = d.costs || {};
   const kinds = (cat && cat.markets && cat.markets.kinds) || [];
   const most = (cat && cat.markets && cat.markets.most) || 12;
-  return `<label class="fld">Strategy${select("strategy", ids.map((id) => [id, S[id].name]), first)}</label>
+  const walk = (cat && cat.walk) || { folds: [2, 10], combosMost: 50 };
+  return `<div class="seg bt-modes" role="group" aria-label="What to run"><button type="button" data-bt-act="mode" data-mode="run" aria-pressed="true">One run</button><button type="button" data-bt-act="mode" data-mode="walk" aria-pressed="false">Walk forward</button></div>
+<p class="dim small" data-bt-mode-words>${esc(BT_MODE_WORDS.run)}</p>
+<label class="fld">Strategy${select("strategy", ids.map((id) => [id, S[id].name]), first)}</label>
 <p class="dim small bt-words" data-bt-words>${esc((S[first] || {}).words || "")}</p>
 <div data-bt-params>${btParamsHtml(S[first])}</div>
+<div class="bt-walk" data-bt-walk hidden><div data-bt-grid>${btGridHtml(S[first])}</div><div class="row2"><label class="fld">Folds<input name="folds" type="number" min="${walk.folds[0]}" max="${walk.folds[1]}" step="1" value="4" inputmode="numeric"><span class="bt-hint">the window is cut into folds + 1 stretches</span></label><label class="chk1 bt-rolling"><input type="checkbox" name="rolling"> Rolling: each fold picks on the stretch before it only</label></div><p class="dim small">On each fold every combination runs on its past and the best Sharpe runs on the fold; the folds chained are the walk. ${esc(walk.combosMost)} combinations at most. Every run is a row of the ledger.</p></div>
 <label class="fld">Markets<input name="markets" value="${esc(d.markets || "perp:BTC")}" autocomplete="off" spellcheck="false" placeholder="perp:BTC, spot:ETH, stock:SPY" aria-describedby="bt-markets-h"></label>
 <p class="dim small" id="bt-markets-h">${kinds.map((k) => `<span class="mono">${esc(k.example)}</span> ${esc(k.words)}`).join(" · ")}. ${most} at most, comma-separated.</p>
 <div class="row2"><label class="fld">Bars${select("interval", ((cat && cat.intervals) || ["1h", "4h", "1d"]).map((i) => [i, i]), d.interval || "1h")}</label><label class="fld">Paper money ($)<input name="cash" type="number" min="100" max="100000000" step="any" value="${d.cash || 10000}" inputmode="decimal"></label></div>
@@ -159,7 +167,7 @@ function btFormHtml(cat, holdout) {
 <p class="dim small">${end ? `The window ends at the holdout's start, ${esc(end)}, at the latest: the data from then on is the owner's to run on, by signature.` : "The window ends at the holdout's start at the latest."}</p>
 <div class="row2"><label class="fld">Fee a fill (bps)<input name="feeBps" type="number" min="0" max="500" step="any" value="${d.feeBps ?? 10}" inputmode="decimal"></label><label class="fld">Leverage<input name="leverage" type="number" min="1" max="50" step="any" placeholder="the strategy's" inputmode="decimal"></label></div>
 <details class="bt-costs"><summary>The cost model</summary><div class="bt-grid"><label class="fld">Half spread (bps)<input name="halfSpreadBps" type="number" min="0" max="500" step="any" value="${costs.halfSpreadBps ?? 1}"><span class="bt-hint">either side of each bar's open</span></label><label class="fld">Participation<input name="participation" type="number" min="0.0001" max="1" step="any" value="${costs.participation ?? 0.05}"><span class="bt-hint">the share of the bar before's dollars the book holds</span></label><label class="fld">Level gap (bps)<input name="levelBps" type="number" min="0" max="500" step="any" value="${costs.levelBps ?? 2}"><span class="bt-hint">between the book's five levels</span></label></div></details>
-<label class="chk1"><input type="checkbox" name="benchmark"${d.benchmark === false ? "" : " checked"}> Buy and hold beside it</label>
+<label class="chk1" data-bt-benchmark><input type="checkbox" name="benchmark"${d.benchmark === false ? "" : " checked"}> Buy and hold beside it</label>
 <div class="msg" data-bt-msg role="status"></div>
 <button type="submit" class="btn btn-primary btn-block" data-bt-go>Run backtest</button>
 <p class="dim small">The desk itself — its seats, Risk, the plan's exits — runs over the bars at your terminal, in an account of its own: <span class="mono">npm run account:backtest -- --strategy desk</span>. Its runs are listed below with the rest.</p>`;
@@ -172,6 +180,54 @@ function btStrategy(form, cat, id) {
   if (words) setText(words, (def && def.words) || "");
   const params = form.querySelector("[data-bt-params]");
   if (params) params.innerHTML = btParamsHtml(def);
+  const grid = form.querySelector("[data-bt-grid]");
+  if (grid) grid.innerHTML = btGridHtml(def);
+}
+
+/* what each mode does, in a line under the switch */
+const BT_MODE_WORDS = {
+  run: "One strategy over the window, beside buying and holding the same markets.",
+  walk: "Walk forward: the numbers picked on each fold's past, then tried on the fold — what picking would have earned, had it been done as time went.",
+};
+/** the form as its mode shows it: the switch pressed, the walk's fields shown or not, the buy-and-hold (a walk runs none), the button's word */
+function btModeSync(form) {
+  const walk = BT.mode === "walk";
+  for (const b of form.querySelectorAll('[data-bt-act="mode"]')) b.setAttribute("aria-pressed", String((b.dataset.mode === "walk") === walk));
+  const words = form.querySelector("[data-bt-mode-words]");
+  if (words) setText(words, walk ? BT_MODE_WORDS.walk : BT_MODE_WORDS.run);
+  const block = form.querySelector("[data-bt-walk]");
+  if (block) block.hidden = !walk;
+  const bench = form.querySelector("[data-bt-benchmark]");
+  if (bench) bench.hidden = walk;
+  const go = form.querySelector("[data-bt-go]");
+  if (go) {
+    go.disabled = BT.running;
+    setText(go, BT.running ? (walk ? "Walking…" : "Running…") : walk ? "Walk forward" : "Run backtest");
+  }
+}
+
+/** the walk's grid: for each of the strategy's numbers, the values to try (empty: the number above, the same in every combination) */
+function btGridHtml(def) {
+  const P = (def && def.params) || {};
+  const keys = Object.keys(P);
+  if (!keys.length) return '<p class="dim small">It takes no numbers to pick: the walk runs it as it is on each fold.</p>';
+  const example = (p) => {
+    const twice = Math.min(p.max, p.default * 2);
+    return [p.default, p.integer ? Math.round(twice) : Number(twice.toPrecision(3))].filter((x, i, a) => a.indexOf(x) === i).join(", ");
+  };
+  return `<div class="bt-grid">${keys.map((k) => `<label class="fld">${esc(btParamLabel(k))}: values to try<input name="g.${esc(k)}" autocomplete="off" spellcheck="false" inputmode="decimal" placeholder="e.g. ${esc(example(P[k]))}"><span class="bt-hint">comma-separated; empty keeps the number above</span></label>`).join("")}</div>`;
+}
+
+/** what a walk asks the account for: the form's run, its numbers walked where values were typed for them (and so not fixed), the folds,
+ * rolling or anchored — and no buy-and-hold, which a walk does not run */
+function btWalkAskOf(f, rolling) {
+  const base = btAskOf(f, true);
+  delete base.benchmark;
+  const grid = {};
+  for (const [k, v] of Object.entries(f)) if (k.startsWith("g.") && String(v).trim() !== "") grid[k.slice(2)] = String(v).split(",").map((x) => x.trim()).filter(Boolean).map(Number);
+  for (const k of Object.keys(grid)) delete base.params[k];
+  const folds = String(f.folds ?? "").trim() === "" ? undefined : Number(f.folds);
+  return { ...base, grid, ...(folds !== undefined ? { folds } : {}), rolling };
 }
 
 /** what the form asks the account for, from its fields as typed: a field left empty is the account's default, a number is a number; the
@@ -206,6 +262,27 @@ async function btSend(body, form) {
     btSay(form, "", "");
     btShowResult();
     toast(`${(r.body.strategy && r.body.strategy.name) || "The backtest"}: ${btPctText(r.body.metrics && r.body.metrics.returnPct)} over the window`, "ok");
+  } finally {
+    BT.running = false;
+    btRead(true);
+    btAgain();
+  }
+}
+
+/** A WALK: asked of the account; its answer is the result (the folds, the chain, the share kept), each fold's run opening by its id */
+async function btWalkSend(body, form) {
+  if (BT.running) return;
+  BT.running = true;
+  btSay(form, "Walking it: every combination on each fold's past, the best on the fold. Each run is a row of the ledger.", "wait");
+  btAgain();
+  try {
+    const r = await postJson("/api/account/backtest/walk", body);
+    if (r.status !== 200 || !r.body || r.body.ok === false) return void btSay(form, refusalOf(r.body) || "The account did not answer. Try again.", "no");
+    const { ok: _ok, ...walk } = r.body;
+    BT.view = { kind: "walk", ...walk };
+    btSay(form, "", "");
+    btShowResult();
+    toast(`Walk-forward: ${btPctText(walk.metrics && walk.metrics.returnPct)} out of sample, ${plural(walk.trials ? walk.trials.added : 0, "row")} in the ledger`, "ok");
   } finally {
     BT.running = false;
     btRead(true);
@@ -460,6 +537,7 @@ function btFillsHtml(v) {
 
 /** THE RESULT: what ran, its equity beside the buy-and-hold's and its drawdown, the figures, how it is judged, the notes, the fills */
 function btResultHtml(v) {
+  if (v && v.kind === "walk") return btWalkHtml(v);
   if (!v) return '<div class="card-head"><h2 class="h2">The result</h2></div><p class="empty">Run a backtest, or open one of the trials below: its equity beside buying and holding, its figures, how it is judged against every run tried, and its fills.</p>';
   const s = v.strategy || {};
   const markets = (v.markets || []).map((m) => (typeof m === "string" ? m : `${m.symbol} · ${m.interval}`)).join(", ");
@@ -467,6 +545,37 @@ function btResultHtml(v) {
   const notes = (v.notes || []).length ? `<details class="bt-notes-box"><summary>${esc(plural(v.notes.length, "note"))}</summary><ul class="bt-notes small dim">${v.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : "";
   const refused = v.refused ? `<p class="msg wait">${esc(plural(v.refused, "order"))} not filled: the notes say why.</p>` : "";
   return `${head}${btChartHtml(v)}${btFiguresHtml(v)}${btJudgedHtml(v)}${refused}${notes}${btFillsHtml(v)}`;
+}
+
+/** A WALK as the result shows it: what was walked, the folds chained as one curve, what the chain earned out of sample and what share of
+ * the picks' in-sample Sharpe it kept, the rows it added to the ledger, and each fold — its windows, its pick, its run out of sample, which
+ * opens */
+function btWalkHtml(v) {
+  const s = v.strategy || {};
+  const folds = v.folds || [];
+  const grid = Object.entries(v.grid || {}).map(([k, vals]) => `${k} ${vals.join(", ")}`).join(" × ") || "the numbers as given";
+  const fixed = btParamWords(v.fixed);
+  const head = `<div class="card-head"><div><h2 class="h2">Walk-forward · ${esc(s.name || s.id || "")}</h2><p class="dim small">${esc(plural(v.combos || 0, "combination"))} (${esc(grid)})${fixed ? `, the rest ${esc(fixed)}` : ""} · ${esc(plural(folds.length, "fold"))}, ${v.rolling ? "rolling" : "anchored"} · ${esc((v.markets || []).join(", "))} ${esc(v.interval || "")} · ${esc(btDay(v.window && v.window.from))} → ${esc(btDay(v.window && v.window.to))} UTC</p></div></div>`;
+  const m = v.metrics || {};
+  const kept = v.efficiency === null || v.efficiency === undefined ? `<p>The picks' mean Sharpe in sample was ${esc(btFix(v.inSharpeMean))}: nothing above zero for the walk to keep.</p>` : v.efficiency >= 0 ? `<p><b>${Math.round(v.efficiency * 100)}% of it kept</b>: the picks' mean Sharpe in sample was ${esc(btFix(v.inSharpeMean))}; the walk's out of sample, ${esc(btFix(v.outSharpe))}.</p>` : `<p><b>None of it kept</b>: the picks' mean Sharpe in sample was ${esc(btFix(v.inSharpeMean))}; the walk's out of sample, ${esc(btFix(v.outSharpe))} (an efficiency of ${esc(btFix(v.efficiency * 100, 0))}%).</p>`;
+  const t = v.trials || {};
+  const summary = `<div class="bt-judged"><div class="label">Out of sample, the folds chained</div><p>${chg(m.returnPct)} · Sharpe ${esc(btFix(m.sharpe))} <span class="dim">±${esc(btFix(m.sharpeSe))}</span> · max drawdown ${esc(btPctText(-m.maxDrawdownPct))} · ${esc(plural(m.fills || 0, "fill"))} · fees ${esc(money(m.feesUsd))}</p>${kept}<p class="dim small">${esc(plural(t.added || 0, "row"))} added to the ledger: ${esc(plural(t.inSample || 0, "try", "tries"))} in sample, counted; ${esc(plural(t.outSample || 0, "run"))} out of sample, kept.</p></div>`;
+  // a stretch's days without the year (the head says it), and the numbers the walk picked — the fixed ones are the same in every fold
+  const md = (iso) => String(iso || "").slice(5, 10);
+  const walked = (f) => Object.entries(f.picked || {}).filter(([k]) => k in (v.grid || {}));
+  const cols = [
+    // the in-sample stretch follows from the fold (every stretch before it, or the one just before): said on the fold's number, not in a column
+    { label: "Fold", r: true, cell: (f) => `<span title="in sample ${esc(md(f.inSample.from))} → ${esc(md(f.inSample.to))}">${esc(f.fold)}</span>` },
+    { label: "Picked", cls: "nw", cell: (f) => `<span title="the best of ${esc(f.tried)} in sample, ${esc(md(f.inSample.from))} → ${esc(md(f.inSample.to))}">${esc(walked(f).map(([k, x]) => `${k} ${x}`).join(" · ") || "as given")}</span>` },
+    { label: "Sharpe in", r: true, cell: (f) => esc(btFix(f.inSharpe)) },
+    // the out-of-sample window opens the fold's run (kept, as any run)
+    { label: "Out of sample", cls: "nw", cell: (f) => `<button type="button" class="link" data-bt-act="open" data-id="${esc(f.out.id)}" title="Open this fold's run">${esc(md(f.outSample.from))} → ${esc(md(f.outSample.to))}</button>` },
+    { label: "Return", r: true, cell: (f) => chg(f.out.returnPct) },
+    { label: "Sharpe out", r: true, cell: (f) => esc(btFix(f.out.sharpe)) },
+    { label: "Max DD", r: true, cell: (f) => esc(btPctText(-f.out.maxDrawdownPct)) },
+  ];
+  const notes = (v.notes || []).length ? `<details class="bt-notes-box"><summary>${esc(plural(v.notes.length, "note"))}</summary><ul class="bt-notes small dim">${v.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : "";
+  return `${head}${btChartHtml({ curve: v.curve })}${summary}${table(cols, folds, { cls: "bt-walk-t", empty: "No fold ran." })}${notes}`;
 }
 
 /** THE TRIALS: the ledger's latest runs, newest first — what was tried, by whom, on which data, its figures; Open for a kept training run,

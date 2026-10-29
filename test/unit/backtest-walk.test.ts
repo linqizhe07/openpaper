@@ -6,7 +6,7 @@ import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { parseBacktestArgs } from "../../src/portfolio/account-backtest.ts";
 import { labRead, readTrials, type LabDeps, type TrialRow } from "../../src/portfolio/backtest/lab.ts";
 import { DEFAULT_COSTS } from "../../src/portfolio/backtest/source.ts";
-import { combinations, labWalkForward, type WalkAsk, type WalkOutcome } from "../../src/portfolio/backtest/walk.ts";
+import { combinations, labWalkForward, walkAskOf, walkSummary, type WalkAsk, type WalkOutcome } from "../../src/portfolio/backtest/walk.ts";
 import { standinHistory } from "../standin/history.ts";
 
 /** WALK-FORWARD (backtest/walk.ts, the command's --grid and --folds): a strategy's numbers picked on each fold's past and tried on the fold,
@@ -82,6 +82,41 @@ describe("the walk", () => {
     expect(await no({ fixed: { fast: 5 } })).toBe("fast is both a grid and a fixed number");
     expect(await no({ to: Date.parse("2026-09-01T00:00:00Z") })).toMatch(/^the data from 2026-07-31 on is held out: a walk-forward walks before it/);
     expect(readTrials(deps.home).rows.filter((r) => r.kind === "trial")).toHaveLength(0);
+  });
+});
+
+describe("a walk a request asks for", () => {
+  it("is read strictly: the grid as {name: [numbers]}, the folds, rolling, the rest as one run is asked — its numbers checked with the grid's first values", () => {
+    const w = walkAskOf({ strategy: "sma", grid: { fast: [5, 10, 5] }, folds: 3, rolling: true, params: { slow: 15 }, markets: "perp:BTC", interval: "4h", seat: "0xSeat" });
+    expect(w).toMatchObject({ strategy: "sma", grid: { fast: [5, 10] }, fixed: { slow: 15, weight: 1 }, folds: 3, rolling: true, refs: [{ cls: "perp", base: "BTC" }], interval: "4h", seat: "0xSeat" });
+    expect(walkAskOf({})).toMatchObject({ strategy: "tsmom", grid: {}, folds: 4, rolling: false });
+    const no = (body: Record<string, unknown>) => walkAskOf(body) as string;
+    expect(no({ grid: [5, 10] })).toBe("grid is {name: [numbers]}");
+    expect(no({ grid: { fast: "5,10" } })).toBe("grid.fast is a list of 1 to 20 numbers");
+    expect(no({ grid: { fast: [] } })).toBe("grid.fast is a list of 1 to 20 numbers");
+    expect(no({ grid: { "fa st": [5] } })).toBe('grid names a number by its name, not "fa st"');
+    expect(no({ folds: 11 })).toBe("folds is a whole number, 2 to 10");
+    expect(no({ rolling: "yes" })).toBe("rolling is true or false");
+    expect(no({ benchmark: true })).toBe("a walk-forward runs no buy-and-hold beside it: no benchmark");
+    expect(no({ strategy: "desk" })).toMatch(/^the desk does not walk/);
+    expect(no({ strategy: "sma", grid: { fast: [5] }, params: { fast: 6 } })).toBe("fast is both a grid and a fixed number");
+    expect(no({ strategy: "sma", grid: { fast: [50] }, params: { slow: 40 } })).toBe("sma's fast average is shorter than its slow one");
+    expect(no({ code: "x" })).toMatch(/^a backtest is asked with /);
+  });
+
+  it("is refused before anything runs when it would take more than the work it may — with its estimate — and its answer carries a thinned curve", async () => {
+    const deps = lab();
+    const over = (await labWalkForward(ask({ maxWork: 1_000 }), deps)) as Refusal;
+    expect(over).toMatchObject({ code: "E_ACCOUNT_LIMIT" });
+    expect(over.message).toMatch(/^a walk-forward here takes 1,000 steps across its markets at most; this one would take about [\d,]+ — fewer combinations or folds/);
+    expect(readTrials(deps.home).rows.filter((r) => r.kind === "trial")).toHaveLength(0);
+    const w = ok(await labWalkForward(ask({ maxWork: 100_000, seat: "0xSeat" }), deps));
+    expect(readTrials(deps.home).rows.filter((r): r is TrialRow => r.kind === "trial").every((r) => r.seat === "0xSeat" && r.by === "terminal")).toBe(true);
+    const sum = walkSummary(w) as { curve: Array<[number, number]>; equity?: unknown; markets: string[]; interval: string };
+    expect(sum.equity).toBeUndefined();
+    expect(sum.curve.length).toBeLessThanOrEqual(400);
+    expect(sum.curve[0]).toEqual([w.equity[0]!.t, w.equity[0]!.usd]);
+    expect([sum.markets, sum.interval]).toEqual([["perp:BTC"], "4h"]);
   });
 });
 

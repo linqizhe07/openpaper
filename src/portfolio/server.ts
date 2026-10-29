@@ -146,6 +146,14 @@
  *                                                        buy-and-hold's, the Sharpe deflated by every distinct strategy tried, the odds of
  *                                                        overfitting among its kin. Unsigned; one at a time (429 while one runs), at most
  *                                                        BACKTEST_API_WORK steps across its markets
+ *   POST /api/account/backtest/walk {strategy, grid: {name: [numbers]}, folds, rolling, params, markets, interval, from, to, cash, feeBps,
+ *                               leverage, halfSpreadBps, participation, levelBps, seat}   A WALK-FORWARD (backtest/walk.ts): the training
+ *                                                        window cut into folds + 1 stretches; on each fold the grid's every combination
+ *                                                        run on its past, the best (by Sharpe) run on the fold; the out-of-sample runs
+ *                                                        chained, with the share of the in-sample Sharpe they kept. Every run a row of the
+ *                                                        trials ledger with the seat named, the out-of-sample runs kept. Unsigned, training
+ *                                                        data only; one backtest at a time (429 while one runs), at most BACKTEST_WALK_WORK
+ *                                                        steps across its markets over all its runs (refused before anything runs)
  *   GET  /api/account/backtests?limit=                   the lab as it stands: the holdout, the ledger (its rows, its chain intact or where
  *                                                        it broke, runs, distinct strategies, looks at the holdout), the latest runs (a
  *                                                        look at the holdout without its figures: the owner's), and the catalog — the
@@ -871,6 +879,14 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const body = req.body as unknown;
     if (!body || typeof body !== "object" || Array.isArray(body)) return void bad(res, "need {strategy, params, markets, interval, from, to, cash, feeBps, leverage, …}");
     const r = await svc.backtestRun(body as Record<string, unknown>);
+    if (isRefusal(r) && (r.detail as { busy?: unknown } | undefined)?.busy === true) return void res.status(429).json({ ok: false, refusal: r });
+    answerOf(res, r);
+  }));
+  app.post("/api/account/backtest/walk", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const body = req.body as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return void bad(res, "need {strategy, grid, folds, rolling, params, markets, interval, from, to, …}");
+    const r = await svc.backtestWalk(body as Record<string, unknown>);
     if (isRefusal(r) && (r.detail as { busy?: unknown } | undefined)?.busy === true) return void res.status(429).json({ ok: false, refusal: r });
     answerOf(res, r);
   }));
