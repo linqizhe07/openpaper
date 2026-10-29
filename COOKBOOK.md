@@ -446,6 +446,41 @@ portfolio_history        {range: "1w", paper: true}       纸上账户自己的�
 
 **换成真的**：接真的场所（Hyperliquid 的主网 API 钱包、一家交易所的钥匙……），给 agent 一条写着那家 id 的额度，工具和写法一字不改。不同的只有三件：钱是真的、`--live-cap` 管着每一单、Markets 和比价拿它当价格。
 
+## 6c · 回测：先在过去试，最近的数据留给你自己看
+
+纸上账户是现在的假钱；回测是把同一本纸上账户放回过去，一根 K 线一根 K 线地走。成交、手续费、资金费、强平都是纸上账户自己的规则：K 线里碰到强平价，就在那根 K 线里按强平价平掉；止损和限价也在 K 线里判。旁边同时跑一遍买入持有作对照。
+
+- **策略只有数，没有代码**：`hold`；`sma {fast, slow, weight}`；`tsmom {lookbackDays, volTarget, volDays, rebalanceHours, maxWeight, buffer}`（时间序列动量，按波动率目标定仓位）；`carry {lookbackHours, enterApr, exitApr, weight}`（同一个币现货多、永续空，吃资金费）。每个数有上下界，越界的会被拒并说出界限。
+- **市场**：`perp:BTC`（Hyperliquid 永续和每小时资金费；1h 只有最近约 208 天，4h 约 833 天）、`spot:BTC`（Coinbase）、`stock:SPY`（美股日线，只做了拆股调整，不含分红）。K 线缓存在 `~/.openpaper/history`，只补缺的两头。
+- **最近的数据留出来**：第一次有人跑回测时，账户把那之前 90 天写进 `~/.openpaper/backtest/holdout.json`，之后不会自己动。回测窗口最晚到留出期开始那天，不写结束日就是那天。在留出期上跑只有两种办法：你签名（setBacktest），或者在你自己的终端加 `--holdout`。
+- **每一次都记账**：`~/.openpaper/backtest/trials.jsonl` 一次一行，哈希链着，改一行、删一行都看得出来。回测的 Sharpe 按留出期之前试过的**不同策略数**打折（Deflated Sharpe）：试得越多，门槛越高。同一组市场和 K 线保存的回测还会一起算 PBO：在一半历史上最好的那个，在另一半排进后一半的比例。
+
+终端：
+
+```
+npm run account:backtest -- --strategy tsmom --markets perp:BTC,perp:ETH --interval 1h
+                                     窗口：留出期开始前的 180 天；旁边是买入持有；结果存在 ~/.openpaper/backtest/runs/
+npm run account:backtest -- --strategy sma --param fast=10 --param slow=50 --markets perp:BTC,perp:ETH
+                                     Deflated 那一行写着现在一共试过几个不同策略、最好的那个碰运气能有多少 Sharpe
+npm run account:backtest -- --markets perp:BTC,perp:ETH --holdout
+                                     在留出期上跑一次（你的终端，算一次 look）
+npm run account:backtest -- --trials                                       台账：留出期、行数、链是否完整、最近的回测
+npm run account:backtest -- --set-holdout 2026-09-01                       移动留出期（不能移回已经试过的日子之前）
+```
+
+agent（MCP）：
+
+```
+portfolio_backtest   {strategy: "tsmom", markets: "perp:BTC,perp:ETH", interval: "1h"}
+                     答复：metrics、benchmark.metrics、deflated {dsr, sr0, trials}、overfit {pbo}、notes、id；记进台账，带上这个席位
+portfolio_backtests  {}                  留出期、台账、最近的回测
+portfolio_backtests  {id: "<id>"}        一次回测的全部：每笔成交、权益曲线、资金费、没成交的单
+```
+
+会被拒的：窗口过了留出期开始那天（`E_ACCOUNT_OWNER_ONLY`：只有你签名才能跑）；不认识的字段，比如 `window`、`by`；另一个回测正在跑（一次一个，路由回 429）。你在留出期上看的那几次，agent 只看得到"看过、看的是什么"，看不到结果：`portfolio_backtests {id}` 读它会被拒。
+
+回测**不是**什么：成交是开盘价加一个成本模型（半个价差、五档盘口装上一根 K 线成交额的 5%），不是真实盘口；一根 K 线里先到高还是先到低，K 线不说。留出期的价格本身是公开的，agent 用 `portfolio_candles` 一样读得到；留出期保证的是这个账户自己的回测记录：没有你的话，它不在留出期上跑任何策略，而且每一次看都记着。
+
 ## 7 · 动钱
 
 Portfolio 的快捷操作 "Move"（不止一个账户能动钱时先问从哪个），或 Account 抽屉（Accounts 那一行的 "Details"）里的 "Move…"。"What" 里只有这个账户做得了的：Withdraw to another account of yours（提到你自己的地方）、Between its own ledgers（账本之间划转）、Swap stablecoins（稳定币互换；下单票的 Pay with 不做这件事，它在这里）、Send from this wallet（从钱包发）、Across chains（跨链，下面）。预览里是**账户替你向目的地要来的地址**、手续费上限、网络，点 "Sign and send"。币、网络、桥的目的链三个下拉来自账户公布的 `dollars` / `networks` / `bridgeChains`（账户认的每一种美元稳定币、它们所在的链、桥能到的链），不是页面写死的表；往一个 agent 钱包挪钱，网络默认是那个钱包有钱的那条链。Statement 里有这一笔，场所或链说到了才算到账。要知道往哪打钱，用 Portfolio 的 "Receive"（第 2b 条）。

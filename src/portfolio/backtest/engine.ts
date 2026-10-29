@@ -52,6 +52,8 @@ export interface BacktestRequest {
   home: string;
   /** what the orders' client ids are made from: the same seed, the same ids (default: the spec and the window) */
   seed?: string | undefined;
+  /** the most steps this run may take, at most BACKTEST_MAX_STEPS (a run the service is asked for takes fewer) */
+  maxSteps?: number | undefined;
   say?: ((line: string) => void) | undefined;
 }
 
@@ -113,7 +115,8 @@ export async function runBacktest(req: BacktestRequest): Promise<BacktestRun | R
   if (req.leverage !== undefined && !(req.leverage >= 1 && req.leverage <= 50)) return no("E_ACCOUNT_BAD_ACTION", { message: "a backtest's leverage is 1 to 50" });
   const steps = stepsOf(req.markets, req.from, req.to);
   if (steps.length < 2) return no("E_ACCOUNT_BAD_ACTION", { message: `no bar of ${req.markets.map((m) => m.symbol).join(", ")} starts between ${iso(req.from)} and ${iso(req.to)}` });
-  if (steps.length > BACKTEST_MAX_STEPS) return no("E_ACCOUNT_BAD_ACTION", { message: `a backtest steps ${BACKTEST_MAX_STEPS.toLocaleString("en-US")} times at most; this one would step ${steps.length.toLocaleString("en-US")} — a coarser bar or a shorter window` });
+  const most = Math.min(BACKTEST_MAX_STEPS, req.maxSteps ?? BACKTEST_MAX_STEPS);
+  if (steps.length > most) return no("E_ACCOUNT_BAD_ACTION", { message: `a backtest here steps ${most.toLocaleString("en-US")} times at most; this one would step ${steps.length.toLocaleString("en-US")} — a coarser bar, a shorter window or fewer markets` });
   const costs: BacktestCosts = { ...DEFAULT_COSTS, ...(req.costs ?? {}) };
   const minTrade = req.minTradeUsd ?? 10;
   const slip = (req.maxSlippageBps ?? 100) / 10_000;

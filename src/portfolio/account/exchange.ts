@@ -62,7 +62,7 @@ import { parseIntent, parseOrder } from "../intents.ts";
 import { achArrival, etDate, whenLabel } from "./calendar.ts";
 import { doorOf, plan, type Door, type Leg, type Rail, type Route, type RouteRequest, type VenueView, whyWatchOnly } from "./doors.ts";
 import { heldUsd, inFlightUsd, launch, newPayment, settleDue, type Advance, type Authority, type Money, type Payment, type PaymentKind } from "./payments.ts";
-import { actionHash, BRAIN_KEY_TTL_MS, PAPER_TTL_MS, PAPER_TYPES, SIGN_OUT_TTL_MS, isAgentAction, isDeviceSig, isJwk, isOwnerAction, kidOf, malformed, MEMORY_TYPES, micro, MONEY_TTL_MS, MONEY_TYPES, NonceBook, ownEnvelope, ownerTypedData, shownFields, signerOf, type Action, type AgentAction, type AnySig, type Envelope, type Hex, type Jwk, type OwnerAction, type SendAsset } from "./sign.ts";
+import { actionHash, BRAIN_KEY_TTL_MS, LAB_TTL_MS, LAB_TYPES, PAPER_TTL_MS, PAPER_TYPES, SIGN_OUT_TTL_MS, isAgentAction, isDeviceSig, isJwk, isOwnerAction, kidOf, malformed, MEMORY_TYPES, micro, MONEY_TTL_MS, MONEY_TYPES, NonceBook, ownEnvelope, ownerTypedData, shownFields, signerOf, type Action, type AgentAction, type AnySig, type Envelope, type Hex, type Jwk, type OwnerAction, type SendAsset } from "./sign.ts";
 import { deskBrainKeyProblem, fingerprintOf, setBrainKeyProblem } from "./brain-keys.ts";
 import { LiveMoves, type LiveMoney } from "./live-moves.ts";
 import { LiveOrders, type CloseQuote, type LiveOrder, type OrderQuote } from "./live-orders.ts";
@@ -195,6 +195,12 @@ export interface Host {
   /** what a paper account's reset or top-up would do, in words, for the dialog before it is signed (POST /api/account/prepare): its name, the
    * book it would archive, what it holds now and what it would hold — or why it cannot be done */
   paperWords?(action: Extract<OwnerAction, { type: "resetPaper" | "topUpPaper" }>): Refusal | { words: string; usd: number };
+  /** THE LAB (backtest/lab.ts), as its owner runs it: the holdout moved (`holdout`), or a training run tried on the held-out data
+   * (`evaluate`: `data` is what came of it). The door has checked the signature, the owner, the nonce and the ten minutes (absent: this
+   * account keeps no backtests) */
+  backtest?(action: Extract<OwnerAction, { type: "setBacktest" }>): Promise<Refusal | { ok: true; summary: string; data?: unknown }>;
+  /** what a setBacktest would do, in words, for the dialog before it is signed — or why it cannot be done */
+  backtestWords?(action: Extract<OwnerAction, { type: "setBacktest" }>): Refusal | { words: string };
 }
 
 /** one way of connecting a real venue, as the page offers it */
@@ -632,6 +638,8 @@ export class AccountEngine {
     if (MONEY_TYPES.has(action.type) && Math.abs(now - action.nonce) > MONEY_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a money instruction is good for ${MONEY_TTL_MS / 60_000} minutes` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a money instruction is good for ${MONEY_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
     // a paper account started again or topped up: signed and sent at once, never an envelope kept to wipe the book days later
     if (PAPER_TYPES.has(action.type) && Math.abs(now - action.nonce) > PAPER_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a paper account's reset or paper money added is good for ${PAPER_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a paper account's reset or paper money added is good for ${PAPER_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
+    // the lab's holdout moved or looked at: signed and sent at once, never an envelope kept to spend a look at the held-out data later
+    if (LAB_TYPES.has(action.type) && Math.abs(now - action.nonce) > LAB_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a look at the held-out data, or the holdout moved, is good for ${LAB_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a look at the held-out data, or the holdout moved, is good for ${LAB_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
     // a browser signs only ITSELF out: another device's signature, or an owner's wallet key, signs no device out (Devices lets a browser
     // in; a change of signers is convertToMultiSigUser) — and a sign-out is signed and sent at once, never an envelope kept for later
     if (action.type === "signOut" && action.device !== signer) return this.refused(no("E_ACCOUNT_BAD_ACTION", { message: "a browser signs only itself out: this sign-out names another device", detail: { signer, device: action.device } }), envelope, signer);
@@ -809,6 +817,14 @@ export class AccountEngine {
         if (isRefusal(r)) return r;
         this.host.log({ kind: "action", venue: action.venue, tool: action.type, signer, envelope, outcome: "ok", reason: r.summary });
         return { ok: true, kind: "account", summary: r.summary };
+      }
+      case "setBacktest": {
+        // the lab (backtest/lab.ts): the holdout moved, or a training run tried on the held-out data — the owner's, by signature
+        if (!this.host.backtest) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no backtests" });
+        const r = await this.host.backtest(action);
+        if (isRefusal(r)) return r;
+        this.host.log({ kind: "action", venue: "*", tool: action.type, signer, envelope, outcome: "ok", reason: r.summary });
+        return r.data !== undefined ? { ok: true, kind: "result", result: r.data } : { ok: true, kind: "account", summary: r.summary };
       }
       case "agentOrder": {
         const order = parseOrder({ base: action.base, side: action.side, qty: action.qty });
@@ -1638,6 +1654,15 @@ export class AccountEngine {
         const w = this.host.paperWords(action);
         if (isRefusal(w)) return w;
         quote = { words: w.words, feeUsd: 0, receiveUsd: w.usd, lands: "at once", access: "owner", final: true, legs: [] };
+      }
+      // the lab's holdout moved, or a look at the held-out data: what it would do, in words, before the dialog shows it to be signed
+      if (action.type === "setBacktest") {
+        const wrong = malformed(action);
+        if (wrong) return no("E_ACCOUNT_BAD_ACTION", { message: wrong });
+        if (!this.host.backtestWords) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no backtests" });
+        const w = this.host.backtestWords(action);
+        if (isRefusal(w)) return w;
+        quote = { words: w.words, feeUsd: 0, receiveUsd: 0, lands: "at once", access: "owner", final: true, legs: [] };
       }
     } else return no("E_ACCOUNT_BAD_ACTION", { message: `"${type}" is not something the owner signs` });
     const wrong = malformed(action);
