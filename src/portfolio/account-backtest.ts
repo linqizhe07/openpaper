@@ -19,7 +19,7 @@
  *
  *   npm run account:backtest -- --strategy tsmom --markets perp:BTC,perp:ETH --interval 1h --from 2026-02-01 --to 2026-07-31 --cash 10000
  *   --strategy   hold · sma · tsmom · carry (default tsmom), or desk: the account's own desk over the bars (backtest/desk.ts: perp: markets,
- *                1h or 4h, its numbers sizeUsd · tpPct · slPct · maxHours · riskPct · maxOpen)
+ *                1h or 4h, its numbers sizeUsd · tpPct · slPct · maxHours · riskPct · maxOpen · dayLossPct)
  *   --markets    perp:COIN, spot:COIN, stock:TICKER, comma-separated (perp:BTC)
  *   --interval   1h · 4h · 1d for the coins and perpetuals (1h; a share is read in daily bars)    --param name=value  a strategy's number, again for each
  *   --from --to  the window, YYYY-MM-DD (the 180 days before --to; --to: the holdout's start)    --cash  the paper money (10000)

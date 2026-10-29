@@ -117,7 +117,7 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
       change: "hire",
       value: JSON.stringify({
         name: "Desk backtest",
-        objective: { text: `Trade ${o.markets.map((m) => m.base).join(", ")} on paper with the momentum script, over recorded bars`, venue: DESK_VENUE, universe: "perps", targetPct: 3, maxRiskPct: o.params.riskPct, maxDailyLossPct: 5, hours: sessionH, everyMin, reportAt: "19:00", maxOpen: o.params.maxOpen },
+        objective: { text: `Trade ${o.markets.map((m) => m.base).join(", ")} on paper with the momentum script, over recorded bars`, venue: DESK_VENUE, universe: "perps", targetPct: 3, maxRiskPct: o.params.riskPct, maxDailyLossPct: o.params.dayLossPct, hours: sessionH, everyMin, reportAt: "19:00", maxOpen: o.params.maxOpen },
         brain: { model: "claude-opus-5-5", effort: "medium" },
         roles: ROLES.map((role) => ({ role, kind: "house" })),
         autonomy: { paper: true },
@@ -146,6 +146,8 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
   };
   let sessions = 1;
   let cycles = 0;
+  /** the halts the day's loss line called, each once (a halt lifts by itself the next day: the session runs on) */
+  const halts = new Set<string>();
   const funnel = { scanned: 0, cleared: 0, placed: 0, closed: 0, rejected: 0 };
   /** a session's figures added in once it ends (a new one starts from nothing) */
   const fold = (v: Awaited<ReturnType<typeof desk.view>>): void => {
@@ -161,8 +163,10 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
       await desk.tick();
       let v = await desk.view();
       if (!v) return no("E_ACCOUNT_BAD_ACTION", { message: "the desk's record could not be read" });
-      // a session that ended (its fourteen days, its day's loss halt) before the window did: started again, its autonomy carried
-      if (k < steps.length - 1 && (v.session?.state === "ended" || v.session?.state === "halted")) {
+      if (v.session?.halted) halts.add(v.session.halted.at);
+      // a session that ended (its fourteen days) before the window did: started again, its autonomy carried. A halted one is not ended —
+      // its new leads wait until the next day, its open leads keep their plan — and is left to lift by itself
+      if (k < steps.length - 1 && v.session?.state === "ended") {
         fold(v);
         await resume();
         sessions++;
@@ -197,7 +201,7 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
   const received = -rows.filter((f) => f.usd < 0).reduce((s, f) => s + f.usd, 0);
   const metrics = metricsOf(equity, { fills: fills.length, tradedUsd: fills.reduce((s, f) => s + f.qty * f.price, 0), feesUsd: fills.reduce((s, f) => s + f.feeUsd, 0), fundingUsd: paid - received, slippageUsd: 0 });
   const notes = [
-    `the desk ran ${sessions} session${sessions === 1 ? "" : "s"} of ${sessionH} h at most, a cycle every ${everyMin} min: ${cycles.toLocaleString("en-US")} cycles, ${funnel.scanned} leads scanned, ${funnel.cleared} cleared and ${funnel.rejected} turned down by Risk, ${funnel.placed} placed, ${funnel.closed} closed`,
+    `the desk ran ${sessions} session${sessions === 1 ? "" : "s"} of ${sessionH} h at most, a cycle every ${everyMin} min: ${cycles.toLocaleString("en-US")} cycles, ${funnel.scanned} leads scanned, ${funnel.cleared} cleared and ${funnel.rejected} turned down by Risk, ${funnel.placed} placed, ${funnel.closed} closed${halts.size ? `; the day's loss line (${o.params.dayLossPct}%) halted new leads ${halts.size} time${halts.size === 1 ? "" : "s"}, each until the next day` : ""}`,
     `every exit is judged inside the bar that reached it, its stop before its take-profit where one bar reached both (the paper account's rule): with exits narrower than a bar's range, that is a loss the bar cannot rule out`,
     `the brain is the momentum script, not a model: the result is the desk's machinery on these prices, not anyone's judgement`,
   ];
