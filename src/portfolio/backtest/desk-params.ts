@@ -8,6 +8,7 @@ export const DESK_PARAMS = {
   maxHours: { default: 24, min: 1, max: 720, words: "the most hours a lead stays open" },
   riskPct: { default: 10, min: 0.1, max: 50, words: "the most a lead may be, % of the session's starting equity (the desk's own cap; 10, as the Superagent on paper)" },
   maxOpen: { default: 3, min: 1, max: 10, integer: true, words: "leads open at once" },
+  dayLossPct: { default: 5, min: 0.1, max: 50, words: "the day's loss that halts new leads until the next day, % of the session's starting equity" },
 } as const;
 export type DeskParams = { [K in keyof typeof DESK_PARAMS]: number };
 export const DESK_NAME = "The desk";

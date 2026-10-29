@@ -471,7 +471,7 @@ npm run account:backtest -- --strategy sma --grid fast=10,20,40 --grid slow=50,1
                                      放到第 i 段上跑；三段样本外接起来就是这条路走下来的结果。每一次都记进台账（这里 30 行）
 npm run account:backtest -- --strategy desk --markets perp:BTC,perp:ETH,perp:SOL
                                      desk 本身：一个新账户里雇好 desk、接上纸上账户，用 momentum 脚本当脑子，一根 K 线一步地走
-                                     （--param sizeUsd=1000 tpPct=2 slPct=1 maxHours=24 riskPct=10 maxOpen=3）
+                                     （--param sizeUsd=1000 tpPct=2 slPct=1 maxHours=24 riskPct=10 maxOpen=3 dayLossPct=5）
 npm run account:backtest -- --trials                                       台账：留出期、行数、链是否完整、最近的回测
 npm run account:backtest -- --set-holdout 2026-09-01                       移动留出期（不能移回已经试过的日子之前）
 ```

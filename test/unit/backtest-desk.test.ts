@@ -39,7 +39,7 @@ const ok = (r: LabOutcome | Refusal): LabOutcome => {
 
 describe("the desk's numbers", () => {
   it("take their defaults, and refuse a name the desk does not take, a number out of its bounds or not whole where it must be", () => {
-    expect(deskParams()).toEqual({ sizeUsd: 1000, tpPct: 2, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3 });
+    expect(deskParams()).toEqual({ sizeUsd: 1000, tpPct: 2, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3, dayLossPct: 5 });
     expect(deskParams({ tpPct: "3", maxOpen: 5 })).toMatchObject({ tpPct: 3, maxOpen: 5 });
     expect(deskParams({ lookbackDays: 30 })).toBe(`the desk takes ${Object.keys(DESK_PARAMS).join(", ")}, not "lookbackDays"`);
     expect(deskParams({ slPct: 90 })).toBe("the desk's slPct is 0.1 to 50 (the stop, % from the entry), not 90");
@@ -49,7 +49,7 @@ describe("the desk's numbers", () => {
 
   it("are asked for at the owner's terminal only: the command reads them, a request is told where the desk runs", () => {
     const o = parseBacktestArgs(["--strategy", "desk", "--markets", "perp:BTC,perp:SOL", "--param", "sizeUsd=500", "--param", "tpPct=3"], { OPENPAPER_HOME: "/h" }, NOW) as BacktestOptions;
-    expect(o.spec).toEqual({ id: "desk", params: { sizeUsd: 500, tpPct: 3, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3 } });
+    expect(o.spec).toEqual({ id: "desk", params: { sizeUsd: 500, tpPct: 3, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3, dayLossPct: 5 } });
     expect((parseBacktestArgs(["--strategy", "desk", "--param", "fast=3"], {}, NOW) as { error: string }).error).toMatch(/^the desk takes sizeUsd/);
     expect(askOf({ strategy: "desk" })).toBe("the desk runs at the owner's terminal (npm run account:backtest -- --strategy desk), where it builds a whole account to trade in: a request runs a strategy");
   });
@@ -59,7 +59,7 @@ describe("the desk over the bars, through the lab", () => {
   it("trades through its own account — leads placed by its seats, exits judged inside the bar that reached them — counted and kept like any run, beside the buy-and-hold at the same fee", async () => {
     const deps = lab();
     const r = ok(await labRun(ask({ from: Date.parse("2026-07-20T00:00:00Z") }), deps));
-    expect(r.run.strategy).toMatchObject({ id: "desk", name: "The desk", paramWords: "sizeUsd 1000 · tpPct 2 · slPct 1 · maxHours 24 · riskPct 10 · maxOpen 3" });
+    expect(r.run.strategy).toMatchObject({ id: "desk", name: "The desk", paramWords: "sizeUsd 1000 · tpPct 2 · slPct 1 · maxHours 24 · riskPct 10 · maxOpen 3 · dayLossPct 5" });
     expect(r.run).toMatchObject({ from: "2026-07-20T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", feeBps: 10, cashUsd: 25_000 });
     // a step a bar: eleven days of 4-hour bars, the last look at the window's end
     expect(r.run.equity).toHaveLength(11 * 6 + 1);
@@ -84,6 +84,14 @@ describe("the desk over the bars, through the lab", () => {
     // in time order, each once
     expect(fills.map((f) => f.at)).toEqual([...fills.map((f) => f.at)].sort());
     expect(new Set(fills.map((f) => `${f.at}|${f.symbol}|${f.side}|${f.qty}|${f.price}`)).size).toBe(fills.length);
+  });
+
+  it("waits out a day's halt — the session runs on, its new leads held until the next day — rather than starting another or stopping", async () => {
+    const deps = lab();
+    // a tight line: one stop on a lead half the equity's size crosses it
+    const r = ok(await labRun(ask({ from: Date.parse("2026-07-17T00:00:00Z"), spec: desk({ sizeUsd: 12_500, riskPct: 50, slPct: 0.5, tpPct: 5, dayLossPct: 0.1 }) }), deps));
+    expect(r.run.notes[0]).toMatch(/^the desk ran 1 session of 336 h at most, .*; the day's loss line \(0\.1%\) halted new leads \d+ times?, each until the next day$/);
+    expect(r.run.equity).toHaveLength(14 * 6 + 1);
   });
 
   it("keeps to the lab's rules: perpetuals only, 1h or 4h bars, the window before the holdout — and the owner's look plays the desk again over the held-out data", async () => {
