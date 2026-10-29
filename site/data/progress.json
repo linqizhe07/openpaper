@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 38,
+      "title": "The Backtest page: run a strategy, see it beside buy-and-hold, look at the holdout by signature",
+      "mergedAt": "2026-10-29T16:52:05Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/38",
+      "branch": "feat/backtest-page"
+    },
+    {
       "number": 37,
       "title": "The backtest lab: every run counted, the latest data held out for the owner",
       "mergedAt": "2026-10-29T16:32:55Z",
