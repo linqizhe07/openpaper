@@ -131,7 +131,7 @@ const LIST_LIMIT = 40;
 const FILLS_KEPT = 500;
 /** the funding settlements kept in the book, hour by hour: a year of one position */
 const FUNDING_KEPT = 10_000;
-const DEFAULT_QTY_STEP = 0.000001;
+export const DEFAULT_QTY_STEP = 0.000001;
 const HOUR = 3_600_000;
 /** how often an event market the account holds is asked whether it has settled: every minute once past its close, every ten before it
  * (a market may settle early) */
@@ -408,6 +408,20 @@ export interface PaperRequest {
   /** the venues' live streams (live/stream-hub.ts), when the account runs them: asked each time, since the real server starts its hub after
    * the account has opened its paper accounts. None: every quote is the source's listing, as before */
   hub?: (() => MarketHub | undefined) | undefined;
+  /** the fee a NEW book charges, in basis points of the notional (a backtest's own, backtest/engine.ts); none: PAPER_FEE_BPS. A book that
+   * exists keeps the fee it was started with */
+  feeBps?: number | undefined;
+  /** told each hour of funding the book settles, as it is written in the book (a backtest counts them all: the book keeps the latest
+   * FUNDING_KEPT only) */
+  onFunding?: ((row: PaperFunding) => void) | undefined;
+  /** the book kept IN MEMORY ONLY: never read from disk, written or archived — a backtest's (backtest/engine.ts), whose run would otherwise
+   * write the whole book at every fill and every hour's funding. Everything else is the same book, told the same way */
+  memory?: true | undefined;
+  /** the account STEPPED OVER RECORDED BARS (a backtest's, backtest/engine.ts): its clock jumps a bar at a time and no stream runs, so every
+   * look past CATCH_UP_MS after the one before it judges the time between against the source's bars (catchUp) as a look after the Mac
+   * slept does where the account streams the markets — a perpetual liquidated inside the bar whose low (or high) crossed its liquidation
+   * price, a stop or a limit filled where its bar reached it — never only at the price of the bar the clock stopped at */
+  bars?: true | undefined;
 }
 
 const round = (x: number, places: number): number => Number(x.toFixed(places));
@@ -796,7 +810,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   const now = req.clock();
   let book: PaperBook | undefined;
   try {
-    book = loadBook(path);
+    book = req.memory ? undefined : loadBook(path);
   } catch (err) {
     return no("E_ACCOUNT_CREDENTIAL", { venue, message: `the paper account's book could not be read: ${String((err as Error)?.message ?? err).slice(0, 160)}`, detail: { path } });
   }
@@ -804,7 +818,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   const label = req.label.trim();
   const name = `${label || "Paper account"}${/paper/i.test(label || "Paper account") ? "" : " · paper"}`;
   if (!book) {
-    book = { version: 1, id: venue, name, createdAt: iso(now), updatedAt: iso(now), startCashUsd: req.cashUsd, feeBps: PAPER_FEE_BPS, cashUsd: req.cashUsd, holdings: {}, positions: {}, orders: {}, fills: [], markets: {}, leverage: {}, funding: [], seq: 0 };
+    book = { version: 1, id: venue, name, createdAt: iso(now), updatedAt: iso(now), startCashUsd: req.cashUsd, feeBps: req.feeBps ?? PAPER_FEE_BPS, cashUsd: req.cashUsd, holdings: {}, positions: {}, orders: {}, fills: [], markets: {}, leverage: {}, funding: [], seq: 0 };
   } else if (label) book.name = name;
   const b = book;
   // the last look this book had, in the run before this one (lookedAt): the time since — the service not running, a restart — is judged
@@ -812,7 +826,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   // ahead of now (a clock set back)
   const lookedBefore = Date.parse(b.lookedAt ?? "");
   try {
-    saveBook(path, b, now);
+    if (!req.memory) saveBook(path, b, now);
   } catch (err) {
     return no("E_ACCOUNT_CREDENTIAL", { venue, message: `the paper account's book could not be written: ${String((err as Error)?.message ?? err).slice(0, 160)}`, detail: { path } });
   }
@@ -898,7 +912,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   const writer = ++writers;
   /** the closed orders that filled nothing, a quarter old, to the month's archive beside the book (pruneBook) — looked for once an hour */
   const pruneNow = (now: number): void => {
-    if (now - prunedAt < PRUNE_EVERY_MS) return;
+    if (req.memory || now - prunedAt < PRUNE_EVERY_MS) return;
     prunedAt = now;
     try {
       if (pruneBook(path, b, now) > 0) ordersGone = true;
@@ -916,7 +930,8 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   const save = () => {
     stopSoon();
     pruneNow(req.clock());
-    saveBook(path, b, req.clock());
+    if (req.memory) b.updatedAt = iso(req.clock());
+    else saveBook(path, b, req.clock());
     landed = ++begun;
     lookWritten = b.lookedAt;
     writtenAt = req.clock();
@@ -934,6 +949,10 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       pruneNow(now);
       b.updatedAt = iso(now);
       const looked = b.lookedAt;
+      if (req.memory) {
+        if (landed < tag) [landed, lookWritten, writtenAt] = [tag, looked, now];
+        return;
+      }
       await writeBookSoon(path, JSON.stringify(b, null, 1), `${writer}.${tag}`, () => {
         if (landed > tag) return false;
         landed = tag;
@@ -1968,8 +1987,10 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
         const paid = round(p.qty * price * rate * (p.side === "long" ? 1 : -1), 6);
         p.marginUsd = round(p.marginUsd - paid, 6);
         p.fundingUsd = round((p.fundingUsd ?? 0) + paid, 6);
-        (b.funding ??= []).push({ at: iso(h), symbol, usd: paid, side: p.side, qty: p.qty, price, rate, ...(read === undefined ? { quoted: true as const } : {}) });
+        const row: PaperFunding = { at: iso(h), symbol, usd: paid, side: p.side, qty: p.qty, price, rate, ...(read === undefined ? { quoted: true as const } : {}) };
+        (b.funding ??= []).push(row);
         if (b.funding.length > FUNDING_KEPT) b.funding.splice(0, b.funding.length - FUNDING_KEPT);
+        req.onFunding?.(row);
       }
       settled = h;
     }
@@ -2182,7 +2203,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       const inGap = bars.filter((x) => x && x.t >= from && x.t + step <= to).sort((x, y) => x.t - y.t);
       for (const bar of inGap) {
         const end = bar.t + step;
-        const note = `while the account slept: ${source.name}'s ${size} bar from ${iso(bar.t).slice(11, 16)} UTC (${fig(bar.l)}–${fig(bar.h)}) reached it`;
+        const note = req.bars ? `the ${size} bar from ${iso(bar.t).slice(0, 16).replace("T", " ")} UTC (${fig(bar.l)}–${fig(bar.h)}) reached it` : `while the account slept: ${source.name}'s ${size} bar from ${iso(bar.t).slice(11, 16)} UTC (${fig(bar.l)}–${fig(bar.h)}) reached it`;
         // the bar's own price — never today's mark or oracle — for what the bar judges, its hours' funding among it
         const q: Quoted = { source: k.source, m: { ...k.m, price: bar.c, bid: undefined, ask: undefined, markPrice: undefined, oraclePrice: undefined, quoteAt: iso(end), quoteFrom: `${source.name} · ${size} bar` }, at: end };
         // a position is judged against the bars from when it was opened only: a bar that began before it existed (a perpetual opened after
@@ -2337,8 +2358,9 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       const gen = generation;
       const now0 = req.clock();
       const slept = lookedAt !== undefined && now0 - lookedAt > CATCH_UP_MS ? lookedAt : undefined;
-      // the time asleep, judged where the account streams the markets — its hub up — and until then owed whole: the look's moment stays
-      const streams = !!hubNow();
+      // the time asleep, judged where the account streams the markets — its hub up — and until then owed whole: the look's moment stays;
+      // an account stepped over recorded bars judges it at every look, against them (PaperRequest.bars)
+      const streams = !!hubNow() || req.bars === true;
       if (streams && (slept !== undefined || owed.size)) {
         catching = slept !== undefined;
         try {
@@ -2380,7 +2402,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
    * on waking is never judged against bars from before it, and what the time asleep filled comes before the instruction on the book, as it
    * happened */
   const lookFirst = async (): Promise<void> => {
-    if (!hubNow()) return;
+    if (!hubNow() && req.bars !== true) return;
     if (catching && settling) {
       await settling.catch(() => false);
       return;
