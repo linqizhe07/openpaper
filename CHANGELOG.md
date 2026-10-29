@@ -43,6 +43,7 @@ link there.
 - A Backtest tab: run a strategy from a form drawn from the lab's catalog, see its equity beside buying and holding with its drawdown, figures, deflated Sharpe and PBO, open any kept run, and — the owner only, by signature — look at the held-out data, the answer kept in that browser; the stand-in account backtests on made-up history. [#38](https://github.com/linqizhe07/openpaper/pull/38)
 - The desk backtested: `npm run account:backtest -- --strategy desk` hires the account's own desk at a paper account in an offline account of its own and plays its seats over recorded bars with the momentum script for a brain — sessions started again past fourteen days, every fill counted, the run kept and counted in the lab beside the buy-and-hold, the owner's look at the holdout playing it again. [#39](https://github.com/linqizhe07/openpaper/pull/39)
 - Walk-forward: `npm run account:backtest -- --grid fast=10,20,40 --grid slow=50,100,200 --folds 3` picks a grid's best on each fold's past and tries it on the fold, the out-of-sample runs chained with the share of the in-sample Sharpe they kept, every try a row of the trials ledger. [#40](https://github.com/linqizhe07/openpaper/pull/40)
+- The desk backtest waits out a day's halt — its new leads held until the next day, as the desk does — instead of trying to start another session and stopping the run; the day's loss line is one of its numbers (`dayLossPct`, 5 as before). [#41](https://github.com/linqizhe07/openpaper/pull/41)
 
 ## v0.1.0 — 2026-10-22
 
