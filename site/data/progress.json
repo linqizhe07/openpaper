@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 42,
+      "title": "Walk-forward for agents and the page",
+      "mergedAt": "2026-10-29T17:41:35Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/42",
+      "branch": "feat/backtest-walk-api"
+    },
+    {
       "number": 41,
       "title": "The desk backtest waits out a day's halt instead of stopping",
       "mergedAt": "2026-10-29T17:22:43Z",
