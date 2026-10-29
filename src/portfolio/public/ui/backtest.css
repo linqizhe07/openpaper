@@ -9,8 +9,10 @@
 
 .bt-form { display: flex; flex-direction: column; gap: 12px; }
 .bt-modes { align-self: flex-start; }
-.bt-walk { display: flex; flex-direction: column; gap: 12px; }
-.bt-walk[hidden] { display: none; }
+/* the parts each mode shows: the walk's grid, the strategy and its numbers, the desk's numbers */
+.bt-walk, .bt-strategy, .bt-desk { display: flex; flex-direction: column; gap: 12px; }
+.bt-walk[hidden], .bt-strategy[hidden], .bt-desk[hidden] { display: none; }
+.bt-strategy > p, .bt-desk > p { margin: -4px 0 0; }
 label.chk1.bt-rolling { white-space: normal; align-self: end; }
 .bt-form > p { margin: -4px 0 0; }
 .bt-words { min-height: 1.4em; }

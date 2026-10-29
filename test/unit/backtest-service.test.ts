@@ -211,6 +211,28 @@ describe("the owner's signed setBacktest", () => {
     expect(ok(svc.backtests()).holdout).toMatchObject({ start: "2026-07-31" });
   });
 
+  it("runs the desk over the training data — said in words first, its steps counted and capped before it is signed — a training run like any other, by the owner, read back unsigned; a request is told where the desk runs, and a key that is not the owner's signs none", async () => {
+    const { svc, home, own } = await boot();
+    const ask = { markets: "perp:BTC", interval: "4h", from: "2026-07-20", cash: 25_000, params: { tpPct: 3 } };
+    const prepared = (await svc.account!.prepare({ type: "setBacktest", change: "desk", value: JSON.stringify(ask) })) as Prepared;
+    expect(prepared.quote?.words).toBe("Run the desk (sizeUsd 1000 · tpPct 3 · slPct 1 · maxHours 24 · riskPct 10 · maxOpen 3 · dayLossPct 5) on perp:BTC in 4h bars from 2026-07-20 to 2026-07-31, with $25,000 on paper beside buying and holding them: about 66 steps, a second or two. A training run, counted in the trials like any other.");
+    const ran = (await own({ type: "setBacktest", change: "desk", value: JSON.stringify(ask) })) as { ok: true; kind: "result"; result: { id: string } };
+    expect(ran).toMatchObject({ ok: true, kind: "result", result: { window: "train", strategy: { id: "desk" }, from: "2026-07-20T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", feeBps: 10, cashUsd: 25_000, benchmark: { strategy: "hold" }, kept: true } });
+    expect(readTrials(home).rows.at(-1)).toMatchObject({ kind: "trial", by: "owner", window: "train", strategy: "desk", params: { tpPct: 3 }, feeBps: 10, cashUsd: 25_000 });
+    // a training run: read back unsigned, its trades and its curve in the kept run
+    expect(ok(svc.backtestKept(ran.result.id))).toMatchObject({ by: "owner", window: "train" });
+    // refused in words before it is signed: past the steps it may take from here, past the holdout's start, a market it does not trade
+    const words = async (o: Record<string, unknown>) => svc.account!.prepare({ type: "setBacktest", change: "desk", value: JSON.stringify(o) });
+    expect(await words({ from: "2025-06-01" })).toMatchObject({ code: "E_ACCOUNT_LIMIT", message: "the desk steps 4,500 times at most when it runs from here; this one would step about 10,200 — 4h bars or a shorter window (the terminal runs it longer)", detail: { steps: 10_200, most: 4_500 } });
+    expect(await words({ to: "2026-09-01" })).toMatchObject({ code: "E_ACCOUNT_BAD_ACTION", message: expect.stringMatching(/^the data from 2026-07-31 on is held out: the desk is tried before it/) });
+    expect(await words({ markets: "spot:BTC" })).toMatchObject({ code: "E_ACCOUNT_BAD_ACTION", message: "the desk trades perpetuals here: perp:COIN markets only" });
+    // an unsigned request is told where the desk runs; a key the account does not know as its owner's signs none
+    expect(((await svc.backtestRun({ strategy: "desk" })) as Refusal).message).toMatch(/^the desk runs by the owner's signature/);
+    expect(await svc.exchange(await signOwner(stranger, { type: "setBacktest", change: "desk", value: "{}", nonce: START + 700 }))).toMatchObject({ code: "E_ACCOUNT_UNKNOWN_SIGNER" });
+    // the catalog says what the desk takes, and how far it runs from here
+    expect((ok(svc.backtests()).catalog as { desk?: unknown }).desk).toMatchObject({ name: "The desk", intervals: ["1h", "4h"], mostSteps: 4_500, by: "the owner's signature", params: { sizeUsd: { default: 1000 } } });
+  });
+
   it("a look at a desk run plays the desk again inside the service — its own account built and let go — over the held-out data", async () => {
     const { svc, home, own } = await boot();
     // the desk runs at the owner's terminal: its training run is written there, into the same home
@@ -241,7 +263,7 @@ describe("the owner's signed setBacktest", () => {
     expect(await own({ type: "setBacktest", change: "holdout", value: "2026-06-01" })).toMatchObject({ code: "E_ACCOUNT_BAD_ACTION", message: "the days after 2026-06-01 were already tried on (trial 2 ran to 2026-07-01): a holdout starts after every training run's end, 2026-07-01 or later" });
     expect(await own({ type: "setBacktest", change: "holdout", value: "2026-09-01" })).toEqual({ ok: true, kind: "account", summary: "the data from 2026-09-01 on is held out" });
     expect(ok(svc.backtests()).holdout).toMatchObject({ start: "2026-09-01", setBy: "owner" });
-    expect(await own({ type: "setBacktest", change: "forget", value: "" })).toMatchObject({ code: "E_ACCOUNT_BAD_ACTION", message: 'a backtest\'s change is holdout (a day) or evaluate (a training run\'s id), not "forget"' });
+    expect(await own({ type: "setBacktest", change: "forget", value: "" })).toMatchObject({ code: "E_ACCOUNT_BAD_ACTION", message: 'a backtest\'s change is holdout (a day), evaluate (a training run\'s id) or desk (the desk\'s run, as JSON), not "forget"' });
     // signed eleven minutes ago: refused before anything is looked at
     expect(await own({ type: "setBacktest", change: "holdout", value: "2026-09-02" }, START - 11 * 60_000)).toMatchObject({ code: "E_ACCOUNT_EXPIRED" });
     // the same envelope twice: the first answer again, and nothing runs twice — one row in the ledger for it

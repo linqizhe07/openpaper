@@ -24,7 +24,8 @@
  * charter, the objective, the funnel, the room), portfolio_desk_say speaks in its room with this seat's key. BACKTESTS (backtest/lab.ts):
  * portfolio_backtest runs a strategy over recorded bars through a paper account — a training run before the holdout, counted in the
  * account's trials ledger with this seat named; the held-out data is the owner's to run on — portfolio_backtest_walk walks a grid forward
- * through the folds of the training window, every try counted, and portfolio_backtests reads the ledger and a kept run. A layered simulation (tests: the account layer over simulated venues) also has
+ * through the folds of the training window, every try counted, and portfolio_backtests reads the ledger and a kept run; the desk itself
+ * runs over the bars by the owner's signature only (its runs are read like any). A layered simulation (tests: the account layer over simulated venues) also has
  * portfolio_transfer, which signs a move between the simulated venues at the door.
  * On the simulated statement (--classic), and on a layered simulation: portfolio_read · portfolio_markets · portfolio_quote ·
  * portfolio_openness · portfolio_execute · portfolio_order — the fixture's venues, catalogue and router. They are registered only when the

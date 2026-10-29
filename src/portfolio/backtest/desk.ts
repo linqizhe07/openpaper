@@ -12,14 +12,16 @@
  * desk's seats let in with the Superagent's limits, the hire with the autonomy on paper — and the clock walks from one bar's start to the
  * next: the paper account looks at its book (the bar that just closed judged: exits, funding, liquidations), then the desk's clock ticks (a
  * cycle each bar, the leads' orders read back, the plan's exits, the reports). A desk's session runs fourteen days at most: one that ends
- * before the window does is started again at once, its autonomy carried. The equity is the paper account's own, at each step; the fills
- * and the funding are its book's. Every fill pays the paper account's own fee. */
+ * before the window does is started again at once, its autonomy carried; a seat's key and its limit live 180 days at most (account/state.ts
+ * MAX_AGENT_DAYS): a longer window lets the seats in again, the day before theirs run out. The equity is the paper account's own, at each
+ * step; the fills and the funding are its book's. Every fill pays the paper account's own fee. */
 import { mkdirSync, readFileSync } from "node:fs";
 import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { momentumScriptBrain } from "../account/brain-script.ts";
 import { ROLE_SPECS, type RoleId } from "../account/desk.ts";
 import type { Outcome } from "../account/exchange.ts";
 import { signDevice, simKey } from "../account/sign.ts";
+import { MAX_AGENT_DAYS } from "../account/state.ts";
 import type { LiveDeps } from "../live/index.ts";
 import { PAPER_FEE_BPS, paperBookPath, type PaperBook } from "../live/paper.ts";
 import { INTERVAL_MS } from "../live/trade.ts";
@@ -102,15 +104,25 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
   const sessionH = Math.max(1, Math.min(SESSION_MOST_H, windowH));
   const everyMin = Math.max(1, Math.min(240, Math.round(barMs / 60_000)));
   const resume = (): Promise<Outcome> => own("a new session", { type: "setDesk", desk: "desk", change: "resume", value: JSON.stringify({ autonomy: { paper: true } }) });
-  try {
-    await own("the paper account", { type: "connectVenue", venue: DESK_VENUE, connector: "live:paper", label: "Desk backtest", credentialRef: String(Math.round(o.cashUsd)) });
-    const balance = Math.ceil(o.cashUsd);
+  const balance = Math.ceil(o.cashUsd);
+  /** the seats let in, the traders with their limits: until the window's end and a month, or as long as a key lives from now if that is
+   * sooner — the same keys let in again replace their entries */
+  const letIn = async (): Promise<number> => {
+    const until = Math.min(end + 30 * DAY_MS, clock + (MAX_AGENT_DAYS - 1) * DAY_MS);
     for (const role of ROLES) {
       const k = desk.seatKeyOf(role);
       if (isRefusal(k)) throw new Error(`the ${role} seat's key: ${k.message}`);
-      await own(`let in ${role}`, { type: "approveAgent", agentAddress: k.address, agentName: `Desk ${ROLE_SPECS[role].name.replace(" of desk", "")}`, validUntil: end + 30 * DAY_MS });
-      if (ROLE_SPECS[role].trades) await own(`${role}'s limit`, { type: "approveSpend", agent: k.address, scope: "trade", allow: DESK_VENUE, perPayment: String(balance), budget: String(balance * PAPER_BUDGET_TIMES), windowHours: 0, validUntil: end + 30 * DAY_MS, renewHours: 24 });
+      await own(`let in ${role}`, { type: "approveAgent", agentAddress: k.address, agentName: `Desk ${ROLE_SPECS[role].name.replace(" of desk", "")}`, validUntil: until });
+      if (ROLE_SPECS[role].trades) await own(`${role}'s limit`, { type: "approveSpend", agent: k.address, scope: "trade", allow: DESK_VENUE, perPayment: String(balance), budget: String(balance * PAPER_BUDGET_TIMES), windowHours: 0, validUntil: until, renewHours: 24 });
     }
+    return until;
+  };
+  let keysUntil = 0;
+  /** the times the seats were let in again on the way */
+  let letAgain = 0;
+  try {
+    await own("the paper account", { type: "connectVenue", venue: DESK_VENUE, connector: "live:paper", label: "Desk backtest", credentialRef: String(Math.round(o.cashUsd)) });
+    keysUntil = await letIn();
     await own("the hire", {
       type: "setDesk",
       desk: "desk",
@@ -159,6 +171,10 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
   try {
     for (let k = 0; k < steps.length; k++) {
       clock = steps[k]!;
+      if (clock >= keysUntil - DAY_MS && keysUntil < end) {
+        keysUntil = await letIn();
+        letAgain++;
+      }
       await svc.lookAtPaper();
       await desk.tick();
       let v = await desk.view();
@@ -201,7 +217,7 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
   const received = -rows.filter((f) => f.usd < 0).reduce((s, f) => s + f.usd, 0);
   const metrics = metricsOf(equity, { fills: fills.length, tradedUsd: fills.reduce((s, f) => s + f.qty * f.price, 0), feesUsd: fills.reduce((s, f) => s + f.feeUsd, 0), fundingUsd: paid - received, slippageUsd: 0 });
   const notes = [
-    `the desk ran ${sessions} session${sessions === 1 ? "" : "s"} of ${sessionH} h at most, a cycle every ${everyMin} min: ${cycles.toLocaleString("en-US")} cycles, ${funnel.scanned} leads scanned, ${funnel.cleared} cleared and ${funnel.rejected} turned down by Risk, ${funnel.placed} placed, ${funnel.closed} closed${halts.size ? `; the day's loss line (${o.params.dayLossPct}%) halted new leads ${halts.size} time${halts.size === 1 ? "" : "s"}, each until the next day` : ""}`,
+    `the desk ran ${sessions} session${sessions === 1 ? "" : "s"} of ${sessionH} h at most, a cycle every ${everyMin} min: ${cycles.toLocaleString("en-US")} cycles, ${funnel.scanned} leads scanned, ${funnel.cleared} cleared and ${funnel.rejected} turned down by Risk, ${funnel.placed} placed, ${funnel.closed} closed${halts.size ? `; the day's loss line (${o.params.dayLossPct}%) halted new leads ${halts.size} time${halts.size === 1 ? "" : "s"}, each until the next day` : ""}${letAgain ? `; its seats were let in again ${letAgain} time${letAgain === 1 ? "" : "s"}, a key living ${MAX_AGENT_DAYS} days at most` : ""}`,
     `every exit is judged inside the bar that reached it, its stop before its take-profit where one bar reached both (the paper account's rule): with exits narrower than a bar's range, that is a loss the bar cannot rule out`,
     `the brain is the momentum script, not a model: the result is the desk's machinery on these prices, not anyone's judgement`,
   ];

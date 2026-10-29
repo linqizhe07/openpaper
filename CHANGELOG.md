@@ -47,6 +47,7 @@ link there.
 - Walk-forward for agents and the page: `POST /api/account/backtest/walk` and `portfolio_backtest_walk` walk a grid through the training window's folds under a work budget checked before anything runs, and the Backtest page's Walk forward mode shows the chained curve, what the walk kept and each fold's pick and run. [#42](https://github.com/linqizhe07/openpaper/pull/42)
 - CI's type check passes again: a test added with the walk-forward API cast the lab's answer to a shape TypeScript refuses. [#43](https://github.com/linqizhe07/openpaper/pull/43)
 - A signed backtest runs outside the door's line once it is taken: a cancel, an agent's order or a desk's exit sent while the owner looks at the held-out data is no longer kept waiting behind it, and the holdout is not moved while a backtest runs. [#44](https://github.com/linqizhe07/openpaper/pull/44)
+- The desk runs from the Backtest page by the owner's signature (The desk mode: its numbers, the steps and seconds said before it is signed, 4,500 steps at most from there), and a desk backtest longer than about 150 days no longer fails while it sets up: its seats are let in again before the 180 days a key lives run out. [#45](https://github.com/linqizhe07/openpaper/pull/45)
 
 ## v0.1.0 — 2026-10-22
 

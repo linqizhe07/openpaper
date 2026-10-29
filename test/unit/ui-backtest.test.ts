@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createContext, runInContext, Script } from "node:vm";
 import { describe, expect, it } from "vitest";
+import { DESK_PARAMS, DESK_WORDS } from "../../src/portfolio/backtest/desk-params.ts";
 import { STRATEGIES } from "../../src/portfolio/backtest/strategies.ts";
 
 /** THE BACKTEST PANE (ui/backtest.js): the lab as the owner reads and runs it — the form drawn from the account's catalog, what it asks
@@ -79,6 +80,8 @@ describe("the form, drawn once from the account's catalog", () => {
   it("names each number as a person reads it, and a strategy that takes none says so", () => {
     const { run } = page();
     expect(run(`[btParamLabel("lookbackDays"), btParamLabel("enterApr"), btParamLabel("fast")]`)).toEqual(["Lookback days", "Enter APR", "Fast"]);
+    // the desk's: a percent and a dollar figure said as one, take-profit and stop in full
+    expect(run(`["sizeUsd", "tpPct", "slPct", "maxHours", "riskPct", "dayLossPct"].map(btParamLabel)`)).toEqual(["Size ($)", "Take-profit (%)", "Stop (%)", "Max hours", "Risk (%)", "Day loss (%)"]);
     expect(run(`btParamsHtml(${JSON.stringify(STRATEGIES.hold)})`)).toBe('<p class="dim small">It takes no numbers.</p>');
     expect(run(`btParamsHtml(${JSON.stringify(STRATEGIES.sma)})`)).toContain('<input name="p.fast" type="number" min="2" max="500" step="1" value="20"');
   });
@@ -94,7 +97,7 @@ describe("the walk-forward mode", () => {
   it("is a switch on the form: the walk's grid (values to try for each number), its folds and rolling, hidden until walked; a strategy without numbers says so", () => {
     const { run } = page();
     const html = run<string>(`btFormHtml(${JSON.stringify({ ...CATALOG, walk: { folds: [2, 10], combosMost: 50 } })}, ${JSON.stringify(HOLDOUT)})`);
-    expect(html).toContain('<div class="seg bt-modes" role="group" aria-label="What to run"><button type="button" data-bt-act="mode" data-mode="run" aria-pressed="true">One run</button><button type="button" data-bt-act="mode" data-mode="walk" aria-pressed="false">Walk forward</button></div>');
+    expect(html).toContain('<div class="seg bt-modes" role="group" aria-label="What to run"><button type="button" data-bt-act="mode" data-mode="run" aria-pressed="true">One run</button><button type="button" data-bt-act="mode" data-mode="walk" aria-pressed="false">Walk forward</button><button type="button" data-bt-act="mode" data-mode="desk" aria-pressed="false">The desk</button></div>');
     expect(html).toContain('<div class="bt-walk" data-bt-walk hidden>');
     expect(html).toContain('<input name="g.lookbackDays" autocomplete="off" spellcheck="false" inputmode="decimal" placeholder="e.g. 30, 60">');
     expect(html).toContain('<input name="folds" type="number" min="2" max="10" step="1" value="4" inputmode="numeric">');
@@ -145,6 +148,72 @@ describe("the walk-forward mode", () => {
     expect(html).toContain(`<td class="nw"><button type="button" class="link" data-bt-act="open" data-id="20261029T171021-af504f2525" title="Open this fold's run">05-03 → 06-02</button></td>`);
     expect(run<string>(`btWalkHtml(${JSON.stringify({ ...walk, efficiency: -0.72, outSharpe: -0.81 })})`)).toContain("<b>None of it kept</b>: the picks' mean Sharpe in sample was 1.20; the walk's out of sample, −0.81 (an efficiency of −72%).");
     expect(run<string>(`btWalkHtml(${JSON.stringify({ ...walk, efficiency: null, inSharpeMean: -0.2 })})`)).toContain("The picks' mean Sharpe in sample was −0.20: nothing above zero for the walk to keep.");
+  });
+});
+
+describe("the desk mode", () => {
+  const DESK = { name: "The desk", words: DESK_WORDS, params: DESK_PARAMS, intervals: ["1h", "4h"], mostSteps: 4500, by: "the owner's signature" };
+
+  it("is the switch's third way: the desk's words and numbers, from the catalog, in place of the strategy's — who runs it and how far from here; an account whose catalog has no desk says where it runs", () => {
+    const { run } = page();
+    const html = run<string>(`btFormHtml(${JSON.stringify({ ...CATALOG, desk: DESK })}, ${JSON.stringify(HOLDOUT)})`);
+    expect(html).toContain('<button type="button" data-bt-act="mode" data-mode="desk" aria-pressed="false">The desk</button>');
+    expect(html).toContain('<div class="bt-strategy" data-bt-strategy><label class="fld">Strategy');
+    expect(html).toContain('<div class="bt-desk" data-bt-desk hidden><p class="dim small bt-words">');
+    expect(html).toContain(`<p class="dim small bt-words">${run<string>(`esc(${JSON.stringify(DESK_WORDS.charAt(0).toUpperCase() + DESK_WORDS.slice(1))})`)}.</p>`);
+    expect(html).toContain('<input name="d.sizeUsd" type="number" min="10" max="1000000" step="any" value="1000" inputmode="decimal" required>');
+    expect(html).toContain('<input name="d.maxOpen" type="number" min="1" max="10" step="1" value="3" inputmode="decimal" required>');
+    expect(html).toContain("in 1h or 4h bars, at the paper account's own fee, beside buying and holding them. Your signature runs it: it builds a whole account to trade in, about a minute for a hundred and eighty days of hourly bars — 4,500 steps at most here.");
+    expect(html).toContain('<p class="msg wait" data-bt-desk-owner hidden>This browser does not sign for the account: the desk runs by the owner\'s signature.</p>');
+    expect(html).toContain('<div class="row2" data-bt-fee><label class="fld">Fee a fill (bps)');
+    expect(run(`btDeskHtml(undefined)`)).toContain("npm run account:backtest -- --strategy desk</span> at your terminal");
+  });
+
+  it("switches the form to the desk: the strategy, the fee and leverage and the buy-and-hold hidden, the desk's numbers shown, a day's bar not offered; the button opens the signature, off where this browser does not sign", () => {
+    const { run, sandbox } = page();
+    const el = (o: Record<string, unknown> = {}) => ({ hidden: false, disabled: false, dataset: {}, attrs: {} as Record<string, string>, setAttribute(k: string, v: string) { this.attrs[k] = v; }, textContent: "", firstChild: null, ...o });
+    const buttons = ["run", "walk", "desk"].map((mode) => el({ dataset: { mode } }));
+    const options = ["1h", "4h", "1d"].map((value) => el({ value }));
+    const bars = { value: "1d", querySelectorAll: () => options };
+    const parts: Record<string, unknown> = { "[data-bt-mode-words]": el(), "[data-bt-walk]": el({ hidden: true }), "[data-bt-strategy]": el(), "[data-bt-desk]": el({ hidden: true }), "[data-bt-benchmark]": el(), "[data-bt-fee]": el(), "[data-bt-desk-owner]": el({ hidden: true }), "[data-bt-go]": el(), 'select[name="interval"]': bars };
+    (sandbox as { FORM: unknown }).FORM = { querySelectorAll: () => buttons, querySelector: (q: string) => parts[q] ?? null };
+    const hidden = (q: string) => (parts[q] as { hidden: boolean }).hidden;
+    const go = parts["[data-bt-go]"] as { textContent: string; disabled: boolean };
+    run(`BT.mode = "desk"; btModeSync(FORM, true)`);
+    expect(buttons.map((b) => b.attrs["aria-pressed"])).toEqual(["false", "false", "true"]);
+    expect(["[data-bt-strategy]", "[data-bt-desk]", "[data-bt-walk]", "[data-bt-benchmark]", "[data-bt-fee]", "[data-bt-desk-owner]"].map(hidden)).toEqual([true, false, true, true, true, true]);
+    expect((parts["[data-bt-mode-words]"] as { textContent: string }).textContent).toBe("The desk itself, played over the bars in an account of its own: how its machinery fares on those prices — not any model's judgement.");
+    expect(options.map((o) => o.disabled)).toEqual([false, false, true]);
+    expect(bars.value).toBe("4h");
+    expect([go.textContent, go.disabled]).toEqual(["Run the desk…", false]);
+    // a browser that does not sign for the account: said, and the button off
+    run(`btModeSync(FORM, false)`);
+    expect([hidden("[data-bt-desk-owner]"), go.disabled]).toEqual([false, true]);
+    // back to one run: the strategy and the fee back, every bar offered
+    run(`BT.mode = "run"; btModeSync(FORM, false)`);
+    expect(["[data-bt-strategy]", "[data-bt-desk]", "[data-bt-benchmark]", "[data-bt-fee]", "[data-bt-desk-owner]"].map(hidden)).toEqual([false, true, false, false, true]);
+    expect([options[2]!.disabled, go.textContent, go.disabled]).toEqual([false, "Run backtest", false]);
+  });
+
+  it("asks the desk for what was typed — its numbers, the markets, bars, window, money and costs; no strategy, fee, leverage, buy-and-hold or seat — and signs it through the dialog: the words, the waiting, the kept run read and shown", async () => {
+    const kept = { ok: true, id: "20261029T180000-0123456789", window: "train", holdout: "2026-07-31", notes: [], run: { strategy: { id: "desk", name: "The desk", paramWords: "sizeUsd 1000 · tpPct 3" }, markets: [{ symbol: "BTC-PERP", interval: "4h" }], from: "2026-07-20T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", cashUsd: 25_000, feeBps: 10, costs: {}, metrics: metrics({ returnPct: -1.5 }), equity: [{ t: 1, usd: 25_000 }, { t: 2, usd: 24_625 }], fills: [], refused: [], funding: { paidUsd: 0, receivedUsd: 0, hours: 0 }, notes: ["the desk ran 1 session"] }, trial: { seq: 7 } };
+    const { run, asked } = page({ fetch: async (path) => (path.startsWith("/api/account/backtest?id=") ? kept : LIST) });
+    const fields = { strategy: "tsmom", "p.lookbackDays": "30", "d.sizeUsd": "1000", "d.tpPct": "3", "d.maxOpen": "", markets: " perp:BTC ", interval: "4h", from: "2026-07-20", to: "", cash: "25000", feeBps: "10", leverage: "3", halfSpreadBps: "1", participation: "0.05", levelBps: "2", folds: "4", "g.fast": "10,20" };
+    const body = run<Record<string, unknown>>(`btDeskAskOf(${JSON.stringify(fields)})`);
+    expect(body).toEqual({ markets: "perp:BTC", interval: "4h", from: "2026-07-20", cash: 25_000, params: { sizeUsd: 1000, tpPct: 3 }, halfSpreadBps: 1, participation: 0.05, levelBps: 2 });
+    // the dialog as the page opens it (core.js quoteDialog, stood in for: it needs the page's sheet)
+    run("var DIALOG = null; quoteDialog = (o) => { DIALOG = o; }");
+    run(`btDeskSend(${JSON.stringify(body)})`);
+    const d = run<{ title: string; go: string; sending: string; draft: () => unknown }>("DIALOG");
+    expect([d.title, d.go]).toEqual(["Run the desk over the bars", "Sign and run"]);
+    expect(d.sending).toBe("Running the desk over the bars: a minute or more. The account takes other instructions meanwhile.");
+    expect(run("DIALOG.draft()")).toEqual({ type: "setBacktest", change: "desk", value: JSON.stringify(body) });
+    // signed and answered: the kept run read for its curves, shown, the trials read again
+    const said = await run<Promise<string>>(`DIALOG.done({ status: 200, body: { ok: true, kind: "result", result: { id: "${kept.id}", strategy: { id: "desk" }, metrics: { returnPct: -1.5 } } } })`);
+    expect(said).toBe("The desk: −1.50% over the window");
+    expect(asked.map((a) => a.path)).toEqual([`/api/account/backtest?id=${kept.id}`, "/api/account/backtests?limit=50"]);
+    expect(run("BT.view")).toMatchObject({ id: kept.id, strategy: { id: "desk", name: "The desk" }, curve: [[1, 25_000], [2, 24_625]], trial: 7 });
+    expect(run<string>("btResultHtml(BT.view)")).toContain('<h2 class="h2">The desk</h2>');
   });
 });
 

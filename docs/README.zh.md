@@ -102,7 +102,7 @@ agent 记得的你放在账户里，不放在某一个 agent 程序里：换一�
   - 和 owner 说话、等结果：`portfolio_report` · `portfolio_ask` · `portfolio_approval` · `portfolio_wait`
   - 记忆（账户替 agent 记着，换会话、重启都在）：`portfolio_memory`（读：它记得的你、等你答的、来自额度的、别的 agent 分享的、你的开关）· `portfolio_remember` · `portfolio_forget`（它学到的，用它的钥匙签）
   - Desk（账户自己的 agent 团队，见下面「Desk」）：`portfolio_desk`（读：这把钥匙在 desk 上的席位和章程、目标、漏斗、房间最近几行）· `portfolio_desk_say`（在房间里说一句，用它的钥匙签：只是话，不是权限）
-  - 回测（见 [account.md](account.md) 的「回测」）：`portfolio_backtest`（一个策略在录下的 K 线上用纸上账户的规则跑一遍，旁边是买入持有；只能跑在留出期之前，每一次都记进试验台账，带上这个席位；回答里有 Sharpe 按试过的策略数 deflate 之后的概率和 PBO）· `portfolio_backtest_walk`（walk-forward：网格在每一折的过去挑 Sharpe 最高的，放到这一折上跑，各折接起来；每一次都记进台账）· `portfolio_backtests`（读：留出期、台账和它的哈希链、最近的回测；给 `id` 读一次回测的全部成交和曲线）
+  - 回测（见 [account.md](account.md) 的「回测」）：`portfolio_backtest`（一个策略在录下的 K 线上用纸上账户的规则跑一遍，旁边是买入持有；只能跑在留出期之前，每一次都记进试验台账，带上这个席位；回答里有 Sharpe 按试过的策略数 deflate 之后的概率和 PBO）· `portfolio_backtest_walk`（walk-forward：网格在每一折的过去挑 Sharpe 最高的，放到这一折上跑，各折接起来；每一次都记进台账）· `portfolio_backtests`（读：留出期、台账和它的哈希链、最近的回测；给 `id` 读一次回测的全部成交和曲线）。desk 本身的回测只由 owner 签名（页面上的 The desk）或在终端跑，agent 读得到它的结果
   - 只在模拟对账单（`--classic`）和测试里：`portfolio_read` · `portfolio_markets` · `portfolio_quote` · `portfolio_openness` · `portfolio_execute` · `portfolio_order` · `portfolio_transfer`
 - **HTTP**：只读接口 `GET /api/account/...`，只听 127.0.0.1；表在 [docs/account.md](account.md)。
 - **给做 Agent 模块的团队**：[COOKBOOK](../COOKBOOK.md) 的「11b · Agent 模块接口」。

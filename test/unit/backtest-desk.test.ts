@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { parseBacktestArgs, type BacktestOptions } from "../../src/portfolio/account-backtest.ts";
 import { DESK_PARAMS, deskParams } from "../../src/portfolio/backtest/desk-params.ts";
-import { askOf, deskSpec, labEvaluate, labRun, readTrials, runFile, setHoldout, type LabAsk, type LabDeps, type LabOutcome } from "../../src/portfolio/backtest/lab.ts";
+import { askOf, deskAskOf, deskSpec, labEvaluate, labRun, readTrials, runFile, setHoldout, type LabAsk, type LabDeps, type LabOutcome } from "../../src/portfolio/backtest/lab.ts";
 import { DEFAULT_COSTS } from "../../src/portfolio/backtest/source.ts";
 import { standinHistory } from "../standin/history.ts";
 
@@ -47,11 +47,29 @@ describe("the desk's numbers", () => {
     expect(deskParams({ sizeUsd: "lots" })).toBe("the desk's sizeUsd is a number");
   });
 
-  it("are asked for at the owner's terminal only: the command reads them, a request is told where the desk runs", () => {
+  it("are asked for at the owner's terminal or by their signature only: the command reads them, a request is told where the desk runs", () => {
     const o = parseBacktestArgs(["--strategy", "desk", "--markets", "perp:BTC,perp:SOL", "--param", "sizeUsd=500", "--param", "tpPct=3"], { OPENPAPER_HOME: "/h" }, NOW) as BacktestOptions;
     expect(o.spec).toEqual({ id: "desk", params: { sizeUsd: 500, tpPct: 3, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3, dayLossPct: 5 } });
     expect((parseBacktestArgs(["--strategy", "desk", "--param", "fast=3"], {}, NOW) as { error: string }).error).toMatch(/^the desk takes sizeUsd/);
-    expect(askOf({ strategy: "desk" })).toBe("the desk runs at the owner's terminal (npm run account:backtest -- --strategy desk), where it builds a whole account to trade in: a request runs a strategy");
+    expect(askOf({ strategy: "desk" })).toBe("the desk runs by the owner's signature (the Backtest page's desk mode: setBacktest desk) or at their terminal (npm run account:backtest -- --strategy desk): it builds a whole account to trade in, so no unsigned request runs it");
+  });
+
+  it("are read from the owner's signed ask as strictly as a request is: JSON of the fields the desk takes, perpetuals in 1h or 4h bars, its numbers in bounds — the rest a request's defaults, at the paper account's fee", () => {
+    expect(deskAskOf("{}")).toEqual({ spec: { id: "desk", params: { sizeUsd: 1000, tpPct: 2, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3, dayLossPct: 5 } }, refs: [{ cls: "perp", base: "BTC" }], interval: "1h", cashUsd: 10_000, feeBps: 10, costs: DEFAULT_COSTS });
+    expect(deskAskOf(JSON.stringify({ markets: "perp:BTC,perp:ETH", interval: "4h", from: "2026-05-01", to: "2026-07-01", cash: 25_000, params: { tpPct: 3 }, participation: 0.1 }))).toMatchObject({ spec: { id: "desk", params: { tpPct: 3, slPct: 1 } }, refs: [{ cls: "perp", base: "BTC" }, { cls: "perp", base: "ETH" }], interval: "4h", from: Date.parse("2026-05-01T00:00:00Z"), to: Date.parse("2026-07-01T00:00:00Z"), cashUsd: 25_000, costs: { participation: 0.1 } });
+    const no = (o: unknown) => deskAskOf(typeof o === "string" ? o : JSON.stringify(o));
+    expect(no("not json")).toBe("the desk's ask is JSON: {markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps}");
+    expect(no([1])).toBe("the desk's ask is {markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps}");
+    expect(no({ strategy: "sma" })).toBe('the desk is asked with markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps — not "strategy"');
+    expect(no({ feeBps: 0 })).toBe('the desk is asked with markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps — not "feeBps"');
+    expect(no({ params: [1] })).toBe("params is {name: number}");
+    expect(no({ params: { tpPct: "3" } })).toBe("params.tpPct is a number");
+    expect(no({ params: { slPct: 90 } })).toBe("the desk's slPct is 0.1 to 50 (the stop, % from the entry), not 90");
+    expect(no({ markets: "perp:BTC,spot:ETH" })).toBe("the desk trades perpetuals here: perp:COIN markets only");
+    expect(no({ interval: "1d" })).toBe("the desk steps over 1h or 4h bars: a day's bar is longer than its longest cycle");
+    expect(no({ from: "2026-07-01", to: "2026-06-01" })).toBe("to is after from");
+    expect(no({ cash: 5 })).toBe("cash is 100 to 100000000");
+    expect(no(`{"markets":"${"perp:BTC,".repeat(250)}"}`)).toBe("the desk's ask is 2,000 characters of JSON at most");
   });
 });
 
@@ -93,6 +111,15 @@ describe("the desk over the bars, through the lab", () => {
     expect(r.run.notes[0]).toMatch(/^the desk ran 1 session of 336 h at most, .*; the day's loss line \(0\.1%\) halted new leads \d+ times?, each until the next day$/);
     expect(r.run.equity).toHaveLength(14 * 6 + 1);
   });
+
+  it("lets its seats in again on a window longer than a key lives — 180 days at most — and runs the whole window, saying so", async () => {
+    const deps = lab();
+    // 181 days of 4-hour bars: a day longer than a key lives
+    const r = ok(await labRun(ask({ refs: [{ cls: "perp", base: "BTC" }], from: Date.parse("2026-01-31T00:00:00Z") }), deps));
+    expect(r.run).toMatchObject({ from: "2026-01-31T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z" });
+    expect(r.run.equity).toHaveLength(181 * 6 + 1);
+    expect(r.run.notes[0]).toMatch(/^the desk ran 13 sessions of 336 h at most, .*; its seats were let in again 1 time, a key living 180 days at most$/);
+  }, 90_000);
 
   it("keeps to the lab's rules: perpetuals only, 1h or 4h bars, the window before the holdout — and the owner's look plays the desk again over the held-out data", async () => {
     const deps = lab();

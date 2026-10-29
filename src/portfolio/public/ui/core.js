@@ -1079,8 +1079,9 @@ if (typeof addEventListener === "function") {
 }
 
 /** prepare → show → sign and send, in one sheet. The account prepares the exact action from what is typed (asked again as it changes; the
- * latest ask wins), shows it in words with what is signed, and the signature is good for ten minutes — asked again when they run out */
-function quoteDialog({ title, sub = "", fields = "", draft, show, block, done, signNotes, go = "Sign and send", wide = false }) {
+ * latest ask wins), shows it in words with what is signed, and the signature is good for ten minutes — asked again when they run out.
+ * `sending`: what the sheet says while the account works on it, for an action that takes a while (the desk's backtest) */
+function quoteDialog({ title, sub = "", fields = "", draft, show, block, done, signNotes, go = "Sign and send", sending = "Sending it…", wide = false }) {
   const body = openSheet(`${sub ? `<p class="dim small">${sub}</p>` : ""}<form class="qd" novalidate>${fields}<div class="quote real" data-q><span class="dim">Fill it in to see what it would be.</span></div><div data-sign></div><div class="msg no" data-block role="alert" hidden></div><div class="msg" data-msg role="status"></div><div class="end"><button type="button" class="btn" data-sheet-close>Cancel</button><button type="submit" class="btn btn-primary" data-go disabled>${esc(go)}</button></div></form>`, { title, wide });
   const form = body.querySelector("form.qd");
   const box = form.querySelector("[data-q]");
@@ -1161,7 +1162,7 @@ function quoteDialog({ title, sub = "", fields = "", draft, show, block, done, s
     }
     const p = prepared;
     btn.disabled = true;
-    say("Sending it…", "wait");
+    say(sending, "wait");
     const r = await Owner.submit(p);
     if (refusedAt(r)) {
       say(Owner.why(r) || "Refused", "no");
@@ -1174,7 +1175,8 @@ function quoteDialog({ title, sub = "", fields = "", draft, show, block, done, s
     } catch (err) {
       flash = String((err && err.message) || err).slice(0, 240);
     }
-    closeSheet();
+    // a sheet opened since (a slow action's sheet closed meanwhile) is not closed under its reader
+    if (form.isConnected) closeSheet();
     await load();
   });
   later(0);

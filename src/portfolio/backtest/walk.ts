@@ -216,7 +216,7 @@ export function walkAskOf(body: Record<string, unknown>): Omit<WalkAsk, "by" | "
   const rest: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(body)) if (!(WALK_FIELDS as readonly string[]).includes(k)) rest[k] = v;
   if (rest.benchmark !== undefined) return "a walk-forward runs no buy-and-hold beside it: no benchmark";
-  if (rest.strategy === "desk") return "the desk does not walk: it runs whole, at its own pace (npm run account:backtest -- --strategy desk)";
+  if (rest.strategy === "desk") return "the desk does not walk: it runs whole, at its own pace — by the owner's signature (the Backtest page's desk mode) or at their terminal (npm run account:backtest -- --strategy desk)";
   const g = body.grid;
   if (g !== undefined && (typeof g !== "object" || g === null || Array.isArray(g))) return "grid is {name: [numbers]}";
   const grid: Record<string, number[]> = {};
