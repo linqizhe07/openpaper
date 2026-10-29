@@ -1902,7 +1902,8 @@ export class PortfolioService {
   /** the owner's signed setBacktest, once the door has checked it: the holdout moved, or a training run tried on the held-out data */
   private async labAct(a: Extract<OwnerAction, { type: "setBacktest" }>): Promise<Refusal | { ok: true; summary: string; data?: unknown }> {
     if (a.change === "holdout") {
-      const h = setHoldout(this.opts.home, a.value, "owner", Date.parse(this.now()));
+      // never while a backtest runs: a run that read the holdout before it moved would be counted as tried before it, over days it now holds out
+      const h = await this.labOnce(async () => setHoldout(this.opts.home, a.value, "owner", Date.parse(this.now())));
       return isRefusal(h) ? h : { ok: true, summary: `the data from ${h.start} on is held out` };
     }
     if (a.change === "evaluate") {

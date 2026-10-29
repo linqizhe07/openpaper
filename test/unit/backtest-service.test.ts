@@ -54,11 +54,10 @@ function standIn(id: string, symbol: string): PublicSource {
   };
 }
 
-async function boot() {
+async function boot(sources: HistorySources = { perp: standIn("hl", "BTC-PERP"), spot: standIn("cb", "BTC/USD"), stock: standIn("us", "AAPL") }) {
   const home = mkdtempSync(join(tmpdir(), "backtest-service-"));
   homes.push(home);
   let n = 0;
-  const sources: HistorySources = { perp: standIn("hl", "BTC-PERP"), spot: standIn("cb", "BTC/USD"), stock: standIn("us", "AAPL") };
   const liveDeps: Partial<LiveDeps> = { clock: () => START, http: async () => ({ status: 599, body: undefined, text: "" }), price: async () => undefined };
   const svc = await PortfolioService.create({ home, now: () => new Date(START).toISOString(), venues: "frontline", real: true, liveDeps, publicMarkets: [], liveWrites: { capUsd: 100, pairingCode: "K7QX-M2PA" }, account: { owners: [{ id: owner.address, kind: "eoa", label: "owner", addedAt: new Date(START).toISOString() }] }, backtest: { sources } });
   const own = async (a: NoNonce<OwnerAction>, at = START + ++n): Promise<Outcome> => svc.exchange(await signOwner(owner, { ...a, nonce: at } as OwnerAction));
@@ -185,6 +184,33 @@ describe("a walk-forward an unsigned request asks for", () => {
 });
 
 describe("the owner's signed setBacktest", () => {
+  it("runs outside the door's line once it is taken: what the owner signs while a look runs is answered at once, the same look sent again is answered when it is done, and the holdout does not move under it", async () => {
+    // a look whose bars wait until let go
+    let hold: Promise<void> | undefined;
+    let release = (): void => undefined;
+    const held = (s: PublicSource): PublicSource => ({ ...s, candles: async (symbol, interval, w) => (await hold, s.candles!(symbol, interval, w)) });
+    const { svc, home, own } = await boot({ perp: held(standIn("hl", "BTC-PERP")), spot: standIn("cb", "BTC/USD"), stock: standIn("us", "AAPL") });
+    const train = ok(await svc.backtestRun(SMA)) as { id: string };
+    hold = new Promise((r) => (release = r));
+    const env = await signOwner(owner, { type: "setBacktest", change: "evaluate", value: train.id, nonce: START + 900 });
+    let done = false;
+    const look = svc.exchange(env).finally(() => (done = true));
+    // an agent let in while the look waits on its bars: through the door, and on the account, before the look is done
+    const waited = new Promise((r) => setTimeout(() => r("still waiting behind the look"), 2000));
+    expect(await Promise.race([own({ type: "approveAgent", agentAddress: stranger.address, agentName: "Claude Code", validUntil: START + 30 * D }), waited])).toMatchObject({ ok: true, kind: "account" });
+    expect(svc.account!.state.agents.some((k) => k.address === stranger.address)).toBe(true);
+    expect(done).toBe(false);
+    // the holdout is not moved while a backtest runs
+    expect(await own({ type: "setBacktest", change: "holdout", value: "2026-09-01" })).toMatchObject({ code: "E_ACCOUNT_LIMIT", detail: { busy: true } });
+    const again = svc.exchange(env);
+    release();
+    const first = await look;
+    expect(first).toMatchObject({ ok: true, kind: "result", result: { window: "holdout", looks: 1 } });
+    expect(await again).toEqual(first);
+    expect(readTrials(home).rows.filter((r) => r.kind === "trial" && r.window === "holdout")).toHaveLength(1);
+    expect(ok(svc.backtests()).holdout).toMatchObject({ start: "2026-07-31" });
+  });
+
   it("a look at a desk run plays the desk again inside the service — its own account built and let go — over the held-out data", async () => {
     const { svc, home, own } = await boot();
     // the desk runs at the owner's terminal: its training run is written there, into the same home
