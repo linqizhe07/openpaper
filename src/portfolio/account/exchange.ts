@@ -86,6 +86,10 @@ const RESULTS_KEPT_MS = 2 * 86_400_000;
 const SIMULATED_ONLY = new Set(["sendAsset", "swap", "agentSendAsset", "agentSwap", "agentPay", "createSubAccount", "userSetAbstraction", "setDestination", "approveBuilderFee", "agentExecute", "agentOrder"]);
 /** what a real account with agent wallets also takes: an agent wallet, made by the owner's signature, and an agent's payment from one */
 const REAL_PAYS = new Set(["agentPay", "createSubAccount"]);
+/** an instruction taken whose work runs outside the door's line (AccountEngine.take): its answer, when the work is done */
+class Later {
+  constructor(readonly out: Promise<Outcome>) {}
+}
 const realOnly = (type: string) => no("E_ACCOUNT_BAD_ACTION", { tool: type, message: `this account holds real accounts only: "${type}" acts on simulated venues. Real orders are liveOrder (the owner) and agentLiveOrder (an agent); real money moves with liveMove and agentLiveMove`, detail: { use: ["liveOrder", "agentLiveOrder", "liveMove", "agentLiveMove"] } });
 
 /** a card as the engine needs it from the flight board */
@@ -393,6 +397,8 @@ export class AccountEngine {
   private orderSeq = 0;
   /** the answer to each instruction taken, by its digest, for the nonce window: the same envelope again gets the same answer */
   private results = new Map<string, { at: number; out: Outcome }>();
+  /** instructions taken whose work still runs outside the line (the lab's), by the same digest: the same envelope again waits for its answer */
+  private readonly running = new Map<string, Later>();
   /** instructions an earlier run of this account took, read back from its ledgers: none of them is taken again */
   private readonly taken = new Set<string>();
   /** cards closed because nobody answered them in time (expireCards): an owner answering one late is told it expired, not that it is unknown */
@@ -553,9 +559,10 @@ export class AccountEngine {
 
   /** Instructions are taken ONE AT A TIME, in the order they arrive. Every check below reads the account and then waits on something (a venue, a
    * payee, a signature): two requests let in together would each see the budget as it was before the other spent it. A limit that two requests can
-   * each pass alone is not a limit. */
-  exchange(envelope: Envelope): Promise<Outcome> {
-    return this.serially(() => this.take(envelope));
+   * each pass alone is not a limit. The lab's work alone runs outside the line once its instruction is taken (take: LAB_TYPES) */
+  async exchange(envelope: Envelope): Promise<Outcome> {
+    const taken = await this.serially(() => this.take(envelope));
+    return taken instanceof Later ? taken.out : taken;
   }
 
   /** run `fn` in the same line as the instructions: what changes an order or a payment never runs in the middle of one */
@@ -565,7 +572,7 @@ export class AccountEngine {
     return turn;
   }
 
-  private async take(sent: Envelope): Promise<Outcome> {
+  private async take(sent: Envelope): Promise<Outcome | Later> {
     // The envelope as the account keeps it, ONCE, before anything reads it (sign.ts ownEnvelope): the action, the nonce, the signature and
     // the cosignatures, each signature its own fields — whatever rode in beside them (a brain's key posted here by mistake, a field a program
     // added) is dropped here, so that no row of the ledger, no entry of the account's state and no venue's record downstream can carry it,
@@ -627,6 +634,9 @@ export class AccountEngine {
     for (const [k, kept] of this.results) if (now - kept.at > RESULTS_KEPT_MS) this.results.delete(k);
     const seen = this.results.get(key);
     if (seen) return seen.out;
+    // still running outside the line (the lab's work): its answer when it is done
+    const running = this.running.get(key);
+    if (running) return running;
     if (this.taken.has(key)) return this.refused(no("E_ACCOUNT_NONCE", { message: "an earlier run of this account already took this instruction: it is not taken twice", detail: { nonce: action.nonce, verdict: "used" } }), envelope, signer);
     if (signers.size < this.state.threshold && isOwnerAction(action)) return this.refused(no("E_ACCOUNT_THRESHOLD", { message: `this account needs ${this.state.threshold} signers; ${signers.size} signed`, detail: { threshold: this.state.threshold, signed: [...signers] } }), envelope, signer);
 
@@ -653,8 +663,25 @@ export class AccountEngine {
 
     // an order or a cancel is not kept waiting while the account asks other venues how their orders stand
     await this.settle(["liveCancel", "agentLiveCancel", "liveOrder", "agentLiveOrder"].includes(action.type));
-    const out = await this.run(action, envelope, signer, agent, hash);
-    this.results.set(key, { at: now, out });
+    // THE LAB'S WORK runs outside the line once its instruction is taken — the signature, the nonce, the time it is good for and the row
+    // above all in the line: a backtest steps over months of recorded bars (the desk's, a minute and more), moves no money and changes
+    // nothing of the account's, and an order, a cancel or a desk's exit sent meanwhile is not kept waiting behind it
+    if (LAB_TYPES.has(action.type)) {
+      const later = new Later(
+        this.run(action, envelope, signer, agent, hash)
+          .then((out) => this.answer(key, now, action, envelope, signer, agent, out))
+          .finally(() => this.running.delete(key)),
+      );
+      this.running.set(key, later);
+      return later;
+    }
+    return this.answer(key, now, action, envelope, signer, agent, await this.run(action, envelope, signer, agent, hash));
+  }
+
+  /** an instruction's answer, once it ran: kept for the same envelope sent again, the asks an owner's action answers closed, a refusal on the
+   * record */
+  private answer(key: string, at: number, action: Action, envelope: Envelope, signer: string, agent: AgentKey | undefined, out: Outcome): Outcome {
+    this.results.set(key, { at, out });
     if (!isRefusal(out) && isOwnerAction(action)) this.answered(action, envelope);
     if (isRefusal(out)) this.host.log({ kind: "account-refusal", venue: out.venue ?? "*", tool: action.type, code: out.code, reason: out.message, detail: out.detail, native: out.native, signer, envelope: ledgered(envelope), ...(agent ? { agent: slug(agent.name) } : {}) });
     return out;
