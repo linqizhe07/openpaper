@@ -159,7 +159,7 @@ describe("a walk-forward an unsigned request asks for", () => {
     const running = svc.backtestRun(SMA);
     expect(((await svc.backtestWalk(body)) as Refusal).detail).toEqual({ busy: true });
     await running;
-    expect((ok(svc.backtests()) as { catalog: { walk: unknown } }).catalog.walk).toEqual({ folds: [2, 10], combosMost: 50, runsMost: 300, mostWork: 400_000 });
+    expect((ok(svc.backtests()).catalog as { walk?: unknown }).walk).toEqual({ folds: [2, 10], combosMost: 50, runsMost: 300, mostWork: 400_000 });
   });
 
   it("over the route: 200 with the walk, 400 a body that is no object, 409 a walk past its work", async () => {
