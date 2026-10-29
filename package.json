@@ -32,6 +32,7 @@
     "account:check": "tsx src/portfolio/account-check.ts",
     "account:backup": "tsx src/portfolio/account-backup.ts",
     "account:replay": "tsx src/portfolio/account-replay.ts",
+    "account:backtest": "tsx src/portfolio/account-backtest.ts",
     "site:numbers": "tsx scripts/site-numbers.ts",
     "site:progress": "tsx scripts/site-progress.ts",
     "site": "node scripts/site-serve.mjs"
