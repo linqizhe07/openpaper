@@ -466,6 +466,9 @@ npm run account:backtest -- --strategy sma --param fast=10 --param slow=50 --mar
                                      Deflated 那一行写着现在一共试过几个不同策略、最好的那个碰运气能有多少 Sharpe
 npm run account:backtest -- --markets perp:BTC,perp:ETH --holdout
                                      在留出期上跑一次（你的终端，算一次 look）
+npm run account:backtest -- --strategy desk --markets perp:BTC,perp:ETH,perp:SOL
+                                     desk 本身：一个新账户里雇好 desk、接上纸上账户，用 momentum 脚本当脑子，一根 K 线一步地走
+                                     （--param sizeUsd=1000 tpPct=2 slPct=1 maxHours=24 riskPct=10 maxOpen=3）
 npm run account:backtest -- --trials                                       台账：留出期、行数、链是否完整、最近的回测
 npm run account:backtest -- --set-holdout 2026-09-01                       移动留出期（不能移回已经试过的日子之前）
 ```

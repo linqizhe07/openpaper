@@ -13,7 +13,20 @@ export const MOMENTUM_TP_PCT = 0.4;
 export const MOMENTUM_SL_PCT = 0.4;
 export const MOMENTUM_MAX_HOURS = 1;
 
-export function momentumScriptBrain(model = "claude-opus-5-5"): Brain {
+/** the script's numbers: what Risk clears a lead at — its size in dollars, its take-profit and stop in percent, its most hours open (the
+ * defaults the stand-in and the replay trade with; a desk backtested over hourly bars asks for wider ones, backtest/desk.ts) */
+export interface MomentumScript {
+  sizeUsd?: number | undefined;
+  tpPct?: number | undefined;
+  slPct?: number | undefined;
+  maxHours?: number | undefined;
+}
+
+export function momentumScriptBrain(model = "claude-opus-5-5", o: MomentumScript = {}): Brain {
+  const size = o.sizeUsd ?? MOMENTUM_SIZE_USD;
+  const tp = o.tpPct ?? MOMENTUM_TP_PCT;
+  const sl = o.slPct ?? MOMENTUM_SL_PCT;
+  const hours = o.maxHours ?? MOMENTUM_MAX_HOURS;
   let n = 0;
   let r = 0;
   return scriptedBrain(({ role, input }) => {
@@ -25,8 +38,8 @@ export function momentumScriptBrain(model = "claude-opus-5-5"): Brain {
     }
     if (role === "risk") {
       return ++r % 3 === 0
-        ? { verdict: "reject", why: "the move is already spent on the day", sizeUsd: 0, tpPct: MOMENTUM_TP_PCT, slPct: MOMENTUM_SL_PCT, maxHours: MOMENTUM_MAX_HOURS }
-        : { verdict: "clear", why: "a tight spread, the day's loss room untouched", sizeUsd: MOMENTUM_SIZE_USD, tpPct: MOMENTUM_TP_PCT, slPct: MOMENTUM_SL_PCT, maxHours: MOMENTUM_MAX_HOURS };
+        ? { verdict: "reject", why: "the move is already spent on the day", sizeUsd: 0, tpPct: tp, slPct: sl, maxHours: hours }
+        : { verdict: "clear", why: "a tight spread, the day's loss room untouched", sizeUsd: size, tpPct: tp, slPct: sl, maxHours: hours };
     }
     if (role === "exit") return { decisions: [] };
     if (role === "head") return { worked: "Quick entries, each with its numbers said first.", change: "Keep the size small while the tape is thin." };

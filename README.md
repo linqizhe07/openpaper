@@ -174,8 +174,8 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
   live/                the real venues and the public market data: exchanges, Alpaca, Robinhood, Kalshi, Polymarket, Hyperliquid,
                        wallets, prices, candles, the stream hub, EDGAR
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
-  backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies,
-                       the figures, the history kept in the home (account-backtest.ts is its command)
+  backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
+                       desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
   mcp.ts               the MCP server an agent's seat runs (38 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only
@@ -200,7 +200,7 @@ Node 22, TypeScript (strict), Express, ccxt, viem, zod, the MCP SDK and vitest. 
 | `npm run account:check` | What your network reaches, in each venue's own words; safe to paste |
 | `npm run account:service -- <command>` | The account as a background service on macOS |
 | `npm run account:replay -- --day 2026-10-01` | A recorded day of Hyperliquid (tardis.dev; the first of each month is free) replayed through the desk on a paper account, with a script for a brain: how the desk's mechanics fare on a real day's prices, in seconds |
-| `npm run account:backtest -- --markets perp:BTC,perp:ETH` | A strategy (buy and hold, a moving-average cross, time-series momentum, a funding carry) played over recorded bars through the paper account itself, its fills, fees, funding and liquidations by the paper account's own rules, beside a buy-and-hold. Every run is a row of a hash-chained trials ledger that deflates the next run's Sharpe, and the latest 90 days are held out: `--holdout` runs on them, `--trials` prints the ledger, `--set-holdout` moves it |
+| `npm run account:backtest -- --markets perp:BTC,perp:ETH` | A strategy (buy and hold, a moving-average cross, time-series momentum, a funding carry, or with `--strategy desk` the account's own desk and its seats) played over recorded bars through the paper account itself, its fills, fees, funding and liquidations by the paper account's own rules, beside a buy-and-hold. Every run is a row of a hash-chained trials ledger that deflates the next run's Sharpe, and the latest 90 days are held out: `--holdout` runs on them, `--trials` prints the ledger, `--set-holdout` moves it |
 | `npm test` | The suite: about 180 files and 3,000 cases, among them thirty-one attack files, serial because the simulators bind fixed ports |
 | `npm run typecheck` | `tsc --noEmit`, strict |
 | `npm run site` · `npm run site:numbers` | Preview the public page; recompute its numbers from the repository |

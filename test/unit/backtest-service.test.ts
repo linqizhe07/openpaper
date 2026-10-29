@@ -6,7 +6,8 @@ import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import type { Outcome, Prepared } from "../../src/portfolio/account/exchange.ts";
 import { signOwner, simKey, type OwnerAction } from "../../src/portfolio/account/sign.ts";
 import type { HistorySources } from "../../src/portfolio/backtest/data.ts";
-import { readTrials } from "../../src/portfolio/backtest/lab.ts";
+import { deskSpec, labRun, readTrials, setHoldout, type DeskSpec } from "../../src/portfolio/backtest/lab.ts";
+import { DEFAULT_COSTS } from "../../src/portfolio/backtest/source.ts";
 import type { LiveDeps } from "../../src/portfolio/live/index.ts";
 import type { PublicSource } from "../../src/portfolio/live/public-markets.ts";
 import type { Candle } from "../../src/portfolio/live/trade.ts";
@@ -141,6 +142,17 @@ describe("a backtest an unsigned request asks for", () => {
 });
 
 describe("the owner's signed setBacktest", () => {
+  it("a look at a desk run plays the desk again inside the service — its own account built and let go — over the held-out data", async () => {
+    const { svc, home, own } = await boot();
+    // the desk runs at the owner's terminal: its training run is written there, into the same home
+    expect(setHoldout(home, "2026-10-22", "terminal", START)).toMatchObject({ start: "2026-10-22" });
+    const sources: HistorySources = { perp: standIn("hl", "BTC-PERP"), spot: standIn("cb", "BTC/USD"), stock: standIn("us", "AAPL") };
+    const train = await labRun({ spec: deskSpec() as DeskSpec, refs: [{ cls: "perp", base: "BTC" }], interval: "4h", from: Date.parse("2026-10-15T00:00:00Z"), window: "train", cashUsd: 10_000, feeBps: 10, costs: DEFAULT_COSTS, benchmark: false, save: true, by: "terminal" }, { home, cache: join(home, "history"), sources, clock: () => START });
+    if (isRefusal(train)) throw new Error(train.message);
+    const look = (await own({ type: "setBacktest", change: "evaluate", value: train.id })) as { ok: true; kind: "result"; result: { window: string; strategy: { id: string }; from: string; looks: number } };
+    expect(look).toMatchObject({ ok: true, kind: "result", result: { window: "holdout", strategy: { id: "desk" }, from: "2026-10-22T00:00:00.000Z", looks: 1 } });
+  });
+
   it("looks at the held-out data with a training run tried again exactly — said in words before it is signed, counted as a look, by the owner", async () => {
     const { svc, home, own } = await boot();
     const train = ok(await svc.backtestRun(SMA)) as { id: string };
