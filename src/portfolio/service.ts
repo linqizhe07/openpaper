@@ -105,6 +105,7 @@ import { applyBrainKey, BrainKeyStage, envBlocksOf, envWinsOf, type BrainKeyDone
 import { DETECT_BODY_WORDS, detectBrain, type Detected } from "./account/brain-detect.ts";
 import { brainProviders, presetBest, presetHost, testBrain } from "./account/brains.ts";
 import { realHistorySources, type HistorySources } from "./backtest/data.ts";
+import { labWalkForward, WALK_COMBOS_MOST, WALK_FOLDS, WALK_RUNS_MOST, walkAskOf, walkSummary } from "./backtest/walk.ts";
 import { askOf, labCatalog, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, type LabDeps, type TrialRow } from "./backtest/lab.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -112,6 +113,9 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
  * (some twenty-five seconds at the eight thousand market-steps a second measured on this machine); the command at the owner's terminal
  * may take more */
 export const BACKTEST_API_WORK = 200_000;
+/** the most work a walk-forward the service is asked for may take, over all its runs, in steps times markets: twice a run's, since a walk is
+ * many short runs (some fifty seconds at the speed measured on this machine) */
+export const BACKTEST_WALK_WORK = 400_000;
 export const FIXTURES = join(ROOT, "fixtures", "home", "portfolio");
 
 export interface Seeds {
@@ -177,7 +181,7 @@ export interface ServiceOptions {
   streams?: MarketHub | undefined;
   /** THE LAB (backtest/lab.ts): the history its backtests read (default: Hyperliquid's perpetuals, Coinbase's coins and the US stocks line,
    * keyless, over the service's own network; stand-ins in tests) and the most steps a run the service is asked for may take */
-  backtest?: { sources?: HistorySources | undefined; maxSteps?: number | undefined } | undefined;
+  backtest?: { sources?: HistorySources | undefined; maxSteps?: number | undefined; maxWalkWork?: number | undefined } | undefined;
 }
 
 /** one slice of an order (or any step an agent flies): where, what, and the agent's words for it */
@@ -1872,10 +1876,23 @@ export class PortfolioService {
       return isRefusal(out) ? out : outcomeSummary(out);
     });
   }
+  /** A WALK-FORWARD AN UNSIGNED REQUEST ASKS FOR (POST /api/account/backtest/walk; an agent's portfolio_backtest_walk): a grid's best on
+   * each fold's past, tried on the fold, the folds chained (backtest/walk.ts) — on training data only, every try counted in the ledger with
+   * the seat it names, the out-of-sample runs kept. One backtest at a time across the account, at most BACKTEST_WALK_WORK steps across its
+   * markets over all its runs */
+  async backtestWalk(body: Record<string, unknown>): Promise<Record<string, unknown> | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const ask = walkAskOf(body);
+    if (typeof ask === "string") return no("E_ACCOUNT_BAD_ACTION", { message: ask });
+    return this.labOnce(async () => {
+      const w = await labWalkForward({ ...ask, by: "request", maxWork: this.opts.backtest?.maxWalkWork ?? BACKTEST_WALK_WORK }, this.labDeps());
+      return isRefusal(w) ? w : walkSummary(w);
+    });
+  }
   /** THE LEDGER as it stands: the holdout, the rows and whether their chain holds, how many runs and distinct strategies, the latest runs */
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
-    return { ...labList(this.opts.home, Date.parse(this.now()), limit), catalog: labCatalog() };
+    return { ...labList(this.opts.home, Date.parse(this.now()), limit), catalog: { ...labCatalog(), walk: { folds: WALK_FOLDS, combosMost: WALK_COMBOS_MOST, runsMost: WALK_RUNS_MOST, mostWork: this.opts.backtest?.maxWalkWork ?? BACKTEST_WALK_WORK } } };
   }
   /** one kept run in full — its trades, its curve, its notes — with its trial and how it is judged against the ledger now */
   backtestKept(id: string): Record<string, unknown> | Refusal {

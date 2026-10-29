@@ -141,6 +141,49 @@ describe("a backtest an unsigned request asks for", () => {
   });
 });
 
+describe("a walk-forward an unsigned request asks for", () => {
+  it("walks the training data — every try a row with the seat named, the out-of-sample runs kept — one backtest at a time across the account, refused past the holdout or for the desk; the catalog says its limits", async () => {
+    const { svc, home } = await boot();
+    const body = { strategy: "sma", grid: { fast: [5, 10] }, params: { slow: 30 }, folds: 2, markets: "perp:BTC", interval: "4h", from: "2026-05-01", seat: "0xWalker" };
+    const w = ok(await svc.backtestWalk(body)) as { folds: Array<{ out: { id: string } }>; trials: { added: number; inSample: number; outSample: number }; curve: unknown[]; markets: string[] };
+    expect(w.trials).toEqual({ added: 2 * 2 + 2, inSample: 4, outSample: 2 });
+    expect(w.markets).toEqual(["perp:BTC"]);
+    expect(w.curve.length).toBeGreaterThan(10);
+    const rows = readTrials(home).rows.filter((r) => r.kind === "trial") as Array<{ by: string; seat?: string; run: string; kept: boolean }>;
+    expect(rows.every((r) => r.by === "request" && r.seat === "0xWalker")).toBe(true);
+    expect(rows.filter((r) => r.kept).map((r) => r.run)).toEqual(w.folds.map((f) => f.out.id));
+    expect(isRefusal(svc.backtestKept(w.folds[0]!.out.id))).toBe(false);
+    expect(((await svc.backtestWalk({ ...body, to: "2026-09-01" })) as Refusal).code).toBe("E_ACCOUNT_OWNER_ONLY");
+    expect(((await svc.backtestWalk({ strategy: "desk" })) as Refusal).message).toMatch(/^the desk does not walk/);
+    // one at a time, whichever is asked first
+    const running = svc.backtestRun(SMA);
+    expect(((await svc.backtestWalk(body)) as Refusal).detail).toEqual({ busy: true });
+    await running;
+    expect((ok(svc.backtests()) as { catalog: { walk: unknown } }).catalog.walk).toEqual({ folds: [2, 10], combosMost: 50, runsMost: 300, mostWork: 400_000 });
+  });
+
+  it("over the route: 200 with the walk, 400 a body that is no object, 409 a walk past its work", async () => {
+    const { svc } = await boot();
+    const srv = await startPortfolioServer({ port: 0, service: svc, snapshotMs: 0 });
+    try {
+      const post = async (body: unknown) => {
+        const r = await fetch(`${srv.url}/api/account/backtest/walk`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+      };
+      const one = await post({ strategy: "sma", grid: { fast: [5, 10] }, params: { slow: 30 }, folds: 2, markets: "perp:BTC", interval: "4h", from: "2026-06-01" });
+      expect(one.status).toBe(200);
+      expect(one.body).toMatchObject({ ok: true, combos: 2, rolling: false });
+      expect(await post([1])).toEqual({ status: 400, body: { ok: false, error: "need {strategy, grid, folds, rolling, params, markets, interval, from, to, …}" } });
+      // 24 combinations over 10 folds is 250 runs, within the most; a year of hourly bars on two markets is far past the work
+      const big = await post({ strategy: "sma", grid: { fast: [5, 6, 7, 8, 9, 10], slow: [30, 40, 50, 60] }, folds: 10, markets: "perp:BTC,perp:ETH", interval: "1h", from: "2025-08-01" });
+      expect(big.status).toBe(409);
+      expect(big.body).toMatchObject({ ok: false, refusal: { code: "E_ACCOUNT_LIMIT" } });
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
 describe("the owner's signed setBacktest", () => {
   it("a look at a desk run plays the desk again inside the service — its own account built and let go — over the held-out data", async () => {
     const { svc, home, own } = await boot();

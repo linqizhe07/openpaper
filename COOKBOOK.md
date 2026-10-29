@@ -455,7 +455,7 @@ portfolio_history        {range: "1w", paper: true}       纸上账户自己的�
 - **最近的数据留出来**：第一次有人跑回测时，账户把那之前 90 天写进 `~/.openpaper/backtest/holdout.json`，之后不会自己动。回测窗口最晚到留出期开始那天，不写结束日就是那天。在留出期上跑只有两种办法：你签名（setBacktest），或者在你自己的终端加 `--holdout`。
 - **每一次都记账**：`~/.openpaper/backtest/trials.jsonl` 一次一行，哈希链着，改一行、删一行都看得出来。回测的 Sharpe 按留出期之前试过的**不同策略数**打折（Deflated Sharpe）：试得越多，门槛越高。同一组市场和 K 线保存的回测还会一起算 PBO：在一半历史上最好的那个，在另一半排进后一半的比例。
 
-页面：左栏 **Backtest**。右边的表单从账户给的目录画出来（每个策略的数、默认值、上下界和说明），结束日最晚到留出期开始那天；Run backtest 之后左边是结果：策略和买入持有的权益曲线画在一起，下面是回撤，旁边是两列指标，下面是 Deflated Sharpe 和 PBO 那两句话、备注和成交。最下面 Trials 是台账里最近的回测：Open 打开一次，**Look at the holdout…** 是你签名在留出期上看一次（先把要做的事说成话，再签）。看的结果只回给你这个签名，所以页面把它存在这个浏览器里；别的浏览器和 agent 只看得到看过、看的是什么。表头的 **Move…** 移动留出期。
+页面：左栏 **Backtest**。右边的表单从账户给的目录画出来（每个策略的数、默认值、上下界和说明），结束日最晚到留出期开始那天；Run backtest 之后左边是结果：策略和买入持有的权益曲线画在一起，下面是回撤，旁边是两列指标，下面是 Deflated Sharpe 和 PBO 那两句话、备注和成交。表单最上面可以切到 **Walk forward**：给要挑的数填几个值（逗号分隔），定折数，按 Walk forward；结果是各折和接起来的曲线，点一折的样本外窗口打开那一次。最下面 Trials 是台账里最近的回测：Open 打开一次，**Look at the holdout…** 是你签名在留出期上看一次（先把要做的事说成话，再签）。看的结果只回给你这个签名，所以页面把它存在这个浏览器里；别的浏览器和 agent 只看得到看过、看的是什么。表头的 **Move…** 移动留出期。
 
 终端：
 
@@ -481,6 +481,8 @@ agent（MCP）：
 ```
 portfolio_backtest   {strategy: "tsmom", markets: "perp:BTC,perp:ETH", interval: "1h"}
                      答复：metrics、benchmark.metrics、deflated {dsr, sr0, trials}、overfit {pbo}、notes、id；记进台账，带上这个席位
+portfolio_backtest_walk {strategy: "sma", grid: {fast: [10, 20, 40], slow: [50, 100, 200]}, folds: 3, markets: "perp:BTC,perp:ETH"}
+                     walk-forward：每一折上网格挑 Sharpe 最高的，放到这一折上跑；回答里有各折、接起来的指标、效率和加了几行
 portfolio_backtests  {}                  留出期、台账、最近的回测
 portfolio_backtests  {id: "<id>"}        一次回测的全部：每笔成交、权益曲线、资金费、没成交的单
 ```

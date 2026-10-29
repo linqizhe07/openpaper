@@ -90,6 +90,64 @@ describe("the form, drawn once from the account's catalog", () => {
   });
 });
 
+describe("the walk-forward mode", () => {
+  it("is a switch on the form: the walk's grid (values to try for each number), its folds and rolling, hidden until walked; a strategy without numbers says so", () => {
+    const { run } = page();
+    const html = run<string>(`btFormHtml(${JSON.stringify({ ...CATALOG, walk: { folds: [2, 10], combosMost: 50 } })}, ${JSON.stringify(HOLDOUT)})`);
+    expect(html).toContain('<div class="seg bt-modes" role="group" aria-label="What to run"><button type="button" data-bt-act="mode" data-mode="run" aria-pressed="true">One run</button><button type="button" data-bt-act="mode" data-mode="walk" aria-pressed="false">Walk forward</button></div>');
+    expect(html).toContain('<div class="bt-walk" data-bt-walk hidden>');
+    expect(html).toContain('<input name="g.lookbackDays" autocomplete="off" spellcheck="false" inputmode="decimal" placeholder="e.g. 30, 60">');
+    expect(html).toContain('<input name="folds" type="number" min="2" max="10" step="1" value="4" inputmode="numeric">');
+    expect(html).toContain('<input type="checkbox" name="rolling"> Rolling: each fold picks on the stretch before it only');
+    expect(html).toContain("50 combinations at most. Every run is a row of the ledger.");
+    expect(run(`btGridHtml(${JSON.stringify(STRATEGIES.hold)})`)).toBe('<p class="dim small">It takes no numbers to pick: the walk runs it as it is on each fold.</p>');
+    expect(run(`btGridHtml(${JSON.stringify(STRATEGIES.sma)})`)).toContain('placeholder="e.g. 20, 40"');
+  });
+
+  it("switches the form between one run and a walk: the switch pressed, the walk's fields and the buy-and-hold shown or hidden, the button's word", () => {
+    const { run, sandbox } = page();
+    const el = (o: Record<string, unknown> = {}) => ({ hidden: false, dataset: {}, attrs: {} as Record<string, string>, setAttribute(k: string, v: string) { this.attrs[k] = v; }, textContent: "", firstChild: null, ...o });
+    const buttons = [el({ dataset: { mode: "run" } }), el({ dataset: { mode: "walk" } })];
+    const parts: Record<string, ReturnType<typeof el>> = { "[data-bt-mode-words]": el(), "[data-bt-walk]": el({ hidden: true }), "[data-bt-benchmark]": el(), "[data-bt-go]": el({ disabled: false }) };
+    (sandbox as { FORM: unknown }).FORM = { querySelectorAll: () => buttons, querySelector: (q: string) => parts[q] ?? null };
+    run(`BT.mode = "walk"; btModeSync(FORM)`);
+    expect([buttons[0]!.attrs["aria-pressed"], buttons[1]!.attrs["aria-pressed"]]).toEqual(["false", "true"]);
+    expect([parts["[data-bt-walk]"]!.hidden, parts["[data-bt-benchmark]"]!.hidden]).toEqual([false, true]);
+    expect(parts["[data-bt-go]"]!.textContent).toBe("Walk forward");
+    run(`BT.mode = "run"; btModeSync(FORM)`);
+    expect([parts["[data-bt-walk]"]!.hidden, parts["[data-bt-benchmark]"]!.hidden, parts["[data-bt-go]"]!.textContent]).toEqual([true, false, "Run backtest"]);
+  });
+
+  it("asks the account for a walk: the numbers with values typed walked (and not fixed), the rest fixed, the folds, rolling, no buy-and-hold", () => {
+    const { run } = page();
+    const fields = { strategy: "sma", "p.fast": "20", "p.slow": "100", "p.weight": "1", "g.fast": "10, 20,40", "g.slow": "", "g.weight": "", markets: "perp:BTC", interval: "1h", from: "2026-02-01", to: "2026-07-31", cash: "10000", feeBps: "10", leverage: "", halfSpreadBps: "1", participation: "0.05", levelBps: "2", folds: "3" };
+    expect(run(`btWalkAskOf(${JSON.stringify(fields)}, true)`)).toEqual({ strategy: "sma", params: { slow: 100, weight: 1 }, markets: "perp:BTC", interval: "1h", from: "2026-02-01", to: "2026-07-31", cash: 10_000, feeBps: 10, halfSpreadBps: 1, participation: 0.05, levelBps: 2, seat: "page", grid: { fast: [10, 20, 40] }, folds: 3, rolling: true });
+  });
+
+  it("shows a walk: the folds chained, what it earned out of sample, the share of the in-sample Sharpe it kept — or that it kept none — the rows it added, and each fold with its run to open", async () => {
+    const fold = (n: number, ret: number) => ({ fold: n, inSample: { from: "2026-04-04T00:00:00.000Z", to: `2026-0${4 + n}-03T00:00:00.000Z` }, outSample: { from: `2026-0${4 + n}-03T00:00:00.000Z`, to: `2026-0${5 + n}-02T00:00:00.000Z` }, picked: { fast: 10, slow: 200, weight: 1 }, inSharpe: 1.2, tried: 9, out: { id: `20261029T17102${n}-af504f2525`, returnPct: ret, sharpe: 1.1, maxDrawdownPct: 6.75, fills: 35, feesUsd: 50 } });
+    const walk = { ok: true, strategy: { id: "sma", name: "Moving-average cross" }, grid: { fast: [10, 20, 40], slow: [50, 100, 200] }, fixed: { weight: 1 }, combos: 9, folds: [fold(1, 3.5), fold(2, -0.18)], rolling: false, markets: ["perp:BTC", "perp:ETH"], interval: "1h", window: { from: "2026-04-04T04:00:00.000Z", to: "2026-07-31T00:00:00.000Z" }, metrics: metrics({ returnPct: 3.31, sharpe: 0.6, sharpeSe: 1.9, fills: 70, feesUsd: 100 }), inSharpeMean: 1.2, outSharpe: 0.6, efficiency: 0.5, trials: { added: 20, inSample: 18, outSample: 2 }, ledger: { rows: 21, intact: true }, notes: ["the walk starts 2026-04-04"], curve: [[1, 10_000], [2, 10_200], [3, 10_331]] };
+    const { run, asked, sandbox } = page({ fetch: async (path) => (path === "/api/account/backtest/walk" ? walk : LIST) });
+    sandbox.toast = () => {};
+    const msg = { className: "", textContent: "", firstChild: null };
+    (sandbox as { FORM: unknown }).FORM = { querySelector: (q: string) => (q === "[data-bt-msg]" ? msg : null), querySelectorAll: () => [] };
+    await run(`btWalkSend({ strategy: "sma", grid: { fast: [10, 20, 40] } }, FORM)`);
+    expect(asked[0]).toEqual({ path: "/api/account/backtest/walk", method: "POST", body: { strategy: "sma", grid: { fast: [10, 20, 40] } } });
+    expect(run(`[BT.view.kind, BT.view.combos, BT.view.ok]`)).toEqual(["walk", 9, undefined]);
+    const html = run<string>("btResultHtml(BT.view)");
+    expect(html).toContain('<h2 class="h2">Walk-forward · Moving-average cross</h2>');
+    expect(html).toContain("9 combinations (fast 10, 20, 40 × slow 50, 100, 200), the rest weight 1 · 2 folds, anchored · perp:BTC, perp:ETH 1h · 2026-04-04 04:00 → 2026-07-31 00:00 UTC");
+    expect(html).toContain("<b>50% of it kept</b>: the picks' mean Sharpe in sample was 1.20; the walk's out of sample, 0.60.");
+    expect(html).toContain("20 rows added to the ledger: 18 tries in sample, counted; 2 runs out of sample, kept.");
+    expect([...html.matchAll(/data-bt-act="open" data-id="([^"]+)"/g)].map((m) => m[1])).toEqual(["20261029T171021-af504f2525", "20261029T171022-af504f2525"]);
+    expect(html).toContain('<td class="nw"><span title="the best of 9 in sample, 04-04 → 05-03">fast 10 · slow 200</span></td>');
+    expect(html).toContain('<span title="in sample 04-04 → 05-03">1</span>');
+    expect(html).toContain(`<td class="nw"><button type="button" class="link" data-bt-act="open" data-id="20261029T171021-af504f2525" title="Open this fold's run">05-03 → 06-02</button></td>`);
+    expect(run<string>(`btWalkHtml(${JSON.stringify({ ...walk, efficiency: -0.72, outSharpe: -0.81 })})`)).toContain("<b>None of it kept</b>: the picks' mean Sharpe in sample was 1.20; the walk's out of sample, −0.81 (an efficiency of −72%).");
+    expect(run<string>(`btWalkHtml(${JSON.stringify({ ...walk, efficiency: null, inSharpeMean: -0.2 })})`)).toContain("The picks' mean Sharpe in sample was −0.20: nothing above zero for the walk to keep.");
+  });
+});
+
 describe("a run", () => {
   it("is asked of the account, its kept run read for the curves and the fills, the trials read again; a refusal says the account's words under the form", async () => {
     const kept = { ok: true, id: "20261029T162650-d837f7a84b", window: "train", holdout: "2026-07-31", notes: ["the data from 2026-07-31 on is held out"], run: { strategy: { id: "sma", name: "Moving-average cross", paramWords: "fast 10 · slow 50 · weight 1" }, markets: [{ symbol: "BTC-PERP", interval: "4h" }], from: "2026-02-01T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", cashUsd: 10_000, feeBps: 10, leverage: 2, costs: {}, metrics: metrics(), equity: [{ t: 1, usd: 10_000 }, { t: 2, usd: 9_000 }, { t: 3, usd: 11_112 }], fills: [{ at: "2026-02-02T00:00:00.000Z", symbol: "BTC-PERP", side: "buy", qty: 0.1, price: 90_000, feeUsd: 9 }], refused: [], funding: { paidUsd: 0, receivedUsd: 4.01, hours: 9 }, notes: ["a perpetual's margin is isolated"] }, trial: { seq: 2 }, deflated: { dsr: 0.81, sr0: 0, trials: 1 } };

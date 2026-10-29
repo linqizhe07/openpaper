@@ -8,6 +8,10 @@
 .bt-chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 .bt-form { display: flex; flex-direction: column; gap: 12px; }
+.bt-modes { align-self: flex-start; }
+.bt-walk { display: flex; flex-direction: column; gap: 12px; }
+.bt-walk[hidden] { display: none; }
+label.chk1.bt-rolling { white-space: normal; align-self: end; }
 .bt-form > p { margin: -4px 0 0; }
 .bt-words { min-height: 1.4em; }
 .bt-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

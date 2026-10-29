@@ -23,8 +23,8 @@
  * (account/desk.ts), the account's own team of agents, on which the owner may give this seat a role: portfolio_desk reads it (the seat's
  * charter, the objective, the funnel, the room), portfolio_desk_say speaks in its room with this seat's key. BACKTESTS (backtest/lab.ts):
  * portfolio_backtest runs a strategy over recorded bars through a paper account — a training run before the holdout, counted in the
- * account's trials ledger with this seat named; the held-out data is the owner's to run on — and portfolio_backtests reads the ledger and a
- * kept run. A layered simulation (tests: the account layer over simulated venues) also has
+ * account's trials ledger with this seat named; the held-out data is the owner's to run on — portfolio_backtest_walk walks a grid forward
+ * through the folds of the training window, every try counted, and portfolio_backtests reads the ledger and a kept run. A layered simulation (tests: the account layer over simulated venues) also has
  * portfolio_transfer, which signs a move between the simulated venues at the door.
  * On the simulated statement (--classic), and on a layered simulation: portfolio_read · portfolio_markets · portfolio_quote ·
  * portfolio_openness · portfolio_execute · portfolio_order — the fixture's venues, catalogue and router. They are registered only when the
@@ -992,6 +992,39 @@ server.registerTool(
   async (args) => {
     if (!(await layer())) return text({ ok: false, error: "this service runs without the account layer (--classic)" }, true);
     const r = await call("POST", "/api/account/backtest", { ...args, seat: seatKey().address });
+    const b = r.body as Record<string, unknown> & { refusal?: { code: string; message: string; detail?: unknown }; error?: string };
+    if (b.refusal) return text({ ok: false, code: b.refusal.code, message: b.refusal.message, ...(b.refusal.detail !== undefined ? { detail: b.refusal.detail } : {}) }, true);
+    if (r.status >= 400) return text({ ok: false, error: b.error ?? `HTTP ${r.status}` }, true);
+    return text(b);
+  },
+);
+
+server.registerTool(
+  "portfolio_backtest_walk",
+  {
+    description: "A WALK-FORWARD: what picking a strategy's numbers would have earned had it been done as time went. The training window (it ends at the holdout's start at the latest, and there when `to` is left out) is cut into folds + 1 equal stretches; on each fold, every combination of `grid` (the cartesian product of the values given; the strategy's other numbers from `params` or their defaults, every combination checked against the strategy's bounds before anything runs) runs on the fold's past — every stretch before it, or with `rolling` only the one just before — and the one with the best Sharpe there runs on the fold. The out-of-sample runs, chained, are the walk: `metrics` (return, Sharpe ± its error, drawdown, fills, fees), `curve` (thinned, [t ms, usd]), `efficiency` (the share of the picks' mean in-sample Sharpe the walk kept out of sample: near 1 the picking found something that lasted, near 0 or below it found the past; null when the picks' in-sample Sharpe was not above zero), and `folds` (each fold's windows, `picked`, `inSharpe`, and `out` with the kept run's `id` — portfolio_backtests opens it). EVERY RUN IS COUNTED: each in-sample try and each out-of-sample run is a row of the account's trials ledger with this seat named (`trials.added`), and they deflate the Sharpe of every run after. Strategies: sma, tsmom, carry, hold (the desk does not walk). At most 50 combinations, 2 to 10 folds, and a budget of steps across the markets over all the runs (a walk past it is refused before anything runs, with its estimate). The account runs one backtest at a time (a busy answer says so). Not a read: rows in the ledger.",
+    inputSchema: {
+      strategy: z.enum(["hold", "sma", "tsmom", "carry"]).optional().describe("default tsmom"),
+      grid: z.record(z.string(), z.array(z.number()).min(1).max(20)).optional().describe("each number to pick: the values to try, e.g. {fast: [10, 20, 40], slow: [50, 100, 200]}"),
+      folds: z.number().int().min(2).max(10).optional().describe("how many folds (default 4): the window is cut into folds + 1 stretches"),
+      rolling: z.boolean().optional().describe("in sample: only the stretch before each fold (default: every stretch before it, anchored)"),
+      params: z.record(z.string(), z.number()).optional().describe("the strategy's other numbers, the same in every combination (the rest at their defaults)"),
+      markets: z.string().max(400).optional().describe("comma-separated: perp:BTC,spot:ETH,stock:AAPL (default perp:BTC)"),
+      interval: z.enum(["1h", "4h", "1d"]).optional().describe("the bars (default 1h; a share is read in daily bars whatever is asked)"),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("the window's first day (default: 180 days before `to`; moved to where the markets' history starts)"),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("the day the window ends, at the holdout's start at the latest (the default)"),
+      cash: z.number().min(100).max(100_000_000).optional().describe("each run's paper money (default 10000)"),
+      feeBps: z.number().min(0).max(500).optional().describe("a fill's fee in basis points (default 10; 0 when every market is a share)"),
+      leverage: z.number().min(1).max(50).optional().describe("a perpetual's leverage, at most the market's own (default: the strategy's need)"),
+      halfSpreadBps: z.number().min(0).max(500).optional().describe("the cost model's half spread (default 1)"),
+      participation: z.number().gt(0).max(1).optional().describe("the cost model's share of the bar before's dollars (default 0.05)"),
+      levelBps: z.number().min(0).max(500).optional().describe("the cost model's gap between the book's levels (default 2)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
+  async (args) => {
+    if (!(await layer())) return text({ ok: false, error: "this service runs without the account layer (--classic)" }, true);
+    const r = await call("POST", "/api/account/backtest/walk", { ...args, seat: seatKey().address });
     const b = r.body as Record<string, unknown> & { refusal?: { code: string; message: string; detail?: unknown }; error?: string };
     if (b.refusal) return text({ ok: false, code: b.refusal.code, message: b.refusal.message, ...(b.refusal.detail !== undefined ? { detail: b.refusal.detail } : {}) }, true);
     if (r.status >= 400) return text({ ok: false, error: b.error ?? `HTTP ${r.status}` }, true);

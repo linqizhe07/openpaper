@@ -335,6 +335,13 @@ Robinhood 的三条线都是它自己发布的接口（2026-10-05 读）：股�
   只在终端跑（每一次都要读整个窗口，API 的预算放不下）；desk 不能 walk（它整个跑，按自己的节奏）。
   测试：`backtest-walk`（网格的组合；anchored 和 rolling 的切法、每折挑的就是样本内 Sharpe 最高的那个、每一次都记账、样本外保存而样本内只记；样本外接成一条曲线、收益是各折相乘、效率；越界的数、组合太多、折数不对、既在网格又是固定的数、过了留出期——都在跑之前拒掉、台账一行不加；命令读 `--grid`、`--folds`、`--rolling` 和它们的拒绝）。
 - **desk 回测等过停，不当成结束**（同一天，复查第四步时发现）：desk 当天亏损碰到线就停（`s.halted`，新线索等到第二天，它自己解除）。第一版的回测把"停"和"结束"一样处理，去签 `setDesk resume`，desk 答「the session runs already」，整次回测在那一刻停掉。现在只在会话结束时重开，停了就等它自己解除；亏损线成了 desk 的一个数（`dayLossPct`，默认 5，和以前写死的一样），备注里说一共停了几次。测试：`backtest-desk` 多一条，亏损线 0.1%、一次止损就碰线——旧代码在这条上报错，新代码跑完、一个会话、备注说停了几次。
+- **walk-forward 接到 agent 和页面**（同一天，用户：「Do this task here: Walk-forward and the desk backtest for agents and the page」；`backtest/walk.ts` 的 `walkAskOf` · `walkSummary`，`service.ts` 的 `backtestWalk`，`ui/backtest.js` 的 walk 模式）：
+  ① **API 和 MCP**：`POST /api/account/backtest/walk` 和 `portfolio_backtest_walk`。未签名，只走训练段；严格读请求：`grid` 是 `{名字: [数]}`（每个 1 到 20 个值），`folds` 2 到 10（不给是 4），`rolling`，其余和一次回测一样读，策略的数用每个网格的第一个值代入检查（walk 自己在跑之前再检查每个组合）；不带买入持有，desk 不能 walk。和单次回测共用"一次一个"的锁（另一个在跑时 429）。
+  ② **预算**：一次 walk 是很多次短回测，所以按总工作量算——每段的步数（取最细的那种 K 线）× 样本内要看的段数（anchored 是 1+2+…+folds，rolling 是 folds）× 组合数，加上样本外的 folds 段，再乘市场数——超过 `BACKTEST_WALK_WORK`（40 万，这台机器上约 50 秒）就在跑之前拒绝，并说出估算值，台账一行不加。
+  ③ **回答**：各折、指标、效率、加了几行，加一条稀疏到 400 个点的接起来的曲线（全量权益不发）；每一折样本外那次照常保存，能打开。`GET /api/account/backtests` 的 `catalog` 多了 `walk`：折数范围、最多组合数、最多运行数、工作量预算。
+  ④ **页面**：表单最上面一个切换「One run | Walk forward」。walk 模式下，策略的每个数下面多一个"要试的值"（逗号分隔，空着就用上面那个数，每个组合都一样），加折数和 Rolling；买入持有那一项藏起来（walk 不跑它），按钮写 Walk forward。结果：标题写网格和固定的数、折数、市场、窗口；接起来的曲线和回撤；样本外指标、"留住了多少"（负的写"一点没留住"）、加了几行；各折一行：挑中的（只列网格里的数）、样本内 Sharpe、样本外窗口（点它打开那一次）、收益、样本外 Sharpe、最大回撤。样本内窗口放在折号的悬停里。
+  ⑤ **替身账户里看过**：sma 网格 fast 10/20/40 × slow 50/100、4 折、BTC + ETH 1h，6 个组合 28 行进台账，样本外接起来的曲线、效率那句、四折的表都对；第一版折表有十列，在卡片里挤成竖排，去掉样本内一列、成交一列和单独的 Open 列之后放得下。
+  测试：`backtest-walk`（请求的严格读法和每一种拒绝、预算在跑之前拒绝且台账不动、回答里没有全量权益而有稀疏曲线和市场）、`backtest-service`（训练段上 walk、每行带席位、样本外保存、过留出期和 desk 被拒、和单次回测共用一个锁、目录里的 walk 限制；路由的 200、400 和超预算的 409）、`ui-backtest`（切换、网格字段和占位、两种模式的样子、walk 发出去的样子、walk 的结果三种效率说法、各折的打开按钮）。
 - **Agents 弹层**（`ui/agents-mount.js` 的 `openAgents()`：另一个团队的 Agent 模块从这里挂进来；Desk 页的 "Every agent ›" 打开它）：放 agent 进来、交易 / 挪钱 / 付款三种额度和 earn 额度（"End earn limit" 只收回 earn 那一份）、"Everything"、撤销；Agent wallets（"Make it"、"Top up…"、"Take back…"；agent 钱包没有 Disconnect，账户握着它的钥匙和钱，清空用 "Take back…"）；最下面 "Add an agent" 一行的 "Copy agent setup command"（复制 `/api/account` 给的 `agentSetup.command`：`claude mcp add portfolio -e PORTFOLIO_URL=<这个服务> -- npx tsx <仓库的绝对路径>/src/portfolio/mcp.ts`，在哪个目录跑都行）。行为和原来一样，等对方的模块来替换。
 - 每 20 秒读一次，只重画看得见的那一屏；有弹层开着、正在签名、或者正在表单里打字时不刷新；标签页藏起来时停。
 
@@ -474,6 +481,7 @@ Robinhood 的三条线都是它自己发布的接口（2026-10-05 读）：股�
 | `portfolio_book` | 一个市场的盘口和最新成交（Trade 中间那栏）：`book` 的 `depth` 是 `"full"`（场所自己的档）或 `"top"`（只有买一卖一，`topOnly` 说为什么），`trades` 最新的在前；接没接的场所都行，`venue: "paper"` 是纸上账户 |
 | `portfolio_financials` | 一家美股公司在 SEC 的档案（`company`：名字、代码、交易所、SIC 行业、财年截止、注册州、网站、申报人类别、最新年报与季报、最近十份申报，每份带 SEC 原文链接，8-K 按条目说成人话）和它申报的财务数字（`financials`，同 Financials）；只读 SEC，不读任何新闻站；需要账户设了 `SEC_CONTACT` |
 | `portfolio_backtest` | 一次回测（`backtest/lab.ts`）：策略（hold · sma · tsmom · carry，只有数，没有代码）在录下的 K 线上用纸上账户自己的规则跑一遍，旁边是买入持有；窗口最晚到留出期开始那天（不给 `to` 就是那天），留出期之后的数据只有 owner 签名才能跑；每一次都记进 `<home>/backtest/trials.jsonl`，带上这个席位；回答：指标、买入持有的指标、`deflated`（按留出期之前试过的不同策略数打折之后 Sharpe 为真的概率，和这么多次试验里最好的那个碰运气能有的 Sharpe）、`overfit`（同一组市场和 K 线保存的回测里，在一半历史上最好的那个在另一半排进后一半的比例）、`notes` 和 `id`；账户一次只跑一个 |
+| `portfolio_backtest_walk` | 一次 walk-forward（`backtest/walk.ts`）：训练窗口切成 folds + 1 段，每一折上网格的每个组合（`grid` 里列出的数的笛卡尔积，其余的数来自 `params` 或默认值，跑之前每个都按上下界检查）在它之前的数据上跑（`rolling` 时只用前一段），Sharpe 最高的放到这一折上跑；各折样本外接起来就是这条路：`metrics`、稀疏后的 `curve`、`efficiency`（样本外 Sharpe 占所选组合样本内平均 Sharpe 的比例）、`folds`（每折的窗口、挑中的数、样本内 Sharpe、样本外那次的 `id`，可以用 `portfolio_backtests` 打开）；每一次尝试和每一次样本外运行都记进台账，带上这个席位；最多 50 个组合、2 到 10 折，总工作量超过预算时在跑之前就拒绝并给出估算；desk 不能 walk；账户一次只跑一个 |
 | `portfolio_backtests` | 不给 `id`：留出期、试验台账（行数、哈希链完整与否或断在哪、跑了几次、几个不同的策略、看了几次留出期）、最近的回测（新的在前）；给 `id`：那一次的全部——每笔成交、权益曲线、资金费、没成交的单、备注、买入持有，和按现在的台账怎么判它 |
 | `portfolio_receive` | 往哪里打钱：场所自己给的地址，agent 改不了；只看的地址、不收钱的场所不给 |
 | `portfolio_watchlist` | owner 的关注、owner 的价格提醒（`alerts` 在等的，`alertsFired` 最近触发的）、给这个席位（或所有 agent）的意图和每个 agent 最新的回报、自己的请求（含一天内被拒的，`declined: true`） |

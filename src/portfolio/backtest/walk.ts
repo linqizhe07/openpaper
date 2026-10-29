@@ -13,10 +13,10 @@
  * four folds is twenty-eight trials, and the next run's Sharpe is deflated by every distinct one of them. The out-of-sample runs are kept
  * (they can be opened like any run); the in-sample tries are counted, not kept. */
 import { isRefusal, type Refusal } from "../../core/errors.ts";
-import type { CandleInterval } from "../live/trade.ts";
+import { INTERVAL_MS, type CandleInterval } from "../live/trade.ts";
 import { no } from "../refuse.ts";
-import { loadHistory, type MarketRef } from "./data.ts";
-import { holdoutStartMs, labRun, readHoldout, readTrials, WINDOW_DEFAULT_DAYS, type LabDeps, type LabWho } from "./lab.ts";
+import { intervalOf, loadHistory, marketText, type MarketRef } from "./data.ts";
+import { askOf, holdoutStartMs, labRun, readHoldout, readTrials, thinCurve, WINDOW_DEFAULT_DAYS, type LabDeps, type LabWho } from "./lab.ts";
 import { metricsOf, type EquityPoint, type Metrics } from "./metrics.ts";
 import type { BacktestCosts } from "./source.ts";
 import { makeStrategy, STRATEGIES, strategySpec, type StrategyId, type StrategySpec } from "./strategies.ts";
@@ -45,6 +45,10 @@ export interface WalkAsk {
   leverage?: number | undefined;
   costs: BacktestCosts;
   by: LabWho;
+  /** the seat an unsigned request named (said, not proven), on every row the walk adds */
+  seat?: string | undefined;
+  /** the most work the walk may take, in steps times markets over all its runs (the service's own budget); none: no bound but the runs' */
+  maxWork?: number | undefined;
 }
 
 export interface WalkFold {
@@ -66,6 +70,9 @@ export interface WalkOutcome {
   combos: number;
   folds: WalkFold[];
   rolling: boolean;
+  /** the markets walked (perp:BTC) and the bar size asked */
+  markets: string[];
+  interval: CandleInterval;
   window: { from: string; to: string };
   /** the out-of-sample runs chained, from the walk's money: its curve and its figures (the fills and the fees summed across the folds) */
   equity: EquityPoint[];
@@ -125,8 +132,17 @@ export async function labWalkForward(ask: WalkAsk, deps: LabDeps): Promise<WalkO
   if (!(to - from > DAY_MS * (ask.folds + 1))) return no("E_ACCOUNT_BAD_ACTION", { message: `nothing is left to walk: the history reaches back to ${iso(ready - warmupMs).slice(0, 10)}, too little before ${iso(to).slice(0, 10)} for ${ask.folds + 1} stretches of a day at least` });
   const stretch = (to - from) / (ask.folds + 1);
   const cutAt = (i: number): number => Math.round(from + i * stretch);
+  // the work it would take, before anything runs: each stretch's steps at the finest bar any market is read in, in sample over the
+  // stretches each fold looks back on, out of sample over one, every step once for each market
+  if (ask.maxWork !== undefined) {
+    const barMs = Math.min(...ask.refs.map((r) => INTERVAL_MS[intervalOf(r, ask.interval)]));
+    const perStretch = stretch / barMs;
+    const inStretches = ask.rolling ? ask.folds : (ask.folds * (ask.folds + 1)) / 2;
+    const work = Math.ceil((combos.length * inStretches + ask.folds) * perStretch * ask.refs.length);
+    if (work > ask.maxWork) return no("E_ACCOUNT_LIMIT", { message: `a walk-forward here takes ${ask.maxWork.toLocaleString("en-US")} steps across its markets at most; this one would take about ${work.toLocaleString("en-US")} — fewer combinations or folds, a coarser bar, fewer markets or a shorter window`, detail: { work, most: ask.maxWork } });
+  }
   const rowsBefore = readTrials(deps.home).rows.length;
-  const base = { refs: ask.refs, interval: ask.interval, cashUsd: ask.cashUsd, feeBps: ask.feeBps, ...(ask.leverage !== undefined ? { leverage: ask.leverage } : {}), costs: ask.costs, by: ask.by };
+  const base = { refs: ask.refs, interval: ask.interval, cashUsd: ask.cashUsd, feeBps: ask.feeBps, ...(ask.leverage !== undefined ? { leverage: ask.leverage } : {}), costs: ask.costs, by: ask.by, ...(ask.seat ? { seat: ask.seat } : {}) };
   const folds: WalkFold[] = [];
   const outs: EquityPoint[][] = [];
   let fills = 0;
@@ -176,6 +192,8 @@ export async function labWalkForward(ask: WalkAsk, deps: LabDeps): Promise<WalkO
     combos: combos.length,
     folds,
     rolling: ask.rolling,
+    markets: ask.refs.map(marketText),
+    interval: ask.interval,
     window: { from: iso(from), to: iso(to) },
     equity,
     metrics,
@@ -186,4 +204,58 @@ export async function labWalkForward(ask: WalkAsk, deps: LabDeps): Promise<WalkO
     ledger: { rows: ledger.rows.length, intact: ledger.intact },
     notes,
   };
+}
+
+const WALK_FIELDS = ["grid", "folds", "rolling"] as const;
+
+/** WHAT AN UNSIGNED REQUEST ASKS OF A WALK (the service's POST /api/account/backtest/walk, portfolio_backtest_walk), read strictly: the
+ * grid ({name: [numbers]}, each list one to twenty values), the folds (2 to 10, 4 when unsaid), rolling or anchored, and the rest as a
+ * single run is asked (backtest/lab.ts askOf) — its numbers checked with each grid's first value in place, the walk checking every
+ * combination before it runs. No buy-and-hold rides beside a walk, and the desk does not walk */
+export function walkAskOf(body: Record<string, unknown>): Omit<WalkAsk, "by" | "maxWork"> | string {
+  const rest: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body)) if (!(WALK_FIELDS as readonly string[]).includes(k)) rest[k] = v;
+  if (rest.benchmark !== undefined) return "a walk-forward runs no buy-and-hold beside it: no benchmark";
+  if (rest.strategy === "desk") return "the desk does not walk: it runs whole, at its own pace (npm run account:backtest -- --strategy desk)";
+  const g = body.grid;
+  if (g !== undefined && (typeof g !== "object" || g === null || Array.isArray(g))) return "grid is {name: [numbers]}";
+  const grid: Record<string, number[]> = {};
+  for (const [k, v] of Object.entries((g ?? {}) as Record<string, unknown>)) {
+    if (!/^[A-Za-z]{1,40}$/.test(k)) return `grid names a number by its name, not "${k.slice(0, 30)}"`;
+    if (!Array.isArray(v) || !v.length || v.length > 20 || !v.every((x) => typeof x === "number" && Number.isFinite(x))) return `grid.${k} is a list of 1 to 20 numbers`;
+    grid[k] = [...new Set(v as number[])];
+  }
+  const folds = body.folds === undefined ? 4 : body.folds;
+  if (!(typeof folds === "number" && Number.isInteger(folds) && folds >= WALK_FOLDS[0] && folds <= WALK_FOLDS[1])) return `folds is a whole number, ${WALK_FOLDS[0]} to ${WALK_FOLDS[1]}`;
+  if (body.rolling !== undefined && typeof body.rolling !== "boolean") return "rolling is true or false";
+  const p = rest.params;
+  if (p !== undefined && (typeof p !== "object" || p === null || Array.isArray(p))) return "params is {name: number}";
+  for (const k of Object.keys(grid)) if (p && k in (p as object)) return `${k} is both a grid and a fixed number`;
+  const first = Object.fromEntries(Object.entries(grid).map(([k, v]) => [k, v[0]!]));
+  const one = askOf({ ...rest, params: { ...((p ?? {}) as Record<string, unknown>), ...first } });
+  if (typeof one === "string") return one;
+  const spec = one.spec as StrategySpec;
+  return {
+    strategy: spec.id,
+    grid,
+    fixed: Object.fromEntries(Object.entries(spec.params).filter(([k]) => !(k in grid))),
+    folds,
+    rolling: body.rolling === true,
+    refs: one.refs,
+    interval: one.interval,
+    ...(one.from !== undefined ? { from: one.from } : {}),
+    ...(one.to !== undefined ? { to: one.to } : {}),
+    cashUsd: one.cashUsd,
+    feeBps: one.feeBps,
+    ...(one.leverage !== undefined ? { leverage: one.leverage } : {}),
+    costs: one.costs,
+    ...(one.seat ? { seat: one.seat } : {}),
+  };
+}
+
+/** a walk as an answer that fits a tool's reply and a page: its folds, its figures, the share of the in-sample Sharpe it kept, the rows it
+ * added, and its curve thinned (each fold's out-of-sample run is kept in full, and opens by its id) */
+export function walkSummary(w: WalkOutcome): Record<string, unknown> {
+  const { equity, ...rest } = w;
+  return { ...rest, curve: thinCurve(equity) };
 }
