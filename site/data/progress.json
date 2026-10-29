@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 40,
+      "title": "Walk-forward: a grid's best on each fold's past, tried on the fold, every try counted",
+      "mergedAt": "2026-10-29T17:18:01Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/40",
+      "branch": "feat/backtest-walk"
+    },
+    {
       "number": 39,
       "title": "The desk backtested: its seats over recorded bars, in an account of its own",
       "mergedAt": "2026-10-29T17:08:07Z",
