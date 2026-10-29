@@ -180,7 +180,7 @@ function speak() {
 function drawPane(L, owner) {
   const tab = ROUTE.tab;
   const el = $(`pane-${tab}`);
-  const draw = { portfolio: typeof renderPortfolio === "function" ? renderPortfolio : null, venues: typeof renderVenues === "function" ? renderVenues : null, memory: typeof renderMemory === "function" ? renderMemory : null, markets: typeof renderMarkets === "function" ? renderMarkets : null, trade: typeof renderTrade === "function" ? renderTrade : null, desk: typeof renderDesk === "function" ? renderDesk : null, superagent: typeof renderSuperagent === "function" ? renderSuperagent : null }[tab];
+  const draw = { portfolio: typeof renderPortfolio === "function" ? renderPortfolio : null, venues: typeof renderVenues === "function" ? renderVenues : null, memory: typeof renderMemory === "function" ? renderMemory : null, markets: typeof renderMarkets === "function" ? renderMarkets : null, trade: typeof renderTrade === "function" ? renderTrade : null, desk: typeof renderDesk === "function" ? renderDesk : null, superagent: typeof renderSuperagent === "function" ? renderSuperagent : null, backtest: typeof renderBacktest === "function" ? renderBacktest : null }[tab];
   try {
     if (!draw) throw new Error(`its script did not load. Reload the page`);
     draw({ el, owner, lens: lensNow(), params: ROUTE.params });

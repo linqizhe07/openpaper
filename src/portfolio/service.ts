@@ -105,7 +105,7 @@ import { applyBrainKey, BrainKeyStage, envBlocksOf, envWinsOf, type BrainKeyDone
 import { DETECT_BODY_WORDS, detectBrain, type Detected } from "./account/brain-detect.ts";
 import { brainProviders, presetBest, presetHost, testBrain } from "./account/brains.ts";
 import { realHistorySources, type HistorySources } from "./backtest/data.ts";
-import { askOf, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, type LabDeps, type TrialRow } from "./backtest/lab.ts";
+import { askOf, labCatalog, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, type LabDeps, type TrialRow } from "./backtest/lab.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** the most work a backtest the service is asked for may take, in steps times markets: 200,000 is two years of hourly bars on ten markets
@@ -1873,9 +1873,9 @@ export class PortfolioService {
     });
   }
   /** THE LEDGER as it stands: the holdout, the rows and whether their chain holds, how many runs and distinct strategies, the latest runs */
-  backtests(limit = 50): ReturnType<typeof labList> | Refusal {
+  backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
-    return labList(this.opts.home, Date.parse(this.now()), limit);
+    return { ...labList(this.opts.home, Date.parse(this.now()), limit), catalog: labCatalog() };
   }
   /** one kept run in full — its trades, its curve, its notes — with its trial and how it is judged against the ledger now */
   backtestKept(id: string): Record<string, unknown> | Refusal {
@@ -1891,7 +1891,7 @@ export class PortfolioService {
     if (a.change === "evaluate") {
       const out = await this.labOnce(() => labEvaluate(a.value.trim(), this.labDeps(), "owner"));
       if (isRefusal(out)) return out;
-      return { ok: true, summary: `run ${a.value.trim()} tried on the held-out data from ${out.holdout.start}: look ${out.looks ?? 1} at it`, data: outcomeSummary(out) };
+      return { ok: true, summary: `run ${a.value.trim()} tried on the held-out data from ${out.holdout.start}: look ${out.looks ?? 1} at it`, data: outcomeSummary(out, { curve: true }) };
     }
     return no("E_ACCOUNT_BAD_ACTION", { message: `a backtest's change is holdout (a day) or evaluate (a training run's id), not "${String(a.change).slice(0, 30)}"` });
   }

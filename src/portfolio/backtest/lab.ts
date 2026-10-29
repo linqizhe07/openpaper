@@ -34,7 +34,7 @@ import { loadHistory, marketText, parseMarkets, type HistorySources, type Market
 import { runBacktest, type BacktestRun } from "./engine.ts";
 import { stepReturns } from "./metrics.ts";
 import { DEFAULT_COSTS, type BacktestCosts } from "./source.ts";
-import { makeStrategy, strategySpec, type StrategySpec } from "./strategies.ts";
+import { makeStrategy, STRATEGIES, strategySpec, type StrategySpec } from "./strategies.ts";
 import { dsr, moments, pbo, psr } from "./stats.ts";
 
 const DAY_MS = 86_400_000;
@@ -513,11 +513,44 @@ export function askOf(body: Record<string, unknown>): Omit<LabAsk, "by" | "windo
   };
 }
 
+/** WHAT CAN BE ASKED, for a form (the page's Backtest) and an agent alike: the strategies with each number's default, bounds and words, the
+ * bar sizes, the kinds of market and where each is read from, the defaults a request leaves to the lab, the holdout's default days */
+export function labCatalog(): Record<string, unknown> {
+  return {
+    strategies: STRATEGIES,
+    intervals: ASK_INTERVALS,
+    markets: {
+      most: 12,
+      kinds: [
+        { cls: "perp", example: "perp:BTC", words: "Hyperliquid's perpetuals and their hourly funding: about 208 days of 1h bars, 833 of 4h, daily since 2023" },
+        { cls: "spot", example: "spot:ETH", words: "Coinbase's coins against the dollar" },
+        { cls: "stock", example: "stock:SPY", words: "US stocks in daily bars, split-adjusted, no dividends" },
+      ],
+    },
+    defaults: { strategy: "tsmom", markets: "perp:BTC", interval: "1h", cash: 10_000, feeBps: PAPER_FEE_BPS, sharesFeeBps: 0, costs: DEFAULT_COSTS, windowDays: WINDOW_DEFAULT_DAYS, benchmark: true },
+    holdoutDays: HOLDOUT_DEFAULT_DAYS,
+  };
+}
+
+/** a curve of at most `most` points, [t, usd] each, its first and last kept: enough to draw, small enough to send */
+export function thinCurve(equity: ReadonlyArray<{ t: number; usd: number }>, most = 400): Array<[number, number]> {
+  if (equity.length <= most) return equity.map((p) => [p.t, p.usd]);
+  const out: Array<[number, number]> = [];
+  const every = (equity.length - 1) / (most - 1);
+  for (let i = 0; i < most; i++) {
+    const p = equity[Math.round(i * every)]!;
+    out.push([p.t, p.usd]);
+  }
+  return out;
+}
+
 /** a run as an answer that fits a tool's reply: the figures, the judgement and the notes, with the trades and the curve left in the kept run
- * (GET /api/account/backtest?id=) */
-export function outcomeSummary(out: LabOutcome): Record<string, unknown> {
+ * (GET /api/account/backtest?id=) — or, with `curve`, the curves beside them, thinned (the owner's look at the holdout: what came of it is
+ * answered to their signature only, never read back unsigned) */
+export function outcomeSummary(out: LabOutcome, o: { curve?: boolean } = {}): Record<string, unknown> {
   const r = out.run;
   return {
+    ...(o.curve ? { curve: thinCurve(r.equity), ...(out.benchmark ? { benchmarkCurve: thinCurve(out.benchmark.equity) } : {}) } : {}),
     id: out.id,
     window: out.window,
     holdout: out.holdout.start,

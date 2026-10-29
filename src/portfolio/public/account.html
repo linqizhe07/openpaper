@@ -26,6 +26,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <link rel="stylesheet" href="/ui/brains.css" />
 <link rel="stylesheet" href="/ui/desk.css" />
 <link rel="stylesheet" href="/ui/superagent.css" />
+<link rel="stylesheet" href="/ui/backtest.css" />
 </head>
 <body>
 <!-- the ocean under the whole page (ui/ocean.js draws it, ui/tokens.css colours it): decor, never read out -->
@@ -81,6 +82,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
       <span class="rail-pill" aria-hidden="true" hidden></span>
       <a href="#/markets" data-tab="markets"><svg class="ico" aria-hidden="true"><use href="#i-markets"></use></svg>Markets</a>
       <a href="#/trade" data-tab="trade"><svg class="ico" aria-hidden="true"><use href="#i-ticket"></use></svg>Trade</a>
+      <a href="#/backtest" data-tab="backtest"><svg class="ico" aria-hidden="true"><use href="#i-chart"></use></svg>Backtest</a>
     </div>
     <div class="rail-links">
       <button type="button" id="open-agents"><svg class="ico" aria-hidden="true"><use href="#i-agent"></use></svg>Agents<span class="count" id="count-agents" hidden></span></button>
@@ -135,6 +137,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     <section class="pane" data-pane="desk" aria-labelledby="h-desk" hidden><h1 class="sr" id="h-desk">Agents</h1><div id="pane-desk"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <!-- the superagent: the desk trading a paper account by itself, shown on the market it trades (ui/superagent.js; ui/chart.js draws its trades) -->
     <section class="pane" data-pane="superagent" aria-labelledby="h-superagent" hidden><h1 class="sr" id="h-superagent">Superagent</h1><div id="pane-superagent"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
+    <!-- the lab: a strategy over recorded bars through the paper account, beside buying and holding (ui/backtest.js) -->
+    <section class="pane" data-pane="backtest" aria-labelledby="h-backtest" hidden><h1 class="sr" id="h-backtest">Backtest</h1><div id="pane-backtest"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel"></span></div></div></section>
     </div>
   </main>
 </div>
@@ -170,6 +174,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <script defer src="/ui/brains.js"></script>
 <script defer src="/ui/desk.js"></script>
 <script defer src="/ui/superagent.js"></script>
+<!-- the lab (ui/backtest.js): a strategy over recorded bars through the paper account, every run counted, the latest data held out -->
+<script defer src="/ui/backtest.js"></script>
 <script defer src="/ui/statement.js"></script>
 <script defer src="/ui/agents-mount.js"></script>
 <script defer src="/ui/rail.js"></script>

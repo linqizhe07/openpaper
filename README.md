@@ -61,6 +61,7 @@ Then, on the page:
 2. **Trade** — buy or sell crypto, US stocks, perpetuals and event contracts on paper.
 3. **Superagent** (Trade → Superagent) — paste an API key and press **Start the superagent**. The desk trades your paper account by itself: every trade lands on the chart, and each step it takes is played as it happens.
 4. **Watch** (Markets) — the day in six figures and the US session clock at the top; ★ a market to watch it, 🔔 to be told when it crosses a price — on the page, and as a notification if you ask. Your agents read both. ⌘K or `/` searches. Open a US stock and its **Financials** are there as the company filed them with the SEC — start the account with `SEC_CONTACT` set to your email, since the SEC asks every reader to say who they are.
+5. **Backtest** — try a strategy (buy and hold, a moving-average cross, momentum, a funding carry) on recorded bars through the same paper account's rules, beside buying and holding the same markets. Every run is counted, its Sharpe deflated by everything tried before it, and the latest 90 days are held out: only you look at them, by signature.
 
 The superagent needs an AI model to think with. Paste a key from any of Anthropic, OpenAI, DeepSeek, Gemini, xAI, Kimi, Qwen, OpenRouter, Groq, Together or Meta — the account tells whose key it is and picks that provider's best model — or run a model on your machine with Ollama or vLLM (no key). Its calls are billed to your key.
 
@@ -128,7 +129,7 @@ It starts when you log in and restarts if it stops. Also `status`, `restart` (af
 npx tsx test/standin/ui-standin.ts --port 4821 --superagent
 ```
 
-The same page with stand-in venues at http://127.0.0.1:4821 — no network, no money, no key — and a desk that trades with a script, so you can watch the superagent work before you bring a key. Use `--no-desk` instead to go through the setup yourself.
+The same page with stand-in venues at http://127.0.0.1:4821 — no network, no money, no key — and a desk that trades with a script, so you can watch the superagent work before you bring a key. Its Backtest tab runs on made-up history. Use `--no-desk` instead to go through the setup yourself.
 
 ## Options and environment
 
