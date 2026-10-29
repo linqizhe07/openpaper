@@ -94,6 +94,15 @@ describe("the desk over the bars, through the lab", () => {
     expect(r.run.equity).toHaveLength(14 * 6 + 1);
   });
 
+  it("lets its seats in again on a window longer than a key lives — 180 days at most — and runs the whole window, saying so", async () => {
+    const deps = lab();
+    // 181 days of 4-hour bars: a day longer than a key lives
+    const r = ok(await labRun(ask({ refs: [{ cls: "perp", base: "BTC" }], from: Date.parse("2026-01-31T00:00:00Z") }), deps));
+    expect(r.run).toMatchObject({ from: "2026-01-31T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z" });
+    expect(r.run.equity).toHaveLength(181 * 6 + 1);
+    expect(r.run.notes[0]).toMatch(/^the desk ran 13 sessions of 336 h at most, .*; its seats were let in again 1 time, a key living 180 days at most$/);
+  }, 90_000);
+
   it("keeps to the lab's rules: perpetuals only, 1h or 4h bars, the window before the holdout — and the owner's look plays the desk again over the held-out data", async () => {
     const deps = lab();
     const no = async (o: Partial<LabAsk>) => ((await labRun(ask(o), deps)) as Refusal).message;
