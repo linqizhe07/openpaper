@@ -61,7 +61,7 @@ Then, on the page:
 2. **Trade** — buy or sell crypto, US stocks, perpetuals and event contracts on paper.
 3. **Superagent** (Trade → Superagent) — paste an API key and press **Start the superagent**. The desk trades your paper account by itself: every trade lands on the chart, and each step it takes is played as it happens.
 4. **Watch** (Markets) — the day in six figures and the US session clock at the top; ★ a market to watch it, 🔔 to be told when it crosses a price — on the page, and as a notification if you ask. Your agents read both. ⌘K or `/` searches. Open a US stock and its **Financials** are there as the company filed them with the SEC — start the account with `SEC_CONTACT` set to your email, since the SEC asks every reader to say who they are.
-5. **Backtest** — try a strategy (buy and hold, a moving-average cross, momentum, a funding carry) on recorded bars through the same paper account's rules, beside buying and holding the same markets. Every run is counted, its Sharpe deflated by everything tried before it, and the latest 90 days are held out: only you look at them, by signature. Walk forward picks a strategy's numbers fold by fold; The desk plays the account's own desk over the bars, by your signature.
+5. **Backtest** — try a strategy (buy and hold, a moving-average cross, momentum, a funding carry) on recorded bars through the same paper account's rules, beside buying and holding the same markets. Every run is counted, its Sharpe deflated by everything tried before it, and the latest 90 days are held out: only you look at them, by signature. Walk forward picks a strategy's numbers fold by fold; The desk plays the account's own desk over the bars, by your signature. Once a day the server adds each perpetual's newest hourly and 4-hour bars to the home, so their history grows past the latest 5,000 bars Hyperliquid keeps.
 
 The superagent needs an AI model to think with. Paste a key from any of Anthropic, OpenAI, DeepSeek, Gemini, xAI, Kimi, Qwen, OpenRouter, Groq, Together or Meta — the account tells whose key it is and picks that provider's best model — or run a model on your machine with Ollama or vLLM (no key). Its calls are billed to your key.
 
@@ -175,7 +175,8 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
                        wallets, prices, candles, the stream hub, EDGAR
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
   backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
-                       desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
+                       desk over bars, the figures, the lab's holdout and trials ledger, the history kept growing
+                       (account-backtest.ts is its command)
   mcp.ts               the MCP server an agent's seat runs (39 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only

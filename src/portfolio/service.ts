@@ -106,6 +106,7 @@ import { DETECT_BODY_WORDS, detectBrain, type Detected } from "./account/brain-d
 import { brainProviders, presetBest, presetHost, testBrain } from "./account/brains.ts";
 import { marketText, realHistorySources, type HistorySources } from "./backtest/data.ts";
 import { labWalkForward, WALK_COMBOS_MOST, WALK_FOLDS, WALK_RUNS_MOST, walkAskOf, walkSummary } from "./backtest/walk.ts";
+import { keepHistory, keptWords, type KeptPass } from "./backtest/keep.ts";
 import { askOf, DESK_INTERVALS, deskAskOf, holdoutStartMs, labCatalog, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, WINDOW_DEFAULT_DAYS, type LabDeps, type TrialRow } from "./backtest/lab.ts";
 import { DESK_NAME, DESK_PARAMS, deskParamWords, DESK_WORDS } from "./backtest/desk-params.ts";
 
@@ -1982,6 +1983,34 @@ export class PortfolioService {
     }
     return no("E_ACCOUNT_BAD_ACTION", { message: LAB_CHANGES(a.change) });
   }
+
+  /** THE BACKTESTS' HISTORY KEPT GROWING (backtest/keep.ts): a minute after the real server starts, then once a day, every perpetual a
+   * backtest may read gets its newest bars added to the home's cache, so its history outgrows the latest 5,000 bars Hyperliquid answers;
+   * each pass said in a line on the console. Never in tests, which keep it themselves */
+  watchHistory(everyMs = HISTORY_KEEP_MS): () => void {
+    const run = () => void this.lookAtHistory().then((p) => p && console.log(keptWords(p)), () => undefined);
+    const first = setTimeout(run, HISTORY_FIRST_MS);
+    const every = setInterval(run, everyMs);
+    first.unref?.();
+    every.unref?.();
+    return () => {
+      clearTimeout(first);
+      clearInterval(every);
+    };
+  }
+  /** one pass of the history keeper (watchHistory's, or a test's): no row in the trials ledger, the holdout never read, the lab's lock
+   * never taken — only the cache's files written. One pass at a time: undefined while another is under way */
+  async lookAtHistory(): Promise<KeptPass | undefined> {
+    if (!this.account || this.historyLooking) return undefined;
+    this.historyLooking = true;
+    try {
+      const d = this.labDeps();
+      return await keepHistory({ home: d.home, cache: d.cache, sources: d.sources, clock: d.clock });
+    } finally {
+      this.historyLooking = false;
+    }
+  }
+  private historyLooking = false;
 
   private liveDeps(): LiveDeps {
     // made once: the chain clients and the price cache are kept between connections
@@ -4545,6 +4574,10 @@ const PAPER_CURVE_MS = 60_000;
 const TOLD_FILLS_MAX = 5_000;
 /** how often the service looks at each paper account's book on its own (watchPaper) */
 const PAPER_LOOK_MS = 5_000;
+/** how often the backtests' history is kept growing (watchHistory): once a day — Hyperliquid's latest 5,000 hourly bars span 208 days —
+ * the first pass a minute after the start, once the server's own first reads are done */
+const HISTORY_KEEP_MS = 24 * 3_600_000;
+const HISTORY_FIRST_MS = 60_000;
 /** how often the standing price alerts' markets are priced and each alert judged (service.ts watchAlerts): half a minute, which the page
  * says ("checked about every 30 seconds") */
 export const ALERT_LOOK_MS = 30_000;

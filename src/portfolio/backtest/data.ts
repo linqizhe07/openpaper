@@ -13,7 +13,9 @@
  * THE CACHE: <home>/history/<source>/<symbol>/<interval>.json and funding.json (0600 in 0700 directories, written to a temp file and renamed
  * into place), each with the window it covers. A window the file covers is answered from it; a wider one asks only for what is missing,
  * at its two ends, in pieces of CHUNK bars (or CHUNK hours of funding). A piece the source refused or did not answer is not covered, and
- * is asked again next time; a piece the source answered with nothing — its history starts after it — is covered, and its words kept. */
+ * is asked again next time; a piece the source answered with nothing — its history starts after it — is covered, and its words kept.
+ * Nothing kept is ever let go, so a perpetual's bars outlive Hyperliquid's latest 5,000 once the real server keeps them growing
+ * (backtest/keep.ts: topUpBars below, once a day); a backtest and a top-up of the same file take their turns (inLine). */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isRefusal, type Refusal } from "../../core/errors.ts";
@@ -155,10 +157,33 @@ function missing(from: number, to: number, had: { from: number; to: number } | u
   return out.filter(([a, b]) => b > a);
 }
 
-async function loadBars(r: MarketRef, src: PublicSource, interval: CandleInterval, from: number, to: number, req: LoadRequest, notes: string[]): Promise<KeptBars | Refusal> {
+/** where a market's bars at a size are kept */
+const barsFile = (cache: string, src: PublicSource, r: MarketRef, interval: CandleInterval): string => join(cache, src.id, fileSafe(symbolOf(r)), `${interval}.json`);
+
+/** each cache file's work, one at a time in this process: a backtest reading a window (loadBars) and the history keeper topping the same
+ * file up (topUpBars) each write the file whole from what they read, so whichever wrote second would drop what the other added */
+const fileLines = new Map<string, Promise<unknown>>();
+function inLine<T>(file: string, work: () => Promise<T>): Promise<T> {
+  const turn = (fileLines.get(file) ?? Promise.resolve()).then(work);
+  const settled = turn.then(() => undefined, () => undefined);
+  fileLines.set(file, settled);
+  void settled.then(() => {
+    if (fileLines.get(file) === settled) fileLines.delete(file);
+  });
+  return turn;
+}
+
+/** a market's bars over a window, in line with the history keeper (inLine) */
+function loadBars(r: MarketRef, src: PublicSource, interval: CandleInterval, from: number, to: number, req: LoadRequest, notes: string[]): Promise<KeptBars | Refusal> {
+  return inLine(barsFile(req.cache, src, r, interval), () => fetchBars(r, src, interval, from, to, req, notes));
+}
+
+/** a market's bars over a window: from its cache where it covers the window, the rest asked of the source and kept. `stopped` is told
+ * why the asks stopped short of the window's end, when they do (what was answered before is kept either way) */
+async function fetchBars(r: MarketRef, src: PublicSource, interval: CandleInterval, from: number, to: number, req: LoadRequest, notes: string[], stopped?: (why: string) => void): Promise<KeptBars | Refusal> {
   const symbol = symbolOf(r);
   const step = INTERVAL_MS[interval];
-  const file = join(req.cache, src.id, fileSafe(symbol), `${interval}.json`);
+  const file = barsFile(req.cache, src, r, interval);
   const had = readJson<KeptBars>(file);
   const kept: KeptBars = had && had.version === 1 && Array.isArray(had.bars) ? had : { version: 1, symbol, interval, from, to: from, bars: [], savedAt: iso(req.clock()) };
   const pieces = missing(from, to, had ? { from: kept.from, to: kept.to } : undefined, step);
@@ -171,6 +196,7 @@ async function loadBars(r: MarketRef, src: PublicSource, interval: CandleInterva
     for (let since = a; since < b; since += CHUNK * step) {
       if (++asks > MAX_CHUNKS) {
         notes.push(`${symbol}: the window was read in ${MAX_CHUNKS} asks at most; it stops at ${iso(since)}`);
+        stopped?.(`read in ${MAX_CHUNKS} asks at most, it stops at ${iso(since)}`);
         break;
       }
       const until = Math.min(b, since + CHUNK * step);
@@ -178,11 +204,13 @@ async function loadBars(r: MarketRef, src: PublicSource, interval: CandleInterva
       if (isRefusal(got)) {
         if (!kept.bars.length) return got;
         notes.push(`${symbol}: ${src.name} did not give the bars from ${iso(since)} (${got.message ?? got.code}); the run uses what it has`);
+        stopped?.(got.message ?? got.code);
         break;
       }
       const page: CandlePage = Array.isArray(got) ? { bars: got, more: false } : got;
       if (page.partial) {
         notes.push(`${symbol}: ${src.name}'s bars from ${iso(since)} came back cut short; they are asked again next time`);
+        stopped?.(`its bars from ${iso(since)} came back cut short`);
         break;
       }
       // only bars inside the ask that had closed by now
@@ -200,6 +228,50 @@ async function loadBars(r: MarketRef, src: PublicSource, interval: CandleInterva
   kept.savedAt = iso(now);
   writeJson(file, kept);
   return kept;
+}
+
+/** the bars Hyperliquid answers at each size: its latest 5,000 (live/history-crypto.ts), all of a perpetual's history there */
+export const LATEST_BARS = 5_000;
+
+/** what one top-up did (topUpBars) */
+export interface ToppedUp {
+  market: string;
+  interval: CandleInterval;
+  /** the bars it added, and the bars kept now */
+  added: number;
+  kept: number;
+  /** a perpetual's bars that rolled out of Hyperliquid's latest LATEST_BARS before they were kept: from the end of what was kept to the
+   * oldest bar it still answers */
+  gap?: { from: string; to: string } | undefined;
+  /** why the source's answers stopped short of now: what it gave is kept, and the rest is asked again on the next top-up */
+  stopped?: string | undefined;
+}
+
+/** A MARKET'S NEWEST BARS KEPT (backtest/keep.ts): its cache at a size brought up to the last bar that has closed. A market kept before is
+ * asked only for what came after its last bar (the newer end, as loadBars asks it); one kept for the first time, for the latest
+ * LATEST_BARS bars at that size, all a source that keeps only its latest gives. In line with a backtest reading the same file */
+export function topUpBars(r: MarketRef, interval: CandleInterval, deps: Pick<LoadRequest, "cache" | "sources" | "clock">): Promise<ToppedUp | Refusal> {
+  const src = deps.sources[r.cls];
+  const file = barsFile(deps.cache, src, r, interval);
+  return inLine(file, async () => {
+    const step = INTERVAL_MS[interval];
+    const to = Math.floor(deps.clock() / step) * step;
+    const had = readJson<KeptBars>(file);
+    const before = had && had.version === 1 && Array.isArray(had.bars) ? had : undefined;
+    const from = before ? before.from : to - LATEST_BARS * step;
+    let stopped: string | undefined;
+    const got = await fetchBars(r, src, interval, from, to, { ...deps, refs: [r], interval, from, to }, [], (why) => (stopped ??= why));
+    if (isRefusal(got)) return got;
+    const oldest = to - LATEST_BARS * step;
+    return {
+      market: marketText(r),
+      interval,
+      added: got.bars.length - (before?.bars.length ?? 0),
+      kept: got.bars.length,
+      ...(r.cls === "perp" && before && before.to < oldest ? { gap: { from: iso(before.to), to: iso(oldest) } } : {}),
+      ...(stopped ? { stopped } : {}),
+    };
+  });
 }
 
 async function loadFunding(r: MarketRef, src: PublicSource, from: number, to: number, req: LoadRequest, notes: string[]): Promise<KeptFunding> {

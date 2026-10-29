@@ -1285,6 +1285,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (!classic && service.account) service.watchAlerts();
   // the desk's clock (account/desk.ts): its cycles, its reports, its session's end
   if (!classic && service.account) service.watchDesk();
+  // the backtests' history kept growing (backtest/keep.ts): a minute after the start, then once a day, each perpetual's newest bars added
+  // to the home's cache, so its history outgrows the latest 5,000 bars Hyperliquid answers
+  if (!classic && service.account) service.watchHistory();
   const stop = () => srv.close().then(() => process.exit(0));
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
