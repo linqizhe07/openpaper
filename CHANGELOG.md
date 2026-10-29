@@ -45,6 +45,7 @@ link there.
 - Walk-forward: `npm run account:backtest -- --grid fast=10,20,40 --grid slow=50,100,200 --folds 3` picks a grid's best on each fold's past and tries it on the fold, the out-of-sample runs chained with the share of the in-sample Sharpe they kept, every try a row of the trials ledger. [#40](https://github.com/linqizhe07/openpaper/pull/40)
 - The desk backtest waits out a day's halt — its new leads held until the next day, as the desk does — instead of trying to start another session and stopping the run; the day's loss line is one of its numbers (`dayLossPct`, 5 as before). [#41](https://github.com/linqizhe07/openpaper/pull/41)
 - Walk-forward for agents and the page: `POST /api/account/backtest/walk` and `portfolio_backtest_walk` walk a grid through the training window's folds under a work budget checked before anything runs, and the Backtest page's Walk forward mode shows the chained curve, what the walk kept and each fold's pick and run. [#42](https://github.com/linqizhe07/openpaper/pull/42)
+- CI's type check passes again: a test added with the walk-forward API cast the lab's answer to a shape TypeScript refuses. [#43](https://github.com/linqizhe07/openpaper/pull/43)
 
 ## v0.1.0 — 2026-10-22
 
