@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 37,
+      "title": "The backtest lab: every run counted, the latest data held out for the owner",
+      "mergedAt": "2026-10-29T16:32:55Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/37",
+      "branch": "feat/backtest-trials"
+    },
+    {
       "number": 36,
       "title": "A backtest: a strategy played over recorded bars through the paper account itself",
       "mergedAt": "2026-10-29T16:03:14Z",
