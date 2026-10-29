@@ -466,6 +466,9 @@ npm run account:backtest -- --strategy sma --param fast=10 --param slow=50 --mar
                                      Deflated 那一行写着现在一共试过几个不同策略、最好的那个碰运气能有多少 Sharpe
 npm run account:backtest -- --markets perp:BTC,perp:ETH --holdout
                                      在留出期上跑一次（你的终端，算一次 look）
+npm run account:backtest -- --strategy sma --grid fast=10,20,40 --grid slow=50,100,200 --folds 3 --markets perp:BTC,perp:ETH
+                                     walk-forward：训练窗口切成 4 段，第 i 段之前的数据上 9 个组合各跑一遍、挑 Sharpe 最高的，
+                                     放到第 i 段上跑；三段样本外接起来就是这条路走下来的结果。每一次都记进台账（这里 30 行）
 npm run account:backtest -- --strategy desk --markets perp:BTC,perp:ETH,perp:SOL
                                      desk 本身：一个新账户里雇好 desk、接上纸上账户，用 momentum 脚本当脑子，一根 K 线一步地走
                                      （--param sizeUsd=1000 tpPct=2 slPct=1 maxHours=24 riskPct=10 maxOpen=3）
