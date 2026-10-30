@@ -49,6 +49,7 @@ link there.
 - A signed backtest runs outside the door's line once it is taken: a cancel, an agent's order or a desk's exit sent while the owner looks at the held-out data is no longer kept waiting behind it, and the holdout is not moved while a backtest runs. [#44](https://github.com/linqizhe07/openpaper/pull/44)
 - The desk runs from the Backtest page by the owner's signature (The desk mode: its numbers, the steps and seconds said before it is signed, 4,500 steps at most from there), and a desk backtest longer than about 150 days no longer fails while it sets up: its seats are let in again before the 180 days a key lives run out. [#45](https://github.com/linqizhe07/openpaper/pull/45)
 - The desk's backtest runs about seven times faster (the page's default 180 days of BTC in 9.5 s, not 67): its record kept in memory for the run, the New York clock read once an hour, and a step reading only what it needs of the desk; the time said before signing follows. [#48](https://github.com/linqizhe07/openpaper/pull/48)
+- A black box for the paper accounts: every round trip kept in `~/.openpaper/journal/trades.jsonl`, never cut and hash-chained — its entry and exit, net of fees and funding, how far the price went for it and against it (MAE, MFE), how it ended, who opened and closed it, and the desk's lead with its thesis and plan; read at `GET /api/account/journal`, and every backtest run carries its trips. [#49](https://github.com/linqizhe07/openpaper/pull/49)
 
 ## v0.1.0 — 2026-10-22
 
