@@ -133,6 +133,15 @@ describe("a backtest an unsigned request asks for", () => {
       expect((await call("GET", "/api/account/backtests?limit=0")).status).toBe(400);
       const one = await call("GET", `/api/account/backtest?id=${String(run.body.id)}`);
       expect(one.body).toMatchObject({ ok: true, id: run.body.id, trial: { run: run.body.id } });
+      // its round trips debriefed by the account, counted as the run kept them
+      const trips = (one.body.run as { trips: unknown[] }).trips;
+      expect(one.body.debrief).toMatchObject({ trades: trips.length, inversion: { verdict: expect.any(String) } });
+      // the journal's debrief over the route: the choices held to their words
+      expect(await call("GET", "/api/account/debrief")).toMatchObject({ status: 200, body: { ok: true, debrief: { trades: 0 }, venues: [], latest: [] } });
+      expect(await call("GET", "/api/account/debrief?who=someone")).toEqual({ status: 400, body: { ok: false, error: "who is you, desk or agents (or nothing: everyone)" } });
+      expect((await call("GET", "/api/account/debrief?days=8")).status).toBe(400);
+      expect((await call("GET", "/api/account/journal?limit=0")).status).toBe(400);
+      expect(await call("GET", "/api/account/journal")).toMatchObject({ status: 200, body: { ok: true, trades: [], total: 0, intact: true } });
       expect((await call("GET", "/api/account/backtest?id=..%2F..%2Fsecrets")).body).toMatchObject({ ok: false, refusal: { message: "a run's id is like 20261029T120000-0123456789" } });
     } finally {
       await srv.close();

@@ -27,6 +27,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <link rel="stylesheet" href="/ui/desk.css" />
 <link rel="stylesheet" href="/ui/superagent.css" />
 <link rel="stylesheet" href="/ui/backtest.css" />
+<link rel="stylesheet" href="/ui/debrief.css" />
 </head>
 <body>
 <!-- the ocean under the whole page (ui/ocean.js draws it, ui/tokens.css colours it): decor, never read out -->
@@ -72,6 +73,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
   <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z" /></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></symbol>
   <symbol id="i-preipo" viewBox="0 0 24 24"><path d="M4 16 9 11l3 3 7-8" /><path d="M15 6h4v4" /><path d="M4 20h2M9 20h2M14 20h2M19 20h1" /></symbol>
+  <symbol id="i-debrief" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 15l3-3 2 2 3-4" /><path d="M8 9h3" /></symbol>
   <symbol id="i-superagent" viewBox="0 0 24 24"><path d="M12 6.5c5 0 7 2.2 7 7s-2.6 6.5-7 6.5-7-1.7-7-6.5 2-7 7-7z" /><path d="M9.6 12.5v2M14.4 12.5v2" /><path d="M12 2.5v2M16.8 3.8l-1.2 1.6M7.2 3.8l1.2 1.6" /></symbol>
 </svg>
 <a class="skip" href="#main">Skip to the page</a>
@@ -83,6 +85,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
       <a href="#/markets" data-tab="markets"><svg class="ico" aria-hidden="true"><use href="#i-markets"></use></svg>Markets</a>
       <a href="#/trade" data-tab="trade"><svg class="ico" aria-hidden="true"><use href="#i-ticket"></use></svg>Trade</a>
       <a href="#/backtest" data-tab="backtest"><svg class="ico" aria-hidden="true"><use href="#i-chart"></use></svg>Backtest</a>
+      <a href="#/debrief" data-tab="debrief"><svg class="ico" aria-hidden="true"><use href="#i-debrief"></use></svg>Debrief</a>
     </div>
     <div class="rail-links">
       <button type="button" id="open-agents"><svg class="ico" aria-hidden="true"><use href="#i-agent"></use></svg>Agents<span class="count" id="count-agents" hidden></span></button>
@@ -139,6 +142,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     <section class="pane" data-pane="superagent" aria-labelledby="h-superagent" hidden><h1 class="sr" id="h-superagent">Superagent</h1><div id="pane-superagent"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <!-- the lab: a strategy over recorded bars through the paper account, beside buying and holding (ui/backtest.js) -->
     <section class="pane" data-pane="backtest" aria-labelledby="h-backtest" hidden><h1 class="sr" id="h-backtest">Backtest</h1><div id="pane-backtest"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel"></span></div></div></section>
+    <!-- the debrief: the paper accounts' closed trades from the journal, why they made or lost money (ui/debrief.js) -->
+    <section class="pane" data-pane="debrief" aria-labelledby="h-debrief" hidden><h1 class="sr" id="h-debrief">Debrief</h1><div id="pane-debrief"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel"></span></div></div></section>
     </div>
   </main>
 </div>
@@ -176,6 +181,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <script defer src="/ui/superagent.js"></script>
 <!-- the lab (ui/backtest.js): a strategy over recorded bars through the paper account, every run counted, the latest data held out -->
 <script defer src="/ui/backtest.js"></script>
+<!-- the debrief (ui/debrief.js): the journal's trades, what their costs took, whether a loser could be turned round, where it went wrong -->
+<script defer src="/ui/debrief.js"></script>
 <script defer src="/ui/statement.js"></script>
 <script defer src="/ui/agents-mount.js"></script>
 <script defer src="/ui/rail.js"></script>

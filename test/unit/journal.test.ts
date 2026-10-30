@@ -2,6 +2,7 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { debriefOf, FEW, type DebriefTrade } from "../../src/portfolio/account/debrief.ts";
 import { appendTrade, journalPath, readJournal, type JournalTrade } from "../../src/portfolio/account/journal.ts";
 import { tripFill, tripFunding, tripPrice, tripRange, type ClosedTrip, type OpenTrip, type TripFill } from "../../src/portfolio/live/trips.ts";
 
@@ -122,5 +123,82 @@ describe("the journal", () => {
     const after = appendTrade(home, trade(2_002), T0 + 2_002);
     expect(after.seq).toBe(2_003);
     expect(readJournal(home)).toMatchObject({ intact: false, brokenAt: 2_002, why: "line 2002 is not JSON" });
+  });
+});
+
+describe("the debrief", () => {
+  /** a closed trade on $1,000 of entry: its result before costs and its costs in percent of the entry, how it ended, the plan it carried */
+  const t = (i: number, o: { gross: number; cost?: number; end?: DebriefTrade["end"]; mae?: number; mfe?: number; conf?: number; side?: "long" | "short"; symbol?: string; hours?: number; tp?: number; sl?: number; who?: "owner" | "desk" }): DebriefTrade => {
+    const cost = o.cost ?? 0.2;
+    const entryUsd = 1000;
+    const grossUsd = (o.gross / 100) * entryUsd;
+    const feesUsd = (cost / 100) * entryUsd;
+    const netUsd = grossUsd - feesUsd;
+    const side = o.side ?? "long";
+    const entryPrice = 100;
+    return {
+      symbol: o.symbol ?? "BTC-PERP", kind: "perp", side, openedAt: at(i * 3), closedAt: at(i * 3 + (o.hours ?? 2)), hours: o.hours ?? 2, openRef: `p${i}`, closeRef: `q${i}`,
+      ...(o.tp !== undefined ? { takeProfit: side === "long" ? entryPrice * (1 + o.tp / 100) : entryPrice * (1 - o.tp / 100) } : {}),
+      ...(o.sl !== undefined ? { stopLoss: side === "long" ? entryPrice * (1 - o.sl / 100) : entryPrice * (1 + o.sl / 100) } : {}),
+      qty: 10, entryPrice, exitPrice: entryPrice * (1 + (side === "long" ? 1 : -1) * (o.gross / 100)), entryUsd, grossUsd, feesUsd, fundingUsd: 0, netUsd, returnPct: (netUsd / entryUsd) * 100,
+      maePct: o.mae ?? Math.min(0, o.gross), mfePct: o.mfe ?? Math.max(0, o.gross), hi: 0, lo: 0, fills: 2, end: o.end ?? "closed",
+      ...(o.conf !== undefined ? { lead: { id: `L-${String(i).padStart(4, "0")}`, thesis: "momentum", confidence: o.conf } } : {}),
+      by: o.who === "desk" ? { who: "desk", role: "sniper" } : { who: "owner" },
+    };
+  };
+
+  it("A COST MACHINE: no edge before costs, the loss is the costs — turned round it would pay them twice; the win rate its sizes and its plan need, beside what it won", () => {
+    // symmetric exits of 0.4%, half of them won before costs, 0.2% a trade in costs: the money-losing machine of the 2026-10-01 replay
+    const trades = Array.from({ length: 40 }, (_, i) => t(i, { gross: i % 2 ? 0.4 : -0.4, end: i % 2 ? "take-profit" : "stop-loss", tp: 0.4, sl: 0.4 }));
+    const d = debriefOf(trades);
+    expect(d).toMatchObject({ trades: 40, few: false, wins: 20, losses: 20, winRatePct: 50, grossUsd: 0, feesUsd: 80, costUsd: 80, netUsd: -80 });
+    expect(d.perTrade).toMatchObject({ netPct: -0.2, grossPct: 0, grossT: 0, costPct: 0.2 });
+    expect(d.inversion.verdict).toBe("costs");
+    expect(d.inversion.words).toContain("no edge either way. The loss is the costs, 0.200% a trade. Turned round it would pay them twice");
+    // a win of +0.2%, a loss of −0.6%: 75% must win to break even — and the plan's exits say the same
+    expect(d.breakEven.winRatePct).toBe(75);
+    expect(d.breakEven.plan).toEqual({ winRatePct: 75, takeProfitPct: 0.4, stopPct: 0.4, costPct: 0.2, trades: 40 });
+    expect(d.ends).toEqual([{ end: "take-profit", n: 20, netUsd: 40, winRatePct: 100 }, { end: "stop-loss", n: 20, netUsd: -120, winRatePct: 0 }]);
+    // each stop-out lost 1.5R net (0.6% on 0.4% risked) and none went past its stop before costs
+    expect(d.r).toMatchObject({ trades: 40, meanR: -0.5, pastStop: 0 });
+    expect(d.notes[0]).toBe(d.inversion.words);
+    expect(d.notes).toContain("At an average win of +0.20% and an average loss of −0.60%, breaking even takes winning 75% of trades; 50% won.");
+    expect(d.curve[d.curve.length - 1]![1]).toBe(-80);
+  });
+
+  it("an edge the costs eat, a loss beyond chance and bigger than its costs (worth testing the other way), one too small to turn round, a real edge, one not yet told from luck, and too few to say", () => {
+    const noise = (i: number) => ((i * 7919) % 11) / 10 - 0.5;
+    const of = (gross: (i: number) => number, cost = 0.2, n = 40) => debriefOf(Array.from({ length: n }, (_, i) => t(i, { gross: gross(i), cost })));
+    expect(of((i) => 0.15 + noise(i) * 0.1).inversion).toMatchObject({ verdict: "costs", words: expect.stringContaining("an edge, and the costs (0.200% a trade) ate it") });
+    const turned = of((i) => -1 + noise(i) * 0.2);
+    expect(turned.inversion.verdict).toBe("invertible");
+    expect(turned.inversion.words).toMatch(/Turned round, it would have made about 0\.\d{3}% a trade before slippage — a hypothesis for the lab, not a result/);
+    expect(of((i) => -0.1 + noise(i) * 0.02).inversion.verdict).toBe("not-enough");
+    expect(of((i) => 1 + noise(i)).inversion.verdict).toBe("edge");
+    expect(of((i) => 0.3 + noise(i) * 4).inversion.verdict).toBe("unproven");
+    const few = of((i) => noise(i), 0.2, FEW - 1);
+    expect(few).toMatchObject({ few: true, inversion: { verdict: "few" } });
+    expect(debriefOf([])).toMatchObject({ trades: 0, few: true, notes: [], curve: [] });
+  });
+
+  it("slices with their counts, FEW marked; the desk's confidence against how often it won; the losers that were up first; the streaks", () => {
+    const trades = [
+      ...Array.from({ length: 12 }, (_, i) => t(i, { gross: i % 3 ? -1 : 1, conf: 0.85, symbol: "ETH-PERP", who: "desk", mfe: 1.2 })),
+      ...Array.from({ length: 8 }, (_, i) => t(20 + i, { gross: 1, conf: 0.55, side: "short", hours: 30, who: "desk" })),
+      t(40, { gross: -0.5 }),
+    ];
+    const d = debriefOf(trades);
+    expect(d.slices.market.map((x) => [x.label, x.n, x.few])).toEqual([["ETH-PERP", 12, true], ["BTC-PERP", 9, true]]);
+    expect(d.slices.side.map((x) => [x.label, x.n])).toEqual([["long", 13], ["short", 8]]);
+    expect(d.slices.held.map((x) => [x.label, x.n])).toEqual([["1–4 hours", 13], ["over a day", 8]]);
+    expect(d.slices.by.map((x) => [x.label, x.n])).toEqual([["The desk (sniper)", 20], ["You", 1]]);
+    // Search said 85% and won a third; it said 55% and won every time
+    expect(d.calibration).toEqual([{ label: "under 0.6", n: 8, saidPct: 55, wonPct: 100 }, { label: "0.8 and over", n: 12, saidPct: 85, wonPct: 33.33 }]);
+    // eight losers on ETH were up 1.2% before losing 1.2% net: each gave it back; the last loser on BTC never was up
+    expect(d.excursions.gaveBack).toBe(8);
+    expect(d.streaks).toMatchObject({ now: { won: false, n: 1 } });
+    // the worst mean among the slices of ten trades or more: the thirteen longs (the eight losers on ETH and the one on BTC among them)
+    expect(d.notes).toContain("The weakest slice with ten trades or more: long trades — 13 trades, −0.546% a trade, 31% won.");
+    expect(d.notes).toContain("8 of 9 losing trades were up at least as much as they finally lost before turning.");
   });
 });

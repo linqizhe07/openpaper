@@ -448,6 +448,12 @@ describe("a paper account beside a real one", () => {
     // what the page and an agent read (GET /api/account/journal)
     expect(svc.journal({ limit: 10 })).toEqual({ trades: [t], total: 1, intact: true });
     expect(svc.journal({ limit: 10, venue: "elsewhere" })).toEqual({ trades: [], total: 0, intact: true });
+    // and what the Debrief pane reads: one trade is too few to say anything, and says so; the owner's trades are the ones that are here
+    const d = svc.debrief({});
+    if (isRefusal(d)) throw new Error(d.message);
+    expect(d).toMatchObject({ venues: [{ id: "paper-1", trades: 1 }], latest: [t], intact: true, debrief: { trades: 1, few: true, losses: 1, inversion: { verdict: "few" }, ends: [{ end: "stop-loss", n: 1 }], slices: { by: [{ label: "You", n: 1 }] } } });
+    expect(d.debrief.breakEven.plan).toMatchObject({ trades: 1 });
+    expect(svc.debrief({ who: "desk" })).toMatchObject({ debrief: { trades: 0 }, latest: [] });
   });
 
   it("the quote the owner is shown says what the order would leave by the paper account's own rule — its fee and rate, a perpetual's estimated liquidation price at the leverage set — and nothing a venue did not say (feat/paper-live phase 4)", async () => {

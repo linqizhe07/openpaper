@@ -60,6 +60,8 @@ import { loadBook, PAPER_MAX_CASH, paperBookPath, paperBooksOnDisk, paperDir, pa
 import { costBasis, ordersOf, type CostBasis, type LoggedOrder, type VenuePosition } from "./account/costbasis.ts";
 import type { AutonomyHook, LiveOrder } from "./account/live-orders.ts";
 import { appendTrade, readJournal, type JournalRow, type TradeHand } from "./account/journal.ts";
+import { debriefOf, type Debrief } from "./account/debrief.ts";
+import type { BacktestRun } from "./backtest/engine.ts";
 import type { ClosedTrip } from "./live/trips.ts";
 import type { LiveEarn } from "./account/live-earn.ts";
 import type { Payment } from "./account/payments.ts";
@@ -1914,6 +1916,24 @@ export class PortfolioService {
     return { trades: rows.slice(-Math.max(1, o.limit)), total: rows.length, intact: j.intact, ...(j.brokenAt !== undefined ? { brokenAt: j.brokenAt, why: j.why } : {}) };
   }
 
+  /** THE DEBRIEF of the journal's trades (account/debrief.ts): all of them, or one venue's, one hand's (you, the desk, the agents), the last
+   * `days` days' — with what there is to choose from (each venue that has trades, by its name, with how many) and the latest trades,
+   * newest first */
+  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean } | Refusal {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const j = readJournal(this.opts.home);
+    const since = o.days ? Date.parse(this.now()) - o.days * 86_400_000 : undefined;
+    const venues = new Map<string, { id: string; name: string; trades: number }>();
+    for (const r of j.rows) {
+      const v = venues.get(r.venue) ?? { id: r.venue, name: r.venueName, trades: 0 };
+      v.trades++;
+      venues.set(r.venue, v);
+    }
+    const hand = { you: "owner", desk: "desk", agents: "agent" } as const;
+    const rows = j.rows.filter((r) => (!o.venue || r.venue === o.venue) && (!o.who || r.by.who === hand[o.who]) && (since === undefined || Date.parse(r.closedAt) >= since));
+    return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact };
+  }
+
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     return {
@@ -1929,7 +1949,10 @@ export class PortfolioService {
   /** one kept run in full — its trades, its curve, its notes — with its trial and how it is judged against the ledger now */
   backtestKept(id: string): Record<string, unknown> | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
-    return labRead(this.opts.home, id.trim());
+    const kept = labRead(this.opts.home, id.trim());
+    // its round trips debriefed (account/debrief.ts), where the run kept them
+    const trips = isRefusal(kept) ? undefined : (kept.run as BacktestRun | undefined)?.trips;
+    return isRefusal(kept) || !trips ? kept : { ...kept, debrief: debriefOf(trips) };
   }
   /** the owner's signed setBacktest, once the door has checked it: the holdout moved, a training run tried on the held-out data, or the
    * desk run over the training data */
