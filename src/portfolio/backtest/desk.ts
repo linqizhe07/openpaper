@@ -14,7 +14,9 @@
  * cycle each bar, the leads' orders read back, the plan's exits, the reports). A desk's session runs fourteen days at most: one that ends
  * before the window does is started again at once, its autonomy carried; a seat's key and its limit live 180 days at most (account/state.ts
  * MAX_AGENT_DAYS): a longer window lets the seats in again, the day before theirs run out. The equity is the paper account's own, at each
- * step; the fills and the funding are its book's. Every fill pays the paper account's own fee. */
+ * step; the fills and the funding are its book's. Every fill pays the paper account's own fee. No restart reads this account back and no page
+ * watches it, so the desk keeps its record in memory and writes it once, at the end (DeskOptions.deferSaves), and a step reads only what
+ * the run needs of it (Desk.glance): written at every line of the room and read whole at every step, the record was most of a run's time. */
 import { mkdirSync, readFileSync } from "node:fs";
 import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { momentumScriptBrain } from "../account/brain-script.ts";
@@ -82,7 +84,7 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
     liveWrites: { capUsd: 1_000_000_000, pairingCode: code },
     openness: { ...(loadOpenness() as object), sessionExpiresAt: iso(end + 30 * DAY_MS) },
     publicMarkets: [historySource({ markets: o.markets, clock: () => clock, costs: o.costs })],
-    desk: { brain: momentumScriptBrain("claude-opus-5-5", { sizeUsd: o.params.sizeUsd, tpPct: o.params.tpPct, slPct: o.params.slPct, maxHours: o.params.maxHours }), tickMs: 0 },
+    desk: { brain: momentumScriptBrain("claude-opus-5-5", { sizeUsd: o.params.sizeUsd, tpPct: o.params.tpPct, slPct: o.params.slPct, maxHours: o.params.maxHours }), tickMs: 0, deferSaves: true },
     now: () => iso(clock),
     payHttp: async () => ({ status: 0, headers: {}, body: undefined, error: "a desk backtest pays no one" }),
     liveDeps: { http: noNetwork, clock: () => clock, price: async () => undefined, openExchange: async () => undefined, paperBars: true },
@@ -162,7 +164,7 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
   const halts = new Set<string>();
   const funnel = { scanned: 0, cleared: 0, placed: 0, closed: 0, rejected: 0 };
   /** a session's figures added in once it ends (a new one starts from nothing) */
-  const fold = (v: Awaited<ReturnType<typeof desk.view>>): void => {
+  const fold = (v: Awaited<ReturnType<typeof desk.glance>>): void => {
     if (!v) return;
     cycles += v.session?.cycles ?? 0;
     for (const k of Object.keys(funnel) as Array<keyof typeof funnel>) funnel[k] += v.funnel[k] ?? 0;
@@ -177,7 +179,7 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
       }
       await svc.lookAtPaper();
       await desk.tick();
-      let v = await desk.view();
+      let v = await desk.glance();
       if (!v) return no("E_ACCOUNT_BAD_ACTION", { message: "the desk's record could not be read" });
       if (v.session?.halted) halts.add(v.session.halted.at);
       // a session that ended (its fourteen days) before the window did: started again, its autonomy carried. A halted one is not ended —
@@ -186,19 +188,19 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
         fold(v);
         await resume();
         sessions++;
-        v = (await desk.view()) ?? v;
+        v = (await desk.glance()) ?? v;
       }
       // the desk's open leads, at the dollars each was opened with: what it holds of the equity
-      const gross = v.open.reduce((sum, l) => sum + Math.abs(l.sizeUsd ?? 0), 0);
-      equity.push({ t: clock, usd: Number(v.venue.usd.toFixed(6)), grossUsd: Number(gross.toFixed(2)) });
+      equity.push({ t: clock, usd: Number(v.venueUsd.toFixed(6)), grossUsd: Number(v.openUsd.toFixed(2)) });
       if (k % Math.max(1, Math.round(DAY_MS / barMs)) === 0) gather();
       const day = Math.floor((clock - steps[0]!) / DAY_MS);
       if (o.say && day !== saidDay && day % 7 === 0) {
         saidDay = day;
-        o.say(`${iso(clock).slice(0, 16)} · equity $${v.venue.usd.toFixed(2)} · session ${sessions} · cycles ${cycles + (v.session?.cycles ?? 0)} · placed ${funnel.placed + v.funnel.placed}`);
+        o.say(`${iso(clock).slice(0, 16)} · equity $${v.venueUsd.toFixed(2)} · session ${sessions} · cycles ${cycles + (v.session?.cycles ?? 0)} · placed ${funnel.placed + v.funnel.placed}`);
       }
     }
-    fold(await desk.view());
+    fold(await desk.glance());
+    desk.flush();
   } catch (err) {
     return no("E_ACCOUNT_BAD_ACTION", { message: `the desk backtest stopped at ${iso(clock)}: ${String((err as Error)?.message ?? err).slice(0, 300)}` });
   }

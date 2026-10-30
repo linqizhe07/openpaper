@@ -749,6 +749,10 @@ export interface DeskOptions {
    * the desk's record written — a room line, a lead, the session, the equity — a step begun or ended, a brain call sent or answered. Only
    * that it moved, and the room's newest line: the page reads the floor (feed) for the rest. A listener that throws is its own fault */
   onChange?: ((what: DeskChange) => void) | undefined;
+  /** The record (desk.json) and the room's lines kept in memory, written only when flush() is called — for a desk played over recorded bars
+   * (backtest/desk.ts), whose account no restart ever reads back and no page watches. Written as they happen, as the real server writes
+   * them, the whole record was rewritten at every line of the room: most of what such a run spent, and more of it the longer it ran */
+  deferSaves?: boolean | undefined;
 }
 
 /** what the desk tells as its floor moves (DeskOptions.onChange): the room's newest line's seq (the floor's read asks after it), the step
@@ -848,22 +852,56 @@ const plainText = (s: unknown, max: number): string => String(s ?? "").replace(/
 
 /** New York wall clock, as the objective names its hours */
 const NY = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" });
+/** New York's offset from UTC in each UTC hour read, in ms (four or five hours behind). Its clock changes at 02:00 local, the top of a UTC
+ * hour, so one reading of the formatter holds for the whole hour. ny() is asked thousands of times a step by a desk played over recorded
+ * bars (each lead's day, the routines' next times), and the formatter asked each time was most of what such a run spent. A year of hours
+ * is 8,760 numbers; past NY_HOURS_KEPT the kept ones are dropped and read again as asked */
+const NY_OFFSET = new Map<number, number>();
+const NY_HOURS_KEPT = 100_000;
+function nyOffsetMs(ms: number): number {
+  const hour = Math.floor(ms / HOUR);
+  let off = NY_OFFSET.get(hour);
+  if (off === undefined) {
+    const p = Object.fromEntries(NY.formatToParts(new Date(hour * HOUR)).map((x) => [x.type, x.value])) as Record<string, string>;
+    off = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour) % 24, Number(p.minute)) - hour * HOUR;
+    if (NY_OFFSET.size >= NY_HOURS_KEPT) NY_OFFSET.clear();
+    NY_OFFSET.set(hour, off);
+  }
+  return off;
+}
+const two = (n: number): string => String(n).padStart(2, "0");
+/** the New York day ("2026-10-30"), the minutes since its midnight and the weekday (0 is Sunday) at `ms` */
 export function ny(ms: number): { day: string; minutes: number; dow: number } {
-  const p = Object.fromEntries(NY.formatToParts(new Date(ms)).map((x) => [x.type, x.value])) as Record<string, string>;
-  return { day: `${p.year}-${p.month}-${p.day}`, minutes: (Number(p.hour) % 24) * 60 + Number(p.minute), dow: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday ?? "") };
+  const w = new Date(ms + nyOffsetMs(ms));
+  return { day: `${w.getUTCFullYear()}-${two(w.getUTCMonth() + 1)}-${two(w.getUTCDate())}`, minutes: w.getUTCHours() * 60 + w.getUTCMinutes(), dow: w.getUTCDay() };
 }
 const minutesOf = (hhmm: string): number => {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
   return m ? clamp(Number(m[1]), 0, 23) * 60 + clamp(Number(m[2]), 0, 59) : 21 * 60;
 };
-/** the next New York midnight after `ms` */
-const nextNyMidnight = (ms: number): number => {
-  let t = ms + 60_000;
+/** the next New York midnight after `ms`. Its offsets are whole hours, so a midnight is the top of a UTC hour: looked for an hour at a time */
+export function nextNyMidnight(ms: number): number {
   const day = ny(ms).day;
-  // walk forward to the first minute of the next New York day (a minute's resolution is enough for a halt)
-  while (ny(t).day === day) t += 60_000;
-  return t - (t % 60_000);
-};
+  let t = (Math.floor(ms / HOUR) + 1) * HOUR;
+  while (ny(t).day === day) t += HOUR;
+  return t;
+}
+/** The next minute, from `ms`'s own on, at which the New York clock reads `at` (minutes after its midnight): today's while it is still to
+ * come, else the next day's — the first time that day it reads so (a day the clock goes back reads 01:xx twice; a day it goes forward has
+ * no 02:xx, and that hour's report is the next day's). Within a UTC hour the clock moves a minute a minute, so it is looked for an hour at
+ * a time, two days at most (`ms`'s minute and two days on when no minute in them reads `at`) */
+export function nextNyAt(ms: number, at: number): number {
+  const now = ny(ms);
+  const from = ms - (ms % 60_000);
+  for (let h = Math.floor(from / HOUR); h * HOUR < from + 2 * DAY; h++) {
+    const first = ny(h * HOUR).minutes;
+    if (at < first || at >= first + 60) continue;
+    const t = h * HOUR + (at - first) * 60_000;
+    if (t < from || t >= from + 2 * DAY) continue;
+    if (ny(t).day !== now.day || now.minutes < at) return t;
+  }
+  return from + 2 * DAY;
+}
 
 const bad = (message: string, detail: Record<string, unknown> = {}): Refusal => no("E_ACCOUNT_BAD_ACTION", { message, detail });
 
@@ -977,6 +1015,15 @@ export function readRoomTail(home: string, since: number, max = FEED_ROOM_MAX): 
 
 // ---- the desk ------------------------------------------------------------------------------------------------------------------
 
+/** What a run over recorded bars reads of the desk at each step (Desk.glance): the session's state and cycles, the venue's equity as the
+ * account's page gives it, the dollars the open leads were opened with, the session's funnel */
+export interface DeskGlance {
+  session: { state: "live" | "paused" | "halted" | "ended"; cycles: number; halted?: DeskSession["halted"] } | null;
+  venueUsd: number;
+  openUsd: number;
+  funnel: DeskFunnel;
+}
+
 /** the view the page and a seat read */
 export interface DeskView {
   id: string;
@@ -1067,6 +1114,10 @@ export class Desk {
   /** the first cycle after a hire, a resume or the clock's start: when (the account's clock, ms), and its one-shot timer (FIRST_CYCLE_MS) */
   private soonAt = 0;
   private soonTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** with DeskOptions.deferSaves: the record changed since flush() last wrote it, and the room's lines it has not written yet */
+  private unsaved = false;
+  private readonly roomBehind: RoomMessage[] = [];
 
   constructor(private readonly world: DeskWorld, private readonly opts: DeskOptions) {
     this.file = readDesk(world.home);
@@ -1685,26 +1736,42 @@ export class Desk {
     const f = this.file;
     const seq = f ? ++f.counters.seq : 0;
     const m: RoomMessage = { seq, at: this.world.now(), from, kind, text: text.slice(0, 600), ...(extra.lead ? { lead: extra.lead } : {}), ...(extra.refs ? { refs: extra.refs } : {}), ...(extra.brain ? { brain: true as const } : {}) };
+    if (this.opts.deferSaves) this.roomBehind.push(m);
+    else this.roomAppend([m]);
+    if (f) this.save();
+    return m;
+  }
+
+  /** lines added to room.jsonl; a room that grew past what is kept is cut to its last part, once in a while (each 500th line) */
+  private roomAppend(lines: RoomMessage[]): void {
+    if (!lines.length) return;
     const p = roomPath(this.world.home);
     mkdirSync(join(p, ".."), { recursive: true, mode: 0o700 });
     const exists = existsSync(p);
-    writeFileSync(p, `${JSON.stringify(m)}\n`, { flag: "a", mode: 0o600 });
+    writeFileSync(p, lines.map((m) => `${JSON.stringify(m)}\n`).join(""), { flag: "a", mode: 0o600 });
     if (!exists) chmodSync(p, 0o600);
-    // a room that grew past what is kept is cut to its last part, once in a while
-    if (seq % 500 === 0) {
-      const lines = readFileSync(p, "utf8").split("\n").filter(Boolean);
-      if (lines.length > ROOM_KEPT) writePrivate(p, `${lines.slice(-ROOM_KEPT).join("\n")}\n`);
+    if (lines.some((m) => m.seq % 500 === 0)) {
+      const all = readFileSync(p, "utf8").split("\n").filter(Boolean);
+      if (all.length > ROOM_KEPT) writePrivate(p, `${all.slice(-ROOM_KEPT).join("\n")}\n`);
     }
-    if (f) this.save();
-    return m;
   }
 
   private save(): void {
     if (!this.file) return;
     if (this.file.leads.length > MAX_LEADS) this.file.leads = recentAndOpen(this.file.leads, MAX_LEADS);
     if (this.file.reports.length > MAX_REPORTS) this.file.reports = this.file.reports.slice(-MAX_REPORTS);
-    writePrivate(deskPath(this.world.home), `${JSON.stringify(this.file, null, 1)}\n`);
+    if (this.opts.deferSaves) this.unsaved = true;
+    else writePrivate(deskPath(this.world.home), `${JSON.stringify(this.file, null, 1)}\n`);
     this.told();
+  }
+
+  /** The record and the room's new lines written now, where DeskOptions.deferSaves kept them in memory (a desk played over recorded bars
+   * calls it at the end of its run); with every change written as it happens, there is nothing to write */
+  flush(): void {
+    const lines = this.roomBehind.splice(0);
+    this.roomAppend(lines);
+    if (this.unsaved && this.file) writePrivate(deskPath(this.world.home), `${JSON.stringify(this.file, null, 1)}\n`);
+    this.unsaved = false;
   }
 
   // ---- the clock ----
@@ -2648,14 +2715,8 @@ export class Desk {
     const losses = closed.filter((l) => (l.pnlUsd ?? 0) <= 0);
     const avg = (xs: Lead[]) => (xs.length ? r2(xs.reduce((a, l) => a + (l.roiPct ?? 0), 0) / xs.length) : 0);
     const cards = (page?.cards ?? []).filter((c) => f.seats.some((x) => x.address === c.agent)).map((c) => ({ id: c.id, lead: f.leads.find((l) => l.card === c.id)?.id, reason: c.reason, usd: c.usd }));
-    const at = minutesOf(f.objective.reportAt);
-    const nyNow = ny(nowMs);
-    const reportMs = (() => {
-      let t = nowMs - (nowMs % 60_000);
-      // the next moment the New York clock reads reportAt
-      for (let i = 0; i < 2 * 24 * 60; i++, t += 60_000) if (ny(t).minutes === at && (ny(t).day !== nyNow.day || nyNow.minutes < at)) return t;
-      return t;
-    })();
+    // the next moment the New York clock reads reportAt
+    const reportMs = nextNyAt(nowMs, minutesOf(f.objective.reportAt));
     const weeklyMs = (() => {
       let t = reportMs;
       for (let i = 0; i < 8; i++, t += DAY) if (ny(t).dow === 0) return t;
@@ -2686,6 +2747,19 @@ export class Desk {
       cards,
       venue,
     };
+  }
+
+  /** THE STEP'S READ (backtest/desk.ts, at every bar): what the view says of the session, the venue's equity and the open leads, without what
+   * only a page draws — the room, the seats' standing at the door, the routines' next times, the tape — so a step costs the account's page
+   * and the desk's record in memory. Undefined when no desk is hired */
+  async glance(): Promise<DeskGlance | undefined> {
+    if (!this.file) return undefined;
+    const page = await this.world.page();
+    const f = this.file;
+    if (!f) return undefined;
+    const { state, venue } = this.figures(Date.parse(this.world.now()), page);
+    const s = f.session;
+    return { session: s ? { state, cycles: s.cycles, ...(s.halted ? { halted: s.halted } : {}) } : null, venueUsd: venue.usd, openUsd: this.openLeads().reduce((sum, l) => sum + Math.abs(l.sizeUsd ?? 0), 0), funnel: this.funnel() };
   }
 
   /** the figures the page's view and the floor's read share: the session's state, the equity now against the start (its open leads marked
