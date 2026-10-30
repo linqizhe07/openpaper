@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { cardHash, type Outcome } from "../../src/portfolio/account/exchange.ts";
 import { byAsset } from "../../src/portfolio/account/holdings.ts";
+import { readJournal } from "../../src/portfolio/account/journal.ts";
 import { networthPath, paperNetworthPath } from "../../src/portfolio/account/networth.ts";
 import { fromEt, usClock } from "../../src/portfolio/account/calendar.ts";
 import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
@@ -417,6 +418,36 @@ describe("a paper account beside a real one", () => {
     // both exits were followed as the account's own orders, named as the entry's
     const page = (await svc.accountView())!;
     expect(page.orders.filter((o) => o.exitOf?.order === placed.order.id).map((o) => [o.exitOf!.kind, o.type, o.status])).toEqual([["stop-loss", "stop", "filled"], ["take-profit", "limit", "canceled"]]);
+  });
+
+  it("THE BLACK BOX: the round trip the bracket made is one line of the journal — its entry and exit, net of fees, how far the price went for it and against it as the account looked, how it ended, who opened it and who closed it — chained, and read back as the service gives it", async () => {
+    const btc: Listing = { symbol: "BTC/USD", name: "BTC market", kind: "spot", base: "BTC", quote: "USD", price: 60000, bid: 59990, ask: 60010, open: true, types: [], volumeUsd24h: 2e9 };
+    const kraken: PublicSource = { id: "kraken", name: "Kraken", kind: "exchange", connectTo: "kraken", connector: "live:exchange:kraken", listings: async (q) => [btc].filter((m) => !q.q || m.base.includes(q.q.toUpperCase())) };
+    const { svc, own, order, home } = await boot({ sources: [kraken], connect: false });
+    expect(code(await own({ type: "connectVenue", venue: "paper-1", connector: "live:paper", label: "", credentialRef: "" }))).toBe("account");
+    const placed = await order("paper-1", { symbol: "BTC/USD", side: "buy", orderType: "market", qty: "0.01", takeProfit: "66000", stopLoss: "57000" });
+    if (isRefusal(placed) || placed.kind !== "order") throw new Error(`expected an order, got ${code(placed)}`);
+    // nothing closed yet: nothing in the journal
+    expect(readJournal(home).rows).toEqual([]);
+    // the price rises — the account's look sees it — then falls through the stop-loss
+    Object.assign(btc, { price: 62000, bid: 61990, ask: 62010 });
+    await svc.lookAtPaper();
+    Object.assign(btc, { price: 56000, bid: 55990, ask: 56010 });
+    expect(await svc.lookAtPaper()).toEqual(["paper-1"]);
+    const j = readJournal(home);
+    expect(j.intact).toBe(true);
+    expect(j.rows).toHaveLength(1);
+    const t = j.rows[0]!;
+    expect(t).toMatchObject({ seq: 1, venue: "paper-1", paper: true, symbol: "BTC/USD", kind: "spot", side: "long", qty: 0.01, entryPrice: 60010, exitPrice: 55990, takeProfit: 66000, stopLoss: 57000, fills: 2, end: "stop-loss", by: { who: "owner" }, closedBy: { who: "venue" }, hi: 62000, lo: 55990 });
+    expect(t.grossUsd).toBeCloseTo(-40.2, 6);
+    expect(t.feesUsd).toBeCloseTo(0.6001 + 0.5599, 6);
+    expect(t.netUsd).toBeCloseTo(-40.2 - 1.16, 6);
+    expect(t.mfePct).toBeCloseTo((62000 / 60010 - 1) * 100, 3);
+    expect(t.maePct).toBeCloseTo((55990 / 60010 - 1) * 100, 3);
+    expect(t.lead).toBeUndefined();
+    // what the page and an agent read (GET /api/account/journal)
+    expect(svc.journal({ limit: 10 })).toEqual({ trades: [t], total: 1, intact: true });
+    expect(svc.journal({ limit: 10, venue: "elsewhere" })).toEqual({ trades: [], total: 0, intact: true });
   });
 
   it("the quote the owner is shown says what the order would leave by the paper account's own rule — its fee and rate, a perpetual's estimated liquidation price at the leverage set — and nothing a venue did not say (feat/paper-live phase 4)", async () => {

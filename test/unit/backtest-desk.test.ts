@@ -93,6 +93,31 @@ describe("the desk over the bars, through the lab", () => {
     expect(kept.run.strategy.id).toBe("desk");
   });
 
+  it("keeps every round trip its account's journal wrote, each with the lead that placed it and how it ended — every fill in one but what is still open at the end", async () => {
+    const r = ok(await labRun(ask({ from: Date.parse("2026-07-20T00:00:00Z") }), lab()));
+    const trips = r.run.trips ?? [];
+    expect(trips.length).toBeGreaterThan(1);
+    for (const t of trips) {
+      expect(t.lead).toMatchObject({ id: expect.stringMatching(/^L-\d{4}$/), thesis: expect.stringMatching(/keeps its momentum on volume$/), tpPct: 2, slPct: 1, maxHours: 24 });
+      expect(["take-profit", "stop-loss", "closed"]).toContain(t.end);
+      expect(t.maePct).toBeLessThanOrEqual(0);
+      expect(t.mfePct).toBeGreaterThanOrEqual(0);
+      // the extremes hold the fills' prices (an average of one fill may sit an ulp off its price)
+      expect(t.lo).toBeLessThanOrEqual(Math.min(t.entryPrice, t.exitPrice) * (1 + 1e-12));
+      expect(t.hi).toBeGreaterThanOrEqual(Math.max(t.entryPrice, t.exitPrice) * (1 - 1e-12));
+      expect(t.netUsd).toBeCloseTo(t.grossUsd - t.feesUsd - t.fundingUsd, 6);
+    }
+    // a bracket's exit is its plan's price: a take-profit at its limit, a stop at its stop or past it (a bar that opened beyond it)
+    for (const t of trips.filter((x) => x.end === "take-profit")) expect(t.exitPrice).toBeCloseTo(t.takeProfit!, 6);
+    for (const t of trips.filter((x) => x.end === "stop-loss")) expect(t.side === "long" ? t.exitPrice <= t.stopLoss! + 1e-9 : t.exitPrice >= t.stopLoss! - 1e-9).toBe(true);
+    expect(trips.some((t) => t.end !== "closed")).toBe(true);
+    // in time order, every fill of the run in one of them but the entries still open at the end (three at most)
+    expect(trips.map((t) => t.closedAt)).toEqual([...trips.map((t) => t.closedAt)].sort());
+    const open = r.run.fills.length - trips.reduce((n, t) => n + t.fills, 0);
+    expect(open).toBeGreaterThanOrEqual(0);
+    expect(open).toBeLessThanOrEqual(3);
+  });
+
   it("starts a new session when one ends before the window does — fourteen days at most a session — and counts every fill the book wrote, not only the latest it keeps", async () => {
     const deps = lab();
     const r = ok(await labRun(ask({ from: Date.parse("2026-07-10T00:00:00Z"), spec: desk({ tpPct: 1, slPct: 0.5, maxHours: 4 }) }), deps));

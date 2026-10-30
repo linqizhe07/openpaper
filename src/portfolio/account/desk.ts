@@ -73,6 +73,7 @@ import type { AccountPage, Outcome } from "./exchange.ts";
 import { isKeyRejected, keyShaped, plainFieldName, type BrainKeyRejected } from "./brain-key.ts";
 import { seatKey, slugOf } from "./keystore.ts";
 import { signAgent, type Action, type AgentAction, type Envelope, type Hex, type SimKey } from "./sign.ts";
+import type { TradeLead } from "./journal.ts";
 import type { AgentKey } from "./state.ts";
 
 // ---- the roles -------------------------------------------------------------------------------------------------------------------
@@ -2475,8 +2476,9 @@ export class Desk {
       : eh
         ? { type: "agentLiveOrder", venue: venue.id, symbol: lead.symbol, side, orderType: "limit", qty: String(e.qty), usd: "", limitPrice: eh.limit, tif: "day", extendedHours: "true", nonce: this.world.nonce() }
         : { type: "agentLiveOrder", venue: venue.id, symbol: lead.symbol, side, orderType: "market", qty: String(e.qty), usd: "", limitPrice: "", nonce: this.world.nonce() };
-    const out = await this.world.exchange(await signAgent(key, action));
+    // why is said before the close goes: a paper account fills it inside the door's answer, and the journal writes the trip it closed then
     lead.exitWhy = why;
+    const out = await this.world.exchange(await signAgent(key, action));
     lead.updatedAt = this.world.now();
     if (isRefusal(out)) {
       this.notClosed(lead, out.message);
@@ -2760,6 +2762,21 @@ export class Desk {
     const { state, venue } = this.figures(Date.parse(this.world.now()), page);
     const s = f.session;
     return { session: s ? { state, cycles: s.cycles, ...(s.halted ? { halted: s.halted } : {}) } : null, venueUsd: venue.usd, openUsd: this.openLeads().reduce((sum, l) => sum + Math.abs(l.sizeUsd ?? 0), 0), funnel: this.funnel() };
+  }
+
+  /** The lead an account order was placed for — its entry — as the journal tells the trade it opened (account/journal.ts, service.ts
+   * journalTrip): its thesis, Search's confidence, Risk's reason, size, plan and hard checks, and why the desk closed it where it did.
+   * Undefined when no lead in the desk's record placed it */
+  leadOf(order: string): TradeLead | undefined {
+    const l = this.file?.leads.find((x) => x.order === order);
+    if (!l) return undefined;
+    return { id: l.id, thesis: l.thesis, ...(l.confidence !== undefined ? { confidence: l.confidence } : {}), ...(l.cleared ? { cleared: l.cleared } : {}), ...(l.sizeUsd !== undefined ? { sizeUsd: l.sizeUsd } : {}), ...(l.tpPct !== undefined ? { tpPct: l.tpPct } : {}), ...(l.slPct !== undefined ? { slPct: l.slPct } : {}), ...(l.maxHours !== undefined ? { maxHours: l.maxHours } : {}), ...(l.exitWhy ? { exitWhy: l.exitWhy } : {}), ...(l.checks ? { checks: l.checks } : {}) };
+  }
+
+  /** the role of the desk's seat this agent key holds, if it holds one */
+  roleOf(address: string): RoleId | undefined {
+    const a = String(address).toLowerCase();
+    return this.file?.seats.find((s) => s.address.toLowerCase() === a)?.role;
   }
 
   /** the figures the page's view and the floor's read share: the session's state, the equity now against the start (its open leads marked

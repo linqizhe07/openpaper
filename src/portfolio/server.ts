@@ -161,6 +161,10 @@
  *                                                        markets, the defaults
  *   GET  /api/account/backtest?id=                       one kept run in full — its trades, its curve, its notes — with its trial and how
  *                                                        it is judged against the ledger now
+ *   GET  /api/account/journal?limit=&venue=              THE BLACK BOX (account/journal.ts): the latest round trips the paper accounts
+ *                                                        closed, oldest first — each its entry and exit, net, fees, funding, MAE and MFE,
+ *                                                        how it ended, who opened and closed it, the desk's lead where one placed it —
+ *                                                        with how many there are and whether the chain is intact (or where it broke)
  *   GET  /api/account/book?venue=&symbol=&depth=20        one market's order book, best first (a market whose source has no book: its best
  *                                                        bid and ask only, depth "top"); kept a second and a half
  *   GET  /api/account/trades?venue=&symbol=&limit=30      one market's latest trades, newest first; kept three seconds (a source that
@@ -301,6 +305,8 @@ function sendPage(req: express.Request, res: express.Response, f: PageFile, type
 }
 /* a file named with its content's hash is kept a year as it is; any other answer is revalidated each time */
 const KEEP_A_YEAR = "public, max-age=31536000, immutable";
+/** the most trades one read of the journal returns (GET /api/account/journal): its latest */
+const JOURNAL_READ_MOST = 10_000;
 
 /** what the page reads of a REAL account, as it goes on the wire: the simulation's runway rows, doors, swap table, ledgers and address book
  * belong to no venue on it, so they do not travel (the type, account/exchange.ts AccountPage, still names them for the simulated statement);
@@ -896,6 +902,13 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     if (!q) return;
     if (q.limit !== "" && !(/^\d{1,3}$/.test(q.limit) && Number(q.limit) >= 1 && Number(q.limit) <= 500)) return void bad(res, "a limit is a count of runs, 1 to 500");
     answerOf(res, svc.backtests(q.limit ? Number(q.limit) : 50));
+  }));
+  app.get("/api/account/journal", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { limit: 5, venue: 80 });
+    if (!q) return;
+    if (q.limit !== "" && !(/^\d{1,5}$/.test(q.limit) && Number(q.limit) >= 1 && Number(q.limit) <= JOURNAL_READ_MOST)) return void bad(res, `a limit is a count of trades, 1 to ${JOURNAL_READ_MOST.toLocaleString("en-US")}`);
+    answerOf(res, svc.journal({ limit: q.limit ? Number(q.limit) : 500, ...(q.venue ? { venue: q.venue } : {}) }));
   }));
   app.get("/api/account/backtest", wrap(async (req, res) => {
     if (!mounted(res)) return;

@@ -59,6 +59,8 @@ import { paperBarsWanted, paperBookStart, rebuildEquity, type PriceSeries } from
 import { loadBook, PAPER_MAX_CASH, paperBookPath, paperBooksOnDisk, paperDir, parsePaperCash, resetBookOnDisk, summaryOf, type PaperBook, type PaperBookSummary, type PaperChange } from "./live/paper.ts";
 import { costBasis, ordersOf, type CostBasis, type LoggedOrder, type VenuePosition } from "./account/costbasis.ts";
 import type { AutonomyHook, LiveOrder } from "./account/live-orders.ts";
+import { appendTrade, readJournal, type JournalRow, type TradeHand } from "./account/journal.ts";
+import type { ClosedTrip } from "./live/trips.ts";
 import type { LiveEarn } from "./account/live-earn.ts";
 import type { Payment } from "./account/payments.ts";
 import { exploreAcross, type Exploration, type ExploreSort, type ExploreVenue } from "./live/explore.ts";
@@ -1903,6 +1905,15 @@ export class PortfolioService {
     });
   }
   /** THE LEDGER as it stands: the holdout, the rows and whether their chain holds, how many runs and distinct strategies, the latest runs */
+  /** THE BLACK BOX as it stands (account/journal.ts): the latest `limit` trades the paper accounts closed — at one venue where it is named —
+   * oldest first, how many it holds in all, and whether its chain is intact or where it broke */
+  journal(o: { limit: number; venue?: string | undefined }): { trades: JournalRow[]; total: number; intact: boolean; brokenAt?: number | undefined; why?: string | undefined } | Refusal {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const j = readJournal(this.opts.home);
+    const rows = o.venue ? j.rows.filter((r) => r.venue === o.venue) : j.rows;
+    return { trades: rows.slice(-Math.max(1, o.limit)), total: rows.length, intact: j.intact, ...(j.brokenAt !== undefined ? { brokenAt: j.brokenAt, why: j.why } : {}) };
+  }
+
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     return {
@@ -2631,6 +2642,31 @@ export class PortfolioService {
     if (c.cashUsd !== undefined) this.stream.emit("balance", { venue, venueName, paper: true, cashUsd: c.cashUsd, at });
     this.stream.emit("paper", { ...c.summary, ...(c.reset ? { reset: c.reset } : {}), at });
     if (c.fills.length || c.reset) this.stream.emit("statement", { venue, paper: true, at });
+    for (const t of c.trips ?? []) this.journalTrip(venue, t);
+  }
+
+  /** A ROUND TRIP A PAPER BOOK CLOSED (PaperChange.trips), written to the black box (account/journal.ts): who opened it and who closed it, as
+   * the account's own orders say — the owner, an agent by its name, the desk's seat by its role — or the venue itself (a bracket's exit, a
+   * liquidation, a settlement, an order the account has no record of), and the desk's lead where one placed it. A write that fails is said
+   * in the server's log; the book goes on */
+  private journalTrip(venue: string, t: ClosedTrip): void {
+    const orderOf = (clientId: string | undefined): LiveOrder | undefined => (clientId ? this.account?.orders.find((o) => o.venue === venue && o.clientId === clientId) : undefined);
+    const handOf = (o: LiveOrder | undefined): TradeHand => {
+      if (!o || o.exitOf) return { who: "venue" };
+      if (o.authority === "owner") return { who: "owner" };
+      const address = o.agent ?? o.signer;
+      const name = this.account?.agentName(address);
+      const role = this.desk?.roleOf(address);
+      return { who: role ? "desk" : "agent", ...(role ? { role } : {}), ...(name ? { name } : {}), address };
+    };
+    const opened = orderOf(t.openClientId);
+    const lead = opened ? this.desk?.leadOf(opened.id) : undefined;
+    const closedBy: TradeHand = t.end === "closed" ? handOf(orderOf(t.closeClientId)) : { who: "venue" };
+    try {
+      appendTrade(this.opts.home, { ...t, venue, venueName: this.nameOf(venue), paper: true, by: handOf(opened), closedBy, ...(lead ? { lead } : {}) }, Date.parse(this.now()));
+    } catch (err) {
+      console.error(`the journal could not take ${t.symbol}'s trade at ${venue}: ${String((err as Error)?.message ?? err).slice(0, 200)}`);
+    }
   }
 
   /** WHAT THE LEDGER TOOK, told to the pages (the push channel; every row passes here as it is written): a statement line (`statement`,

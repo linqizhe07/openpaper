@@ -23,6 +23,8 @@ import { mkdirSync } from "node:fs";
 import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { no } from "../refuse.ts";
 import { DEFAULT_QTY_STEP, paperSource, type PaperChange, type PaperFunding } from "../live/paper.ts";
+import type { TradeLead } from "../account/journal.ts";
+import type { ClosedTrip } from "../live/trips.ts";
 import { floorTo, INTERVAL_MS, type OrderRequest } from "../live/trade.ts";
 import { barIndexAt, barsClosed, barUnderWay, DEFAULT_COSTS, historySource, type BacktestCosts, type BacktestMarket } from "./source.ts";
 import { metricsOf, type EquityPoint, type Metrics } from "./metrics.ts";
@@ -88,6 +90,9 @@ export interface BacktestRun {
   equity: EquityPoint[];
   fills: BacktestFill[];
   funding: { paidUsd: number; receivedUsd: number; hours: number };
+  /** every round trip the run closed (live/trips.ts): a market held from nothing back to nothing, its entry and exit, its result, its
+   * extremes — and for the desk's run, the lead that placed it (account/journal.ts). A run kept before trips were told has none */
+  trips?: Array<ClosedTrip & { lead?: TradeLead | undefined }> | undefined;
   refused: BacktestRefusal[];
   metrics: Metrics;
   notes: string[];
@@ -139,8 +144,10 @@ export async function runBacktest(req: BacktestRequest): Promise<BacktestRun | R
   // what is held, signed, as the book tells it; every fill as it happens, with the open the engine placed it at
   const held = new Map<string, number>();
   const fills: BacktestFill[] = [];
+  const trips: ClosedTrip[] = [];
   const refOf = new Map<string, number>();
   const off = paper.paperEvents?.listen((c: PaperChange) => {
+    if (c.trips) trips.push(...c.trips);
     for (const p of c.positions) held.set(p.symbol, p.position ? (p.position.side === "short" ? -p.position.qty : p.position.qty) : 0);
     for (const f of c.fills) {
       const ref = f.clientId ? refOf.get(f.clientId) : undefined;
@@ -311,6 +318,7 @@ export async function runBacktest(req: BacktestRequest): Promise<BacktestRun | R
     equity,
     fills,
     funding: { paidUsd: round(paid, 2), receivedUsd: round(received, 2), hours: funding.length },
+    trips,
     refused,
     metrics,
     notes,
