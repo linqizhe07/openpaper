@@ -48,6 +48,7 @@ link there.
 - CI's type check passes again: a test added with the walk-forward API cast the lab's answer to a shape TypeScript refuses. [#43](https://github.com/linqizhe07/openpaper/pull/43)
 - A signed backtest runs outside the door's line once it is taken: a cancel, an agent's order or a desk's exit sent while the owner looks at the held-out data is no longer kept waiting behind it, and the holdout is not moved while a backtest runs. [#44](https://github.com/linqizhe07/openpaper/pull/44)
 - The desk runs from the Backtest page by the owner's signature (The desk mode: its numbers, the steps and seconds said before it is signed, 4,500 steps at most from there), and a desk backtest longer than about 150 days no longer fails while it sets up: its seats are let in again before the 180 days a key lives run out. [#45](https://github.com/linqizhe07/openpaper/pull/45)
+- `npm run account:record` keeps Hyperliquid's public stream of BTC, ETH and SOL (or the coins named) in the home for backtests and research — every trade, every change of the best bid and ask, the mark, oracle and funding, a gzipped and hashed file an hour, the time it was not recording written down and never filled — and checks each recorded day's one-minute bars, built from its trades, against Hyperliquid's own. [#47](https://github.com/linqizhe07/openpaper/pull/47)
 
 ## v0.1.0 — 2026-10-22
 
