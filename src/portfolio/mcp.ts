@@ -26,7 +26,9 @@
  * account's trials ledger with this seat named; the held-out data is the owner's to run on — portfolio_backtest_walk walks a grid forward
  * through the folds of the training window, every try counted, portfolio_backtest_screen sweeps a kept desk run's exits fast over its bars
  * (every rule counted), and portfolio_backtests reads the ledger and a kept run; the desk itself runs over the bars by the owner's
- * signature only (its runs are read like any). A layered simulation (tests: the account layer over simulated venues) also has
+ * signature only (its runs are read like any). THE DEBRIEF (account/debrief.ts): portfolio_debrief reads why the paper trades made or
+ * lost money, with the desk's lessons (account/lessons.ts) — the candidates its trades put forward and every lesson kept, adopted by the
+ * owner's signature alone. A layered simulation (tests: the account layer over simulated venues) also has
  * portfolio_transfer, which signs a move between the simulated venues at the door.
  * On the simulated statement (--classic), and on a layered simulation: portfolio_read · portfolio_markets · portfolio_quote ·
  * portfolio_openness · portfolio_execute · portfolio_order — the fixture's venues, catalogue and router. They are registered only when the
@@ -1072,6 +1074,31 @@ server.registerTool(
 );
 
 server.registerTool(
+  "portfolio_debrief",
+  {
+    description: "THE DEBRIEF — why the paper accounts' closed trades made or lost money, from the account's journal (every round trip a paper account closed, never cut). `debrief`: the trades and win rate, net a trade with its 95% range, before costs with its t, the costs a trade, payoff, profit factor, the break-even win rates (the sizes' and the plan's), THE INVERSION TEST (`inversion.verdict`: few · costs — the loss is the costs: trade less or aim wider, never the other way · invertible — lost before costs beyond chance and by more than the costs: a hypothesis for the lab · not-enough · edge · unproven), the excursions (MAE, MFE), R, how trades ended, the slices (market, side, the New York hours entered, how long held, who, Search's confidence — `few` under 30 trades), the desk's calibration, `notes` in words. THE DESK'S LESSONS: `candidates` — slices of the desk's own trades that lost beyond chance against the rest (t ≤ −2, 30 trades or more), each with the rule that would say it, `looked` (how many slices were looked at: the worst of many looks bad by chance) and `kept` (the lesson that already says it); `lessons` — every lesson the desk keeps, newest first (`state` proposed · adopted · rejected · retired; `from` evening · weekly · debrief · you; `rule`; `effect` where the rule says which leads to take: the trades here it would have stopped and what they made, against those it let through — read off the trades it was likely found in, it describes, it does not test). An adopted lesson's rule is one of Risk's hard checks and its words are in its seats' prompts; only the owner adopts one, by signature on the Debrief page — to put one forward, say it in the desk's room (portfolio_desk_say). `desk`: a desk is hired. Scope with `who`, `venue` and `days`. A read.",
+    inputSchema: {
+      who: z.enum(["you", "desk", "agents"]).optional().describe("whose trades: the owner's (you), the desk's, other agents' — default everyone's"),
+      venue: z.string().max(40).optional().describe("one paper account's id, as portfolio_account names it — default every one"),
+      days: z.number().int().min(1).max(3650).optional().describe("the last this many days — default all"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ who, venue, days }) => {
+    const q = new URLSearchParams({ ...(who ? { who } : {}), ...(venue ? { venue } : {}), ...(days ? { days: String(days) } : {}) });
+    // the points drawn on the page (the excursions' scatter, the curve) and the latest trades stay there: the figures and the words are the answer
+    return read(`/api/account/debrief${q.size ? `?${q}` : ""}`, (b) => {
+      const { latest: _latest, ...rest } = b;
+      const d = rest.debrief as (Record<string, unknown> & { excursions?: Record<string, unknown> }) | undefined;
+      if (!d) return rest;
+      const { curve: _curve, ...figures } = d;
+      const { points: _points, ...excursions } = d.excursions ?? {};
+      return { ...rest, debrief: { ...figures, ...(d.excursions ? { excursions } : {}) } };
+    });
+  },
+);
+
+server.registerTool(
   "portfolio_receive",
   {
     description: "Where to send an asset on a network so that it lands at one of the user's connected venues: the account's own deposit address, read from the venue (an exchange's, asked of the exchange itself, with a memo when it needs one; a wallet's own address when the wallet signed to show it is the user's, or the account holds its key: an agent wallet) — an agent cannot change it, and this is where an agent wallet's money goes when it is moved into the owner's venue. A watched address, or a venue the account sends nothing to, gives none. This only says where: sending is still a movement the owner signs, or one inside your limit. A read.",
@@ -1211,7 +1238,7 @@ server.registerTool(
   "portfolio_desk",
   {
     description:
-      "THE DESK — the account's own team of agents (Agents on the account page), on which the owner may give this seat a role: Flow and Sentiment are filled only by an outside agent like this one; any other role too, in place of the house. Read it when a session starts: `yourSeat` (your role and its charter — what you own, what good output is, what you never do without asking; the account enforces the last with your key and your limits, so a seat that must not trade holds no trading limit), the desk's `objective` (its one venue, the universe, the week's target, the risk per lead, the day's loss line), the `funnel` (scanned → cleared → confirmed → placed → executed → closed: `placed` counts the entries the venue took, filled or not, `executed` only those filled; what waits for the owner on a card is confirmed − placed) and `today`'s numbers, the `open` leads with their plans, `autonomy` (`paper: true` when the owner signed that the desk's OWN house seats place their orders at its paper account without cards — the superagent; it never covers this seat: your orders go to the door as any agent's), `lastScan` (what Search scanned last: the cycle, when, the venue, how many markets its brain was shown and how many it picked, or the reason none were shown), and the `room`'s last lines — every message carries its lead id (L-0047), and a card id where one waits for the owner. Then say your part with portfolio_desk_say, in the room's format; a seat that trades places its orders with portfolio_live_order as any agent does. `yourSeat` is null when this key holds no seat. A read.",
+      "THE DESK — the account's own team of agents (Agents on the account page), on which the owner may give this seat a role: Flow and Sentiment are filled only by an outside agent like this one; any other role too, in place of the house. Read it when a session starts: `yourSeat` (your role and its charter — what you own, what good output is, what you never do without asking; the account enforces the last with your key and your limits, so a seat that must not trade holds no trading limit), the desk's `objective` (its one venue, the universe, the week's target, the risk per lead, the day's loss line), the `funnel` (scanned → cleared → confirmed → placed → executed → closed: `placed` counts the entries the venue took, filled or not, `executed` only those filled; what waits for the owner on a card is confirmed − placed) and `today`'s numbers, the `open` leads with their plans, `autonomy` (`paper: true` when the owner signed that the desk's OWN house seats place their orders at its paper account without cards — the superagent; it never covers this seat: your orders go to the door as any agent's), `lastScan` (what Search scanned last: the cycle, when, the venue, how many markets its brain was shown and how many it picked, or the reason none were shown), the owner's adopted `lessons` (`yourSeat.lessons`: the ones for your role — follow them as a house seat's prompt does; one with a `rule` the account holds the desk to itself, at Risk's hard checks), and the `room`'s last lines — every message carries its lead id (L-0047), and a card id where one waits for the owner. Then say your part with portfolio_desk_say, in the room's format; a seat that trades places its orders with portfolio_live_order as any agent does. `yourSeat` is null when this key holds no seat. A read.",
     inputSchema: {},
     annotations: { readOnlyHint: true },
   },

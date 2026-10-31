@@ -488,10 +488,11 @@ describe("what the floor draws", () => {
     expect(scan.rows).toEqual(table.map((t) => ({ symbol: t.symbol, name: t.name, kind: t.kind, price: t.price, ...(t.changePct24h !== undefined ? { changePct24h: t.changePct24h } : {}), ...(t.volumeUsd24h !== undefined ? { volumeUsd24h: t.volumeUsd24h } : {}) })));
     expect(scan.picked).toEqual([{ lead: "L-0001", symbol: "BTC/USDT", side: "buy", confidence: 0.73 }]);
     expect(readDesk(home)?.lastScan).toEqual(scan);
-    // the lead carries Search's confidence and Risk's hard-check numbers: 1% of $5,000; 5% of it as the day's loss room
+    // the lead carries Search's confidence and Risk's hard-check numbers: 1% of $5,000; 5% of it as the day's loss room — and the market's
+    // day as Risk saw it, what a lesson's rule is judged on (a spot market: no funding)
     const lead = v.open.find((l) => l.id === "L-0001")!;
     expect(lead.confidence).toBe(0.73);
-    expect(lead.checks).toEqual({ spreadPct: 0.1, maxSizeUsd: 50, lossRoomUsd: 250, minNotionalUsd: null });
+    expect(lead.checks).toEqual({ spreadPct: 0.1, maxSizeUsd: 50, lossRoomUsd: 250, minNotionalUsd: null, changePct24h: 2.5, volumeUsd24h: 2_000_000_000 });
     expect(readRoom(home).find((m) => m.kind === "lead")?.text).toContain("| confidence 0.73 → RISK");
     // a lead Risk rejects keeps the numbers that rejected it
     pick = "WIDE/USDT";

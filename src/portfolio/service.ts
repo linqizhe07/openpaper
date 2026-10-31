@@ -61,6 +61,7 @@ import { costBasis, ordersOf, type CostBasis, type LoggedOrder, type VenuePositi
 import type { AutonomyHook, LiveOrder } from "./account/live-orders.ts";
 import { appendTrade, readJournal, type JournalRow, type TradeHand } from "./account/journal.ts";
 import { debriefOf, type Debrief } from "./account/debrief.ts";
+import { candidatesOf, effectOf, ruleWords, sameLesson, type Lesson, type LessonCandidate, type LessonEffect } from "./account/lessons.ts";
 import type { BacktestRun } from "./backtest/engine.ts";
 import type { ClosedTrip } from "./live/trips.ts";
 import type { LiveEarn } from "./account/live-earn.ts";
@@ -1931,8 +1932,10 @@ export class PortfolioService {
 
   /** THE DEBRIEF of the journal's trades (account/debrief.ts): all of them, or one venue's, one hand's (you, the desk, the agents), the last
    * `days` days' — with what there is to choose from (each venue that has trades, by its name, with how many) and the latest trades,
-   * newest first */
-  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean } | Refusal {
+   * newest first. And the desk's LESSONS (account/lessons.ts): the candidates the desk's trades among these put forward, each with the
+   * lesson already kept that says the same, if one is; the lessons the desk keeps, newest first, each rule with what it would have done to
+   * these trades; whether a desk is hired, which a lesson is signed to */
+  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean; candidates: Array<LessonCandidate & { words: string; kept?: { id: string; state: Lesson["state"] } | undefined }>; lessons: Array<Lesson & { words?: string | undefined; effect?: LessonEffect | undefined }>; deskTrades: number; desk: boolean } | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     const j = readJournal(this.opts.home);
     const since = o.days ? Date.parse(this.now()) - o.days * 86_400_000 : undefined;
@@ -1944,7 +1947,17 @@ export class PortfolioService {
     }
     const hand = { you: "owner", desk: "desk", agents: "agent" } as const;
     const rows = j.rows.filter((r) => (!o.venue || r.venue === o.venue) && (!o.who || r.by.who === hand[o.who]) && (since === undefined || Date.parse(r.closedAt) >= since));
-    return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact };
+    const kept = this.desk?.lessonsKept() ?? [];
+    // each rule in words as the desk says it (account/lessons.ts ruleWords): the page and an agent read the same sentence
+    const candidates = candidatesOf(rows).map((c) => {
+      const same = sameLesson(kept, c.text, c.rule);
+      return { ...c, words: ruleWords(c.rule), ...(same ? { kept: { id: same.id, state: same.state } } : {}) };
+    });
+    const lessons = [...kept].reverse().map((l) => {
+      const effect = l.rule ? effectOf(l.rule, rows) : undefined;
+      return { ...l, ...(l.rule ? { words: ruleWords(l.rule) } : {}), ...(effect ? { effect } : {}) };
+    });
+    return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact, candidates, lessons, deskTrades: rows.filter((r) => r.lead).length, desk: this.desk?.hired() ?? false };
   }
 
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {

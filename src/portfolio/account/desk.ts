@@ -74,6 +74,7 @@ import { isKeyRejected, keyShaped, plainFieldName, type BrainKeyRejected } from 
 import { seatKey, slugOf } from "./keystore.ts";
 import { signAgent, type Action, type AgentAction, type Envelope, type Hex, type SimKey } from "./sign.ts";
 import type { TradeLead } from "./journal.ts";
+import { fundingPctDay, holdPlan, judge, LESSON_TEXT, LESSONS_ADOPTED_MOST, makeRoom, noChange, parseRoles, parseRule, RULE_GUIDE, ruleWords, sameLesson, type Lesson, type LessonFrom, type LessonRule, type PlanRule } from "./lessons.ts";
 import type { AgentKey } from "./state.ts";
 
 // ---- the roles -------------------------------------------------------------------------------------------------------------------
@@ -210,12 +211,18 @@ export type LeadState = "scanned" | "rejected" | "cleared" | "confirmed" | "exec
 /** Risk's hard checks on a lead, as numbers — the same ones its clearance line says in words: the spread in percent of the price (null where
  * the venue gives no bid and ask), the most the lead may be (the least of the objective's risk per lead, the Sniper's limit per order and
  * what is left of its budget), the day's loss room, the venue's smallest order (null where it names none). Kept on a rejected lead too,
- * once the market was priced: the floor's Risk gauge shows what the check saw */
+ * once the market was priced: the floor's Risk gauge shows what the check saw. And the market's day as Risk saw it — its change over the
+ * day in percent, its funding a day in percent (a perpetual's; null where a perpetual gave no rate, absent for any other market), the
+ * dollars it traded over the day — null where the venue gave none: what an adopted lesson's rule is judged on (account/lessons.ts), at
+ * the lead's clearance and afterwards, on the trade the journal keeps of it. Absent on a lead cleared before they were kept */
 export interface LeadChecks {
   spreadPct: number | null;
   maxSizeUsd: number;
   lossRoomUsd: number;
   minNotionalUsd: number | null;
+  changePct24h?: number | null | undefined;
+  fundingPctDay?: number | null | undefined;
+  volumeUsd24h?: number | null | undefined;
 }
 
 export interface Lead {
@@ -476,7 +483,10 @@ export interface DeskFile {
   equity: Array<[number, number]>;
   reports: DeskReport[];
   spend: DeskSpend;
-  counters: { lead: number; seq: number };
+  counters: { lead: number; seq: number; lesson?: number | undefined };
+  /** what the desk learned (account/lessons.ts): proposed by the Head, the Debrief or the owner; adopted, rejected and retired by the
+   * owner's signature alone — every one kept, in the order proposed (absent: none yet) */
+  lessons?: Lesson[] | undefined;
   /** the New York day the last evening report and weekly review were written for */
   reported?: string | undefined;
   reviewed?: string | undefined;
@@ -636,7 +646,7 @@ export interface BrainModel {
 
 /** a brain that answers from a script: tests and the stand-in (`id`, `label`, `models`, what it says of itself for the Brains place
  * (`about`) and the tokens it claims are the test's) */
-export function scriptedBrain(script: (r: { role: RoleId; input: string }) => unknown, model = "scripted", o: { id?: string | undefined; label?: string | undefined; models?: ReadonlyArray<BrainModel> | undefined; usage?: BrainAnswer<unknown>["usage"] | undefined; about?: (() => BrainAbout) | undefined } = {}): Brain {
+export function scriptedBrain(script: (r: { role: RoleId; input: string; system: string }) => unknown, model = "scripted", o: { id?: string | undefined; label?: string | undefined; models?: ReadonlyArray<BrainModel> | undefined; usage?: BrainAnswer<unknown>["usage"] | undefined; about?: (() => BrainAbout) | undefined } = {}): Brain {
   const usage = () => ({ ...(o.usage ?? { inputTokens: 0, outputTokens: 0 }) });
   return {
     id: o.id ?? "scripted",
@@ -645,7 +655,7 @@ export function scriptedBrain(script: (r: { role: RoleId; input: string }) => un
     ...(o.about ? { about: o.about } : {}),
     ready: () => ({ ok: true, model, how: "a script" }),
     async decide(r) {
-      const raw = script({ role: r.role, input: r.input });
+      const raw = script({ role: r.role, input: r.input, system: r.system });
       const parsed = r.schema.safeParse(raw);
       return parsed.success ? { out: parsed.data, usage: usage() } : { out: null, why: "the script's answer did not fit", usage: usage() };
     },
@@ -709,8 +719,10 @@ export const costOf = (brain: BrainConfig, listed: ReadonlyArray<BrainModel>, in
 const SearchOut = z.object({ leads: z.array(z.object({ symbol: z.string(), side: z.enum(["buy", "sell"]), thesis: z.string(), confidence: z.number() })), note: z.string() });
 const RiskOut = z.object({ verdict: z.enum(["clear", "reject"]), why: z.string(), sizeUsd: z.number(), tpPct: z.number(), slPct: z.number(), maxHours: z.number() });
 const ExitOut = z.object({ decisions: z.array(z.object({ lead: z.string(), action: z.enum(["hold", "close"]), why: z.string() })) });
-const ReportOut = z.object({ worked: z.string(), change: z.string() });
-const ReviewOut = z.object({ roles: z.array(z.object({ role: z.string(), verdict: z.string() })), prune: z.string() });
+// the Head's change and prune may come with a rule (account/lessons.ts), read strictly where they are kept: one that is not a rule leaves
+// the words alone, never the report
+const ReportOut = z.object({ worked: z.string(), change: z.string(), rule: z.unknown().optional() });
+const ReviewOut = z.object({ roles: z.array(z.object({ role: z.string(), verdict: z.string() })), prune: z.string(), rule: z.unknown().optional() });
 export const DECISIONS = { SearchOut, RiskOut, ExitOut, ReportOut, ReviewOut };
 
 // ---- what the desk needs from the account it lives in ----------------------------------------------------------------------------
@@ -1052,6 +1064,8 @@ export interface DeskView {
   cards: Array<{ id: string; lead?: string | undefined; reason: string; usd: number }>;
   /** the venue's row on the account now: its equity, whether it is a paper account */
   venue: { id: string; name: string; usd: number; paper: boolean; connected: boolean };
+  /** what the desk learned (account/lessons.ts), the newest first: proposed, adopted, rejected, retired */
+  lessons: Lesson[];
 }
 
 export interface DeskCatalog {
@@ -1303,13 +1317,15 @@ export class Desk {
         return this.brainChange(value);
       case "autonomy":
         return this.autonomyChange(v);
+      case "lesson":
+        return this.lessonChange(v);
       case "report": {
         if (!this.file) return bad("no desk is hired");
         await this.report("evening", true);
         return { ok: true, kind: "account", summary: "the report was written" };
       }
       default:
-        return bad(`"${action.change}" is not a change the desk takes: hire · objective · brain · charter · seat · autonomy · pause · resume · end · cycle · report`);
+        return bad(`"${action.change}" is not a change the desk takes: hire · objective · brain · charter · seat · autonomy · lesson · pause · resume · end · cycle · report`);
     }
   }
 
@@ -1458,6 +1474,144 @@ export class Desk {
     return { ok: true, kind: "account", summary: `the desk trades on its own at ${venue.name} (paper money), inside each seat's trading limit` };
   }
 
+  // ---- what the desk learned (account/lessons.ts) ----
+
+  /** the lessons in force, in the order proposed: what Risk judges and the seats' prompts carry */
+  adopted(): Lesson[] {
+    return (this.file?.lessons ?? []).filter((l) => l.state === "adopted");
+  }
+
+  /** every lesson kept, in the order proposed (the Debrief reads them with what each rule would have done); undefined with no desk */
+  lessonsKept(): Lesson[] | undefined {
+    return this.file ? [...(this.file.lessons ?? [])] : undefined;
+  }
+
+  private nextLessonId(): string {
+    const c = this.file!.counters;
+    c.lesson = (c.lesson ?? 0) + 1;
+    return `LS-${String(c.lesson).padStart(4, "0")}`;
+  }
+
+  /** what the Head is told when it names a change or a prune: the rules it may give one as, and what is already kept, so it proposes none
+   * of those again (the adopted, and the latest others) */
+  private ruleAsk(field: "change" | "prune"): string {
+    const ls = this.file?.lessons ?? [];
+    const kept = [...ls.filter((l) => l.state === "adopted"), ...ls.filter((l) => l.state !== "adopted").slice(-10)].map((l) => ({ id: l.id, state: l.state, text: l.text }));
+    return `If the ${field} is one the account can hold the desk to, give it as "rule" too, one of: ${RULE_GUIDE}. Lessons kept already — propose none of them again: ${JSON.stringify(kept)}.`;
+  }
+
+  /** THE HEAD'S PROPOSAL: its change for tomorrow or its prune, kept as a proposed lesson with the rule it named where that is one (a rule
+   * that is not one leaves the words alone) — never the same words or rule twice, nothing for "none". What the report's line says of it */
+  private propose(from: LessonFrom, text: string, raw: unknown, day: string): string {
+    const f = this.file!;
+    if (!text || noChange(text)) return "";
+    const parsed = raw === undefined || raw === null ? undefined : parseRule(raw);
+    const rule = parsed !== undefined && typeof parsed !== "string" ? parsed : undefined;
+    const lessons = (f.lessons ??= []);
+    const same = sameLesson(lessons, text, rule);
+    if (same) return `already lesson ${same.id} (${same.state})`;
+    if (!makeRoom(lessons)) return "";
+    const l: Lesson = { id: this.nextLessonId(), at: this.world.now(), from, text, roles: parseRoles(undefined, rule) as RoleId[], ...(rule ? { rule } : {}), state: "proposed", source: `the ${from === "weekly" ? "weekly review" : "evening report"} of ${day}` };
+    lessons.push(l);
+    return `proposed as lesson ${l.id}${rule ? ` (as a rule: ${ruleWords(rule)})` : ""}: it changes nothing until you adopt it`;
+  }
+
+  /** THE OWNER'S WORD ON A LESSON (setDesk change "lesson", signed — see account/lessons.ts):
+   *
+   *   {op: "propose", text, rule?, roles?, from?, source?}   a lesson of the owner's (or one the Debrief put forward: from "debrief"), kept
+   *                                                         proposed; it changes nothing
+   *   {op: "adopt", text, rule?, roles?, from?, source?}     the same, adopted at once — or, where a proposed lesson says the same, that one
+   *   {op: "adopt", id, text?, rule?, roles?}                a proposed lesson adopted, with the owner's words, rule or seats where given
+   *   {op: "reject", id, why?}                               a proposed lesson turned down: kept on file, never proposed again
+   *   {op: "retire", id, why?}                               an adopted lesson no longer in force: kept on file
+   *
+   * Adopted, its rule is one of Risk's hard checks from the next lead, and its words go into its seats' prompts; LESSONS_ADOPTED_MOST at
+   * once. The room says each in the owner's line */
+  private lessonChange(v: Record<string, unknown>): Outcome {
+    const f = this.file;
+    if (!f) return bad("no desk is hired: lessons are the desk's");
+    const op = String(v.op ?? "");
+    if (!["propose", "adopt", "reject", "retire"].includes(op)) return bad('a lesson\'s op is "propose", "adopt", "reject" or "retire"');
+    const lessons = (f.lessons ??= []);
+    const now = this.world.now();
+    const full = () => bad(`${LESSONS_ADOPTED_MOST} lessons are adopted already: retire one first (each one's words are in its seats' every prompt)`);
+    const said = (l: Lesson) => `“${l.text}”${l.rule ? ` — as a rule: ${ruleWords(l.rule)}` : ""}`;
+    // the owner's words, rule and seats, read strictly wherever they are given
+    const read = (base?: Lesson): { text: string; rule?: LessonRule | undefined; roles: RoleId[] } | Refusal => {
+      const text = v.text === undefined ? (base?.text ?? "") : plainText(v.text, LESSON_TEXT);
+      if (!text) return bad("a lesson is a sentence: what the desk does differently from now on");
+      let rule = base?.rule;
+      if (v.rule === null) rule = undefined;
+      else if (v.rule !== undefined) {
+        const r = parseRule(v.rule);
+        if (typeof r === "string") return bad(r);
+        rule = r;
+      }
+      const roles = parseRoles(v.roles ?? (v.rule !== undefined || !base ? undefined : base.roles), rule);
+      return typeof roles === "string" ? bad(roles) : { text, ...(rule ? { rule } : {}), roles };
+    };
+    const adopt = (l: Lesson): Outcome => {
+      if (this.adopted().length >= LESSONS_ADOPTED_MOST) return full();
+      l.state = "adopted";
+      l.decidedAt = now;
+      this.save();
+      this.room("you", "you", `You adopted lesson ${l.id}: ${said(l)}. ${l.rule ? (l.rule.kind === "plan" ? "Risk holds every plan it gives to it from the next lead." : "Risk holds the desk to it from the next lead, before its brain is asked.") : "Its words go to the seats; no rule binds the desk to it."} It goes to ${l.roles.map((r) => ROLE_SPECS[r].name).join(", ")}.`);
+      return { ok: true, kind: "account", summary: `lesson ${l.id} adopted${l.rule ? `: ${ruleWords(l.rule)}` : ""}` };
+    };
+    if (v.id === undefined) {
+      if (op !== "propose" && op !== "adopt") return bad(`a lesson to ${op} is named by its id (LS-0004)`);
+      const r = read();
+      if (isRefusal(r)) return r;
+      const same = sameLesson(lessons, r.text, r.rule);
+      if (same && same.state === "adopted") return bad(`that is lesson ${same.id}, adopted already`);
+      if (op === "adopt" && this.adopted().length >= LESSONS_ADOPTED_MOST) return full();
+      if (same && same.state === "proposed") {
+        if (op === "propose") return bad(`that is lesson ${same.id}, proposed already`);
+        // the one proposed is the one adopted, in the words, rule and seats the owner signed
+        same.text = r.text;
+        same.roles = r.roles;
+        if (r.rule) same.rule = r.rule;
+        return adopt(same);
+      }
+      if (!makeRoom(lessons)) return bad(`${lessons.length} lessons are kept, each adopted, answered or yours: the desk keeps no more`);
+      const source = plainText(v.source, 80);
+      const l: Lesson = { id: this.nextLessonId(), at: now, from: v.from === "debrief" ? "debrief" : "you", text: r.text, roles: r.roles, ...(r.rule ? { rule: r.rule } : {}), state: "proposed", ...(source ? { source } : {}) };
+      lessons.push(l);
+      if (op === "adopt") return adopt(l);
+      this.save();
+      this.room("you", "you", `You proposed lesson ${l.id}: ${said(l)}. It changes nothing until you adopt it.`);
+      return { ok: true, kind: "account", summary: `lesson ${l.id} proposed` };
+    }
+    const id = String(v.id);
+    const l = lessons.find((x) => x.id === id);
+    if (!l) return bad(`the desk keeps no lesson "${plainText(id, 12)}"`);
+    if (op === "propose") return bad(`lesson ${l.id} is kept already (${l.state})`);
+    if (op === "adopt") {
+      if (l.state !== "proposed") return bad(`lesson ${l.id} is ${l.state}: only a proposed lesson is adopted (propose it again in its own words)`);
+      const r = read(l);
+      if (isRefusal(r)) return r;
+      if (this.adopted().length >= LESSONS_ADOPTED_MOST) return full();
+      l.text = r.text;
+      l.roles = r.roles;
+      if (r.rule) l.rule = r.rule;
+      else delete l.rule;
+      return adopt(l);
+    }
+    const why = plainText(v.why, 200);
+    if (op === "reject") {
+      if (l.state !== "proposed") return bad(`lesson ${l.id} is ${l.state}: only a proposed lesson is rejected`);
+      l.state = "rejected";
+    } else {
+      if (l.state !== "adopted") return bad(`lesson ${l.id} is ${l.state}: only an adopted lesson is retired`);
+      l.state = "retired";
+    }
+    l.decidedAt = now;
+    if (why) l.why = why;
+    this.save();
+    this.room("you", "you", op === "reject" ? `You rejected lesson ${l.id}: ${said(l)}${why ? ` (${why})` : ""}. It stays on file and is not proposed again.` : `You retired lesson ${l.id}: ${said(l)}${why ? ` (${why})` : ""}. The desk is no longer held to it; it stays on file.`);
+    return { ok: true, kind: "account", summary: `lesson ${l.id} ${l.state}` };
+  }
+
   /** hire: the objective, the brain, the seats. The seats' keys are the owner's to let in (approveAgent) and to give limits (approveSpend),
    * which the page signs beside this; the desk reads their standing from the account at every cycle.
    *
@@ -1510,7 +1664,8 @@ export class Desk {
     if (isRefusal(brain)) return brain;
     const name = plainText(v.name, 40) || "The desk";
     const was = this.file;
-    this.file = { v: 1, id: DESK_ID, name, createdAt: now, objective, brain, seats, leads: was ? recentAndOpen(was.leads, MAX_LEADS) : [], equity: [], reports: was?.reports.slice(-MAX_REPORTS) ?? [], spend: was?.spend ?? { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, failed: 0 }, counters: was?.counters ?? { lead: 0, seq: 0 } };
+    // what the desk learned is the owner's record, not one session's: a desk hired again keeps its lessons, the adopted ones in force
+    this.file = { v: 1, id: DESK_ID, name, createdAt: now, objective, brain, seats, leads: was ? recentAndOpen(was.leads, MAX_LEADS) : [], equity: [], reports: was?.reports.slice(-MAX_REPORTS) ?? [], spend: was?.spend ?? { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, failed: 0 }, counters: was?.counters ?? { lead: 0, seq: 0 }, ...(was?.lessons?.length ? { lessons: was.lessons } : {}) };
     this.file.session = this.newSession(venue.usd, now, objective.hours);
     if (said !== undefined) this.file.autonomy = { paper: said, at: now };
     this.reportsDoneBefore(now);
@@ -2101,15 +2256,30 @@ export class Desk {
     const today = this.todayNumbers();
     const lossRoom = s.startEquityUsd * (f.objective.maxDailyLossPct / 100) + Math.min(0, today.pnlUsd);
     const maxSize = r2(Math.min(s.startEquityUsd * (f.objective.maxRiskPct / 100), limit.perOrderUsd, limit.leftUsd));
-    lead.checks = { spreadPct: spread === undefined ? null : Number(spread.toFixed(4)), maxSizeUsd: maxSize, lossRoomUsd: r2(lossRoom), minNotionalUsd: m.minNotional ?? null };
+    const perp = m.kind === "perp";
+    lead.checks = { spreadPct: spread === undefined ? null : Number(spread.toFixed(4)), maxSizeUsd: maxSize, lossRoomUsd: r2(lossRoom), minNotionalUsd: m.minNotional ?? null, changePct24h: m.changePct24h ?? null, ...(perp ? { fundingPctDay: m.fundingRate === undefined ? null : fundingPctDay(m.fundingRate, m.fundingEveryH) } : {}), volumeUsd24h: m.volumeUsd24h ?? null };
     if (lead.side === "sell" && m.kind !== "perp") return reject(`a sell opens a short only on a perpetual; ${lead.symbol} is ${m.kind}`);
     if (spread !== undefined && spread > MAX_SPREAD_PCT) return reject(`spread ${spread.toFixed(2)}% is over ${MAX_SPREAD_PCT}%`);
     if (lossRoom <= 0) return reject(`no room left in the day's loss line (${usd(today.pnlUsd)} today)`);
     if (!(maxSize > 0)) return reject(`nothing left of the Sniper's limit (${usd(limit.leftUsd)} of ${usd(limit.budgetUsd)})`);
     if (m.minNotional !== undefined && maxSize < m.minNotional) return reject(`the most this lead may be (${usd(maxSize)}) is under the venue's smallest order (${usd(m.minNotional)})`);
+    // THE OWNER'S LESSONS (account/lessons.ts): an adopted rule on which leads to take is a hard check like the ones above, judged in numbers
+    // before the brain is asked. One the market gave no number for lets the lead through and says so — never in silence
+    const c = lead.checks;
+    const facts = { symbol: lead.symbol, side: lead.side, at: Date.parse(this.world.now()), perp, confidence: lead.confidence, changePct24h: c.changePct24h, fundingPctDay: c.fundingPctDay, volumeUsd24h: c.volumeUsd24h };
+    const passed: string[] = [];
+    const unjudged: string[] = [];
+    for (const l of this.adopted()) {
+      if (!l.rule || l.rule.kind === "plan") continue;
+      const j = judge(l.rule, facts);
+      if (j.stop) return reject(`lesson ${l.id}: ${ruleWords(l.rule)} — ${j.why}`);
+      if (j.unjudged) unjudged.push(`${l.id} not judged (${j.unjudged})`);
+      else passed.push(l.id);
+    }
     // the room's protocol (" | " between the parts, "Verdict: …" last) is what an outside seat follows; the figures in it are said as a
     // person reads them: the price grouped at the market's own places, the day's volume in the large ($603.9M)
-    const checks = `market open${m.session?.phase && m.session.phase !== "regular" ? ` (${m.session.phase} session${m.session.extendedHours ? ", extended hours" : ""})` : ""} · price ${fig(price, stepPlaces(m.priceStep))} · spread ${spread === undefined ? "n/a" : `${spread.toFixed(2)}%`} · volume ${m.volumeUsd24h === undefined ? "n/a" : USD_COMPACT.format(m.volumeUsd24h)} · day's loss room ${usd(lossRoom)} · size up to ${usd(maxSize)}`;
+    const lessons = passed.length || unjudged.length ? ` · lessons ${[passed.length ? `${passed.join(", ")} passed` : "", ...unjudged].filter(Boolean).join(", ")}` : "";
+    const checks = `market open${m.session?.phase && m.session.phase !== "regular" ? ` (${m.session.phase} session${m.session.extendedHours ? ", extended hours" : ""})` : ""} · price ${fig(price, stepPlaces(m.priceStep))} · spread ${spread === undefined ? "n/a" : `${spread.toFixed(2)}%`} · volume ${m.volumeUsd24h === undefined ? "n/a" : USD_COMPACT.format(m.volumeUsd24h)} · day's loss room ${usd(lossRoom)} · size up to ${usd(maxSize)}${lessons}`;
     const seat = f.seats.find((x) => x.role === "risk");
     let plan = { ...PLAN, sizeUsd: maxSize, why: "the hard checks passed; no Risk seat, so the plan is the default" };
     if (seat) {
@@ -2118,6 +2288,12 @@ export class Desk {
       if (ans.verdict !== "clear") return reject(plainText(ans.why, 200) || "rejected by Risk");
       plan = { sizeUsd: r2(clamp(ans.sizeUsd, 0, maxSize)), tpPct: clamp(ans.tpPct || PLAN.tpPct, ...PLAN_BOUNDS.tpPct), slPct: clamp(ans.slPct || PLAN.slPct, ...PLAN_BOUNDS.slPct), maxHours: clamp(ans.maxHours || PLAN.maxHours, ...PLAN_BOUNDS.maxHours), why: plainText(ans.why, 200) };
       if (!(plan.sizeUsd > 0)) return reject("Risk cleared it at no size");
+    }
+    // an adopted plan rule holds the plan, the brain's or the default: a take-profit and a stop no tighter, a time limit no longer
+    const planRules = this.adopted().flatMap((l) => (l.rule?.kind === "plan" ? [{ id: l.id, rule: l.rule as PlanRule }] : []));
+    if (planRules.length) {
+      const h = holdPlan(plan, planRules);
+      if (h.held.length) plan = { ...plan, tpPct: h.tpPct, slPct: h.slPct, maxHours: h.maxHours, why: `${plan.why} — the plan held to lesson${h.held.length === 1 ? "" : "s"} ${h.held.join(", ")}` };
     }
     lead.state = "cleared";
     lead.sizeUsd = plan.sizeUsd;
@@ -2586,8 +2762,13 @@ export class Desk {
       const lines = [`${head} — Scanned: ${t.scanned} · Cleared: ${t.cleared} · Executed: ${t.executed} · Closed today: ${t.closed} · Open now: ${open.length}`, `PnL today: ${usd(t.pnlUsd)} · Session: ${usd(eq - (f.session?.startEquityUsd ?? eq))} (${pct(f.session && f.session.startEquityUsd ? ((eq - f.session.startEquityUsd) / f.session.startEquityUsd) * 100 : 0)}) · Win rate: ${t.wins + t.losses ? Math.round((t.wins / (t.wins + t.losses)) * 100) : 0}% (${t.wins}W ${t.losses}L)`, `Funnel (session): ${funnel.scanned} scanned → ${funnel.cleared} cleared → ${funnel.confirmed} confirmed → ${funnel.placed !== funnel.executed ? `${funnel.placed} placed → ` : ""}${funnel.executed} executed → ${funnel.closed} closed · ${funnel.rejected} rejected`, best ? `Best: ${best.symbol} ${usd(best.pnlUsd ?? 0)}` : "", worst && worst !== best ? `Worst: ${worst.symbol} ${usd(worst.pnlUsd ?? 0)}` : "", `Brain: ${f.spend.calls} calls · about ${usd(f.spend.usd)}${failed ? ` · ${failed} not answered` : ""}`].filter(Boolean);
       const seat = f.seats.find((s) => s.role === "head");
       if (seat && this.ready().ok && (force || t.scanned + t.closed > 0)) {
-        const ans = await this.think("head", "report", seat.charter, `Write the two sentences of the ${head.toLowerCase()} from these numbers only: ${JSON.stringify({ today: t, open: open.map((l) => ({ id: l.id, symbol: l.symbol, unrealizedUsd: l.unrealizedUsd })), closedToday: closedAll.filter((l) => l.exit && ny(Date.parse(l.exit.at)).day === ny(Date.parse(now)).day).map((l) => ({ id: l.id, symbol: l.symbol, pnlUsd: l.pnlUsd, why: l.exitWhy })), rejectedToday: f.leads.filter((l) => l.state === "rejected" && ny(Date.parse(l.at)).day === ny(Date.parse(now)).day).map((l) => ({ id: l.id, symbol: l.symbol, why: l.why })), objective: f.objective })}. "worked": one thing that worked today, named by lead id. "change": one change for tomorrow. Plain sentences, no numbers the input does not have.`, ReportOut, 400);
-        if (ans) lines.push(`One thing that worked: ${plainText(ans.worked, 240)}`, `One change for tomorrow: ${plainText(ans.change, 240)}`);
+        const ans = await this.think("head", "report", seat.charter, `Write the two sentences of the ${head.toLowerCase()} from these numbers only: ${JSON.stringify({ today: t, open: open.map((l) => ({ id: l.id, symbol: l.symbol, unrealizedUsd: l.unrealizedUsd })), closedToday: closedAll.filter((l) => l.exit && ny(Date.parse(l.exit.at)).day === ny(Date.parse(now)).day).map((l) => ({ id: l.id, symbol: l.symbol, pnlUsd: l.pnlUsd, why: l.exitWhy })), rejectedToday: f.leads.filter((l) => l.state === "rejected" && ny(Date.parse(l.at)).day === ny(Date.parse(now)).day).map((l) => ({ id: l.id, symbol: l.symbol, why: l.why })), objective: f.objective })}. "worked": one thing that worked today, named by lead id. "change": one change for tomorrow, or "none". ${this.ruleAsk("change")} Plain sentences, no numbers the input does not have.`, ReportOut, 500);
+        if (ans) {
+          // the change is kept as a proposed lesson — only the evening's: the owner's report button writes one too, a session's end does not
+          const change = plainText(ans.change, LESSON_TEXT);
+          const said = kind === "evening" ? this.propose("evening", change, ans.rule, ny(Date.parse(now)).day) : "";
+          lines.push(`One thing that worked: ${plainText(ans.worked, 240)}`, `One change for tomorrow: ${change}${said ? ` — ${said}` : ""}`);
+        }
       }
       text = lines.join("\n");
     }
@@ -2614,8 +2795,12 @@ export class Desk {
     const lines = [`WEEKLY REVIEW — ${week.length} leads this week · ${closed.length} closed · ${closed.filter((l) => (l.pnlUsd ?? 0) > 0).length} won · ${usd(closed.reduce((s, l) => s + (l.pnlUsd ?? 0), 0))} · ${refused} refused at the door · days without a refusal: ${days}`];
     const seat = f.seats.find((s) => s.role === "head");
     if (seat && this.ready().ok) {
-      const ans = await this.think("head", "review", seat.charter, `The week's leads: ${JSON.stringify(week.map((l) => ({ id: l.id, symbol: l.symbol, state: l.state, why: l.why, pnlUsd: l.pnlUsd, exitWhy: l.exitWhy })))}. Seats: ${f.seats.map((s) => s.role).join(", ")}. For each seat, one sentence on how it did this week; then "prune": the one thing to stop doing. Numbers only from the input.`, ReviewOut, 600);
-      if (ans) lines.push(...ans.roles.map((r) => `${String(r.role).toUpperCase()}: ${plainText(r.verdict, 200)}`), `Prune: ${plainText(ans.prune, 200)}`);
+      const ans = await this.think("head", "review", seat.charter, `The week's leads: ${JSON.stringify(week.map((l) => ({ id: l.id, symbol: l.symbol, state: l.state, why: l.why, pnlUsd: l.pnlUsd, exitWhy: l.exitWhy })))}. Seats: ${f.seats.map((s) => s.role).join(", ")}. For each seat, one sentence on how it did this week; then "prune": the one thing to stop doing, or "none". ${this.ruleAsk("prune")} Numbers only from the input.`, ReviewOut, 700);
+      if (ans) {
+        const prune = plainText(ans.prune, LESSON_TEXT);
+        const said = this.propose("weekly", prune, ans.rule, ny(Date.parse(now)).day);
+        lines.push(...ans.roles.map((r) => `${String(r.role).toUpperCase()}: ${plainText(r.verdict, 200)}`), `Prune: ${prune}${said ? ` — ${said}` : ""}`);
+      }
     }
     const text = lines.join("\n");
     f.reports.push({ at: now, kind: "weekly", text });
@@ -2657,7 +2842,11 @@ export class Desk {
   private async ask<T>(role: RoleId, what: DeskWork, charter: Charter, input: string, schema: z.ZodType<T>, maxTokens: number, o: { lead?: string | undefined; quiet?: boolean | undefined } = {}): Promise<{ out: T | null; why?: string | undefined; failed: boolean }> {
     const f = this.file!;
     const spec = ROLE_SPECS[role];
-    const system = `You are ${spec.tag}, the ${spec.name} on a trading desk that an account runs for its owner. The account enforces every limit: a seat trades only with a key the owner let in and inside a limit the owner signed, in Guard every order waits for the owner on a card. Your charter — owns: ${charter.owns} Good output: ${charter.good} Never: ${charter.never} The desk's objective this week: "${f.objective.text}". Decide only from the data given; name no number the data does not have; answer in the JSON shape asked for and nothing else.`;
+    // the owner's adopted lessons for this seat, in their words: what steers the brain — the ones with a rule the account holds the desk to
+    // itself, whatever the brain decides
+    const taught = this.adopted().filter((l) => l.roles.includes(role));
+    const lessons = taught.length ? ` Lessons the owner adopted for this desk: ${taught.map((l) => `${l.id} "${l.text}"${l.rule ? ` (the account holds the desk to it: ${ruleWords(l.rule)})` : ""}`).join("; ")}.` : "";
+    const system = `You are ${spec.tag}, the ${spec.name} on a trading desk that an account runs for its owner. The account enforces every limit: a seat trades only with a key the owner let in and inside a limit the owner signed, in Guard every order waits for the owner on a card. Your charter — owns: ${charter.owns} Good output: ${charter.good} Never: ${charter.never} The desk's objective this week: "${f.objective.text}".${lessons} Decide only from the data given; name no number the data does not have; answer in the JSON shape asked for and nothing else.`;
     return this.doing({ role, what, lead: o.lead }, async () => {
       this.inFlight++;
       this.told();
@@ -2748,6 +2937,7 @@ export class Desk {
       reports: f.reports.slice(-10),
       cards,
       venue,
+      lessons: [...(f.lessons ?? [])].reverse(),
     };
   }
 
@@ -2913,6 +3103,9 @@ export class Desk {
     const v = await this.view();
     if (!v) return no("E_ACCOUNT_BAD_ACTION", { message: "no desk is hired on this account" });
     const scan = f.lastScan;
-    return { desk: v.name, objective: v.objective, session: v.session ? { state: v.session.state, startedAt: v.session.startedAt, endsAt: v.session.endsAt, halted: v.session.halted } : undefined, autonomy: { paper: f.autonomy?.paper === true, ...(f.autonomy ? { at: f.autonomy.at } : {}) }, lastScan: scan ? { cycle: scan.cycle, at: scan.at, venue: scan.venue, scanned: scan.rows.length, picked: scan.picked.length, ...(scan.note ? { note: scan.note } : {}) } : null, yourSeat: seat ? { role: seat.role, name: ROLE_SPECS[seat.role].name, charter: seat.charter, trades: ROLE_SPECS[seat.role].trades } : null, seats: f.seats.map((s) => ({ role: s.role, kind: s.kind, name: s.name })), funnel: v.funnel, today: v.today, open: v.open.map((l) => ({ id: l.id, symbol: l.symbol, side: l.side, sizeUsd: l.sizeUsd, entry: l.entry?.price, mark: l.markPrice, unrealizedUsd: l.unrealizedUsd, plan: { tpPct: l.tpPct, slPct: l.slPct, maxHours: l.maxHours } })), room: v.room.slice(-40).map((m) => ({ seq: m.seq, at: m.at, from: m.from, kind: m.kind, lead: m.lead, text: m.text })) };
+    // the owner's adopted lessons (account/lessons.ts): the desk's, and this seat's — an outside seat follows them as a house seat's prompt
+    // does; the ones with a rule the account holds the desk to itself
+    const taught = (role?: RoleId) => this.adopted().filter((l) => !role || l.roles.includes(role)).map((l) => ({ id: l.id, text: l.text, ...(l.rule ? { rule: l.rule, words: ruleWords(l.rule) } : {}), roles: l.roles }));
+    return { desk: v.name, objective: v.objective, session: v.session ? { state: v.session.state, startedAt: v.session.startedAt, endsAt: v.session.endsAt, halted: v.session.halted } : undefined, autonomy: { paper: f.autonomy?.paper === true, ...(f.autonomy ? { at: f.autonomy.at } : {}) }, lastScan: scan ? { cycle: scan.cycle, at: scan.at, venue: scan.venue, scanned: scan.rows.length, picked: scan.picked.length, ...(scan.note ? { note: scan.note } : {}) } : null, yourSeat: seat ? { role: seat.role, name: ROLE_SPECS[seat.role].name, charter: seat.charter, trades: ROLE_SPECS[seat.role].trades, lessons: taught(seat.role) } : null, lessons: taught(), seats: f.seats.map((s) => ({ role: s.role, kind: s.kind, name: s.name })), funnel: v.funnel, today: v.today, open: v.open.map((l) => ({ id: l.id, symbol: l.symbol, side: l.side, sizeUsd: l.sizeUsd, entry: l.entry?.price, mark: l.markPrice, unrealizedUsd: l.unrealizedUsd, plan: { tpPct: l.tpPct, slPct: l.slPct, maxHours: l.maxHours } })), room: v.room.slice(-40).map((m) => ({ seq: m.seq, at: m.at, from: m.from, kind: m.kind, lead: m.lead, text: m.text })) };
   }
 }

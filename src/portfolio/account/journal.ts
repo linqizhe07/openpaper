@@ -42,7 +42,7 @@ export interface TradeLead {
   slPct?: number | undefined;
   maxHours?: number | undefined;
   exitWhy?: string | undefined;
-  checks?: { spreadPct: number | null; maxSizeUsd: number; lossRoomUsd: number; minNotionalUsd: number | null } | undefined;
+  checks?: { spreadPct: number | null; maxSizeUsd: number; lossRoomUsd: number; minNotionalUsd: number | null; changePct24h?: number | null | undefined; fundingPctDay?: number | null | undefined; volumeUsd24h?: number | null | undefined } | undefined;
 }
 
 /** one trade as the journal keeps it */
