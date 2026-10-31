@@ -354,7 +354,8 @@ const flip = (d: Dialect, k: Knob): Dialect => (k === "effort" ? { ...d, effort:
 
 /** the role's shape as a JSON schema the endpoint can hold the answer to. OpenAI's strict mode wants every property required and no
  * additional ones, and knows no bounds (minimum, pattern…): the bounds are dropped here — the answer is checked against the zod shape
- * anyway — and strict is asked only when every property is required */
+ * anyway — and so is a default, which the zod shape fills where an answer leaves the field out (the Head's rule, desk.ts); strict is asked
+ * only when every property is required */
 export function jsonSchemaOf(schema: z.ZodType): { schema: Record<string, unknown>; strict: boolean } {
   const js = z.toJSONSchema(schema as z.ZodType, { unrepresentable: "any" }) as Record<string, unknown>;
   delete js.$schema;
@@ -363,7 +364,7 @@ export function jsonSchemaOf(schema: z.ZodType): { schema: Record<string, unknow
     if (!n || typeof n !== "object") return;
     if (Array.isArray(n)) return void n.forEach(walk);
     const o = n as Record<string, unknown>;
-    for (const k of ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "pattern", "format", "minItems", "maxItems", "multipleOf"]) delete o[k];
+    for (const k of ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "pattern", "format", "minItems", "maxItems", "multipleOf", "default"]) delete o[k];
     if (o.type === "object" && o.properties && typeof o.properties === "object") {
       const keys = Object.keys(o.properties as object);
       const req = Array.isArray(o.required) ? (o.required as unknown[]) : [];

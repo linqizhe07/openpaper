@@ -241,6 +241,8 @@ describe("the question, asked", () => {
       expect(strict).toBe(true);
       expect(schema.$schema).toBeUndefined();
       expect(schema.additionalProperties).toBe(false);
+      // a default the zod shape fills (the Head's rule) is not asked of the endpoint
+      expect(JSON.stringify(schema)).not.toContain('"default"');
     }
     const loose = jsonSchemaOf(z.object({ a: z.string().optional(), n: z.number().min(0).max(1), list: z.array(z.string()).min(1) }));
     expect(loose.strict).toBe(false);

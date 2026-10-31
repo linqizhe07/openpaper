@@ -719,10 +719,13 @@ export const costOf = (brain: BrainConfig, listed: ReadonlyArray<BrainModel>, in
 const SearchOut = z.object({ leads: z.array(z.object({ symbol: z.string(), side: z.enum(["buy", "sell"]), thesis: z.string(), confidence: z.number() })), note: z.string() });
 const RiskOut = z.object({ verdict: z.enum(["clear", "reject"]), why: z.string(), sizeUsd: z.number(), tpPct: z.number(), slPct: z.number(), maxHours: z.number() });
 const ExitOut = z.object({ decisions: z.array(z.object({ lead: z.string(), action: z.enum(["hold", "close"]), why: z.string() })) });
-// the Head's change and prune may come with a rule (account/lessons.ts), read strictly where they are kept: one that is not a rule leaves
-// the words alone, never the report
-const ReportOut = z.object({ worked: z.string(), change: z.string(), rule: z.unknown().optional() });
-const ReviewOut = z.object({ roles: z.array(z.object({ role: z.string(), verdict: z.string() })), prune: z.string(), rule: z.unknown().optional() });
+// The Head's change and prune may come with a rule (account/lessons.ts): its JSON as text, "" for none. A text so that every field stays
+// required — the shape a brain is held to strictly (brain-openai.ts jsonSchemaOf) — and caught so that a rule left out, or sent as an
+// object (taken as its text), never costs the report its sentences; it is read strictly where it is kept, and one that is not a rule leaves
+// the words alone
+const RuleText = z.preprocess((v) => (v && typeof v === "object" ? JSON.stringify(v) : v), z.string()).catch("");
+const ReportOut = z.object({ worked: z.string(), change: z.string(), rule: RuleText });
+const ReviewOut = z.object({ roles: z.array(z.object({ role: z.string(), verdict: z.string() })), prune: z.string(), rule: RuleText });
 export const DECISIONS = { SearchOut, RiskOut, ExitOut, ReportOut, ReviewOut };
 
 // ---- what the desk needs from the account it lives in ----------------------------------------------------------------------------
@@ -1497,15 +1500,21 @@ export class Desk {
   private ruleAsk(field: "change" | "prune"): string {
     const ls = this.file?.lessons ?? [];
     const kept = [...ls.filter((l) => l.state === "adopted"), ...ls.filter((l) => l.state !== "adopted").slice(-10)].map((l) => ({ id: l.id, state: l.state, text: l.text }));
-    return `If the ${field} is one the account can hold the desk to, give it as "rule" too, one of: ${RULE_GUIDE}. Lessons kept already — propose none of them again: ${JSON.stringify(kept)}.`;
+    return `"rule": if the ${field} is one the account can hold the desk to, that rule as JSON, one of: ${RULE_GUIDE}; else "". Lessons kept already — propose none of them again: ${JSON.stringify(kept)}.`;
   }
 
-  /** THE HEAD'S PROPOSAL: its change for tomorrow or its prune, kept as a proposed lesson with the rule it named where that is one (a rule
-   * that is not one leaves the words alone) — never the same words or rule twice, nothing for "none". What the report's line says of it */
-  private propose(from: LessonFrom, text: string, raw: unknown, day: string): string {
+  /** THE HEAD'S PROPOSAL: its change for tomorrow or its prune, kept as a proposed lesson with the rule it named where that is one (`raw`,
+   * the rule's JSON as text: one that does not read, or is not a rule, leaves the words alone) — never the same words or rule twice, nothing
+   * for "none". What the report's line says of it */
+  private propose(from: LessonFrom, text: string, raw: string, day: string): string {
     const f = this.file!;
     if (!text || noChange(text)) return "";
-    const parsed = raw === undefined || raw === null ? undefined : parseRule(raw);
+    let parsed: LessonRule | string | undefined;
+    try {
+      parsed = raw.trim() ? parseRule(JSON.parse(raw)) : undefined;
+    } catch {
+      parsed = undefined;
+    }
     const rule = parsed !== undefined && typeof parsed !== "string" ? parsed : undefined;
     const lessons = (f.lessons ??= []);
     const same = sameLesson(lessons, text, rule);

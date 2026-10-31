@@ -1204,7 +1204,7 @@ describe("the desk's lessons (account/lessons.ts)", () => {
     let v = (await desk.view())!;
     expect(v.lessons).toEqual([{ id: "LS-0001", at: v.lessons[0]!.at, from: "evening", text: "Stop buying what already ran 8% on the day.", roles: ["search", "risk"], rule: { kind: "chase", maxPct: 8 }, state: "proposed", source: "the evening report of 2026-10-12" }]);
     expect(v.reports.at(-1)?.text).toContain("One change for tomorrow: Stop buying what already ran 8% on the day. — proposed as lesson LS-0001 (as a rule: no lead on a market that moved more than 8% over the day its way): it changes nothing until you adopt it");
-    expect(heard).toContain('If the change is one the account can hold the desk to, give it as "rule" too, one of: {"kind":"chase","maxPct":n}');
+    expect(heard).toContain('"rule": if the change is one the account can hold the desk to, that rule as JSON, one of: {"kind":"chase","maxPct":n}');
     expect(heard).toContain('Lessons kept already — propose none of them again: [].');
     // the same change again (the owner's report button: a day with nothing scanned asks the Head nothing): the one kept; then a rule that is
     // not one, kept as words alone
