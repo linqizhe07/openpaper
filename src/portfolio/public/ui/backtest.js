@@ -27,7 +27,7 @@
    numbers, markets, bars, the window — its end at the holdout's start at the latest —, money, fee, leverage, the cost model, the
    buy-and-hold beside it), drawn once from the catalog and never again while it is typed in · the result (what ran; the equity of the
    strategy and of the buy-and-hold on one chart, the strategy's drawdown under it; the figures side by side; how it is judged; the notes;
-   the fills) · the trials (the ledger's latest runs, newest first: Open, and the owner's Look at the holdout…). Nothing is made up: every
+   its round trips debriefed (ui/debrief.js); the fills) · the trials (the ledger's latest runs, newest first: Open, and the owner's Look at the holdout…). Nothing is made up: every
    figure is the account's. */
 
 /* what the form runs: "run" (one strategy over the window), "walk" (a grid walked forward through the folds) or "desk" (the desk itself,
@@ -395,6 +395,8 @@ function btViewOfKept(k) {
     looks: k.looks,
     trial: k.trial && k.trial.seq,
     notes: [...(k.notes || []), ...(r.notes || [])],
+    // its round trips debriefed by the account (account/debrief.ts), where the run kept them
+    debrief: k.debrief,
   };
 }
 async function btOpen(id) {
@@ -618,7 +620,16 @@ function btResultHtml(v) {
   const head = `<div class="card-head"><div><h2 class="h2">${esc(s.name || s.id || "A backtest")}${v.window === "holdout" ? ' <span class="tag warn">Held-out data</span>' : ""}</h2><p class="dim small">${esc(s.paramWords || btParamWords(s.params))}${markets ? ` · ${esc(markets)}` : ""} · ${esc(btDay(v.from))} → ${esc(btDay(v.to))} UTC${v.feeBps !== undefined ? ` · fee ${esc(v.feeBps)} bps` : ""}${v.leverage ? ` · perpetuals at ${esc(v.leverage)}x` : ""}</p></div>${v.id ? `<span class="mono small dim">${esc(v.id)}</span>` : ""}</div>`;
   const notes = (v.notes || []).length ? `<details class="bt-notes-box"><summary>${esc(plural(v.notes.length, "note"))}</summary><ul class="bt-notes small dim">${v.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : "";
   const refused = v.refused ? `<p class="msg wait">${esc(plural(v.refused, "order"))} not filled: the notes say why.</p>` : "";
-  return `${head}${btChartHtml(v)}${btFiguresHtml(v)}${btJudgedHtml(v)}${refused}${notes}${btFillsHtml(v)}`;
+  return `${head}${btChartHtml(v)}${btFiguresHtml(v)}${btJudgedHtml(v)}${refused}${notes}${btDebriefHtml(v)}${btFillsHtml(v)}`;
+}
+
+/* the run's round trips debriefed (ui/debrief.js debriefHtml): what the costs took, whether its losses could be turned round, how far each
+   trade went for and against it, where it went wrong */
+function btDebriefHtml(v) {
+  const d = v.debrief;
+  if (!d || !d.trades || typeof debriefHtml !== "function") return "";
+  const said = { costs: "the loss is the costs", invertible: "a loss worth testing the other way", "not-enough": "a loss too small to turn round", edge: "an edge after costs", unproven: "not yet told apart from luck", few: "too few to say" }[d.inversion && d.inversion.verdict] || "";
+  return `<details class="bt-debrief"><summary>Debrief · ${esc(plural(d.trades, "round trip"))}${said ? ` · ${esc(said)}` : ""}</summary>${debriefHtml(d)}</details>`;
 }
 
 /** A WALK as the result shows it: what was walked, the folds chained as one curve, what the chain earned out of sample and what share of

@@ -1,0 +1,64 @@
+/* DEBRIEF (ui/debrief.js): the journal's trades debriefed, and a kept backtest run's under its result. Colours, radii and type only from
+   ui/tokens.css, Light and Black alike; the cards, tables, toggles and pills are the shell's own (ui/shell.css). Up and down are said in
+   words and signs as well (chg), never by colour alone */
+.db { display: flex; flex-direction: column; gap: 20px; min-width: 0; container-type: inline-size; }
+.db-body { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.db-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.db-top p { margin: 6px 0 0; max-width: 68ch; }
+.db-scope { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.db-venue select { min-height: 38px; }
+
+/* two cards side by side, stacked on a narrow pane */
+.db-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; min-width: 0; }
+@container (max-width: 860px) { .db-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.db-verdict { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; margin-top: 4px; }
+.db-verdict.warn { border-left-color: var(--warn); }
+.db-verdict.up { border-left-color: var(--up); }
+.db-verdict p { margin: 4px 0 0; font-size: 15px; line-height: 1.5; max-width: 72ch; }
+.db-notes { margin: 12px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.5; }
+.db-notes li { margin: 6px 0; }
+.db-figs th[scope="row"] { font-weight: 600; color: var(--dim); font-size: 13px; text-align: left; white-space: nowrap; }
+/* a figure's own words under it, so a narrow card wraps rather than cuts them */
+.db-figs td { white-space: normal; }
+.db-figs td > .dim { display: block; font-size: 12px; }
+
+/* a value drawn as a bar on one scale: its words left, the bar, the figure right */
+.db-bars { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.db-bar { display: grid; grid-template-columns: minmax(96px, 9.5em) minmax(0, 1fr) auto; gap: 12px; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.db-bar .k { color: var(--dim); font-weight: 600; }
+.db-bar .track { height: 10px; border-radius: var(--radius-pill); background: var(--surface-2); overflow: hidden; }
+.db-bar .fill { display: block; height: 100%; border-radius: var(--radius-pill); }
+.db-bar .fill.up { background: var(--up); }
+.db-bar .fill.down { background: var(--down); }
+.db-bar .v { min-width: 5.5em; text-align: right; }
+
+.db-legend { display: flex; gap: 12px; font-size: 12px; color: var(--dim); }
+.db-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.db-legend .dot.up, .db-sc circle.up { background: var(--up); fill: var(--up); }
+.db-legend .dot.down, .db-sc circle.down { background: var(--down); fill: var(--down); }
+.db-sc { width: 100%; height: 200px; display: block; }
+.db-sc circle { fill-opacity: 0.7; }
+.db-sc .axis, .db-cv .zero { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.db-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.db-scatter p, .db-cal p { margin: 8px 0 0; }
+
+.db-slice summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--dim); padding: 6px 0; }
+.db-slice .t-wrap { margin: 4px 0 8px; }
+
+.db-cv { width: 100%; height: 140px; display: block; }
+.db-cv .line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.db-cv .line.up { stroke: var(--up); }
+.db-cv .line.down { stroke: var(--down); }
+
+/* a kept backtest run's debrief, under its result (ui/backtest.js): a container of its own, so its cards stack to its own width — the
+   result's column — and not the whole pane's */
+.bt-debrief { container-type: inline-size; min-width: 0; }
+.bt-debrief summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--dim); }
+.bt-debrief[open] summary { margin-bottom: 12px; }
+.bt-debrief .db-grid { margin-bottom: 20px; }
+
+@media (max-width: 720px) {
+  .db-bar { grid-template-columns: minmax(80px, 7em) minmax(0, 1fr) auto; }
+  .db-sc { height: 160px; }
+}

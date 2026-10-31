@@ -165,6 +165,12 @@
  *                                                        closed, oldest first — each its entry and exit, net, fees, funding, MAE and MFE,
  *                                                        how it ended, who opened and closed it, the desk's lead where one placed it —
  *                                                        with how many there are and whether the chain is intact (or where it broke)
+ *   GET  /api/account/debrief?venue=&who=&days=          THE DEBRIEF of those trades (account/debrief.ts): net, costs and gross per trade
+ *                                                        with their ranges, the win rate the wins' and losses' sizes need, the plan's,
+ *                                                        whether the losses could be turned round, MAE and MFE, R, how trades ended,
+ *                                                        slices, the desk's calibration, the curve, the findings in words — of one venue,
+ *                                                        one hand (you, desk, agents), the last 7, 30 or 90 days — with the venues there
+ *                                                        are and the latest 50 trades. A kept run's (GET /api/account/backtest) is in it
  *   GET  /api/account/book?venue=&symbol=&depth=20        one market's order book, best first (a market whose source has no book: its best
  *                                                        bid and ask only, depth "top"); kept a second and a half
  *   GET  /api/account/trades?venue=&symbol=&limit=30      one market's latest trades, newest first; kept three seconds (a source that
@@ -909,6 +915,14 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     if (!q) return;
     if (q.limit !== "" && !(/^\d{1,5}$/.test(q.limit) && Number(q.limit) >= 1 && Number(q.limit) <= JOURNAL_READ_MOST)) return void bad(res, `a limit is a count of trades, 1 to ${JOURNAL_READ_MOST.toLocaleString("en-US")}`);
     answerOf(res, svc.journal({ limit: q.limit ? Number(q.limit) : 500, ...(q.venue ? { venue: q.venue } : {}) }));
+  }));
+  app.get("/api/account/debrief", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { venue: 80, who: 10, days: 3 });
+    if (!q) return;
+    if (q.who !== "" && q.who !== "you" && q.who !== "desk" && q.who !== "agents") return void bad(res, "who is you, desk or agents (or nothing: everyone)");
+    if (q.days !== "" && q.days !== "7" && q.days !== "30" && q.days !== "90") return void bad(res, "days is 7, 30 or 90 (or nothing: every trade)");
+    answerOf(res, svc.debrief({ ...(q.venue ? { venue: q.venue } : {}), ...(q.who ? { who: q.who as "you" | "desk" | "agents" } : {}), ...(q.days ? { days: Number(q.days) } : {}) }));
   }));
   app.get("/api/account/backtest", wrap(async (req, res) => {
     if (!mounted(res)) return;
