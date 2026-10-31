@@ -37,6 +37,7 @@ import type { LiveEarn } from "./live-earn.ts";
 import type { LiveOrder } from "./live-orders.ts";
 import type { KeptAuthorisation } from "./pay-real.ts";
 import type { Payment } from "./payments.ts";
+import type { TradePlan } from "./plans.ts";
 import { actionHash, isAgentAction, isOwnerAction, isJwk, kidOf, malformed, signerOf, type AgentAction, type Envelope, type OwnerAction } from "./sign.ts";
 import { applyOwner, applyReport, deviceKeys, FIRED_ALERTS_KEPT, isOwner, type AccountState, type ApplyOptions, type FiredAlert, type SpendApproval } from "./state.ts";
 
@@ -168,6 +169,12 @@ export interface Rebuilt {
   /** what was not brought back, and why */
   skipped: string[];
   owner: boolean;
+  /** the owner's own limits as signed (setPolicy self), oldest first, each at its row's moment (account/plans.ts) */
+  selfSigned: Array<{ value: string; at: string }>;
+  /** the owner's entries at a paper account, by their client id: what their own entries a day count */
+  ownEntries: Array<{ clientId: string; at: string }>;
+  /** the plans kept on the owner's orders, by the order's client id: what a trade opened before a restart carries to the journal */
+  ownPlans: Array<readonly [string, TradePlan]>;
 }
 
 /** the signer ids a convertToMultiSigUser names (its JSON's authorizedUsers), or none when it cannot be read */
@@ -213,6 +220,9 @@ export async function rebuild(rows: readonly LedgerRow[], base: AccountState, op
   // the most leverage the owner has signed for agents (1x until then): a dial row says what it was set to, a signature says it may be that much
   let signedLeverage = 1;
   let signedCap: number | undefined;
+  // the owner's own limits on their paper trading (account/plans.ts), as signed, in their order: the service plays them again, each at the
+  // moment its row was written, so a loosening still waiting waits on from when it was signed
+  const selfSigned: Array<{ value: string; at: string }> = [];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
@@ -311,6 +321,7 @@ export async function rebuild(rows: readonly LedgerRow[], base: AccountState, op
         if (action.change === "maxLeverage" && /^\d{1,3}$/.test(action.value) && Number(action.value) >= 1) signedLeverage = Number(action.value);
         // the most one order or movement may be worth: the owner's last signed figure stands, whichever way it went
         if (action.change === "cap" && /^\d{1,7}(\.\d{1,2})?$/.test(action.value) && Number(action.value) > 0) signedCap = Number(action.value);
+        if (action.change === "self") selfSigned.push({ value: action.value, at: row.ts });
       } else if (action.type === "connectVenue") {
         const proof = (row.native as { proof?: KeptProof } | undefined)?.proof;
         connections.delete(action.venue);
@@ -383,7 +394,13 @@ export async function rebuild(rows: readonly LedgerRow[], base: AccountState, op
   // a price alert that lapsed while the account was down is gone, like one that lapses while it runs
   const nowMs = opts.nowMs;
   if (nowMs !== undefined && Number.isFinite(nowMs)) s = { ...s, alerts: s.alerts.filter((x) => nowMs < Date.parse(x.expiresAt)) };
-  return { state: s, dial, authorisations: [...kept.values()], connections: [...connections.values()], orders: [...orders.values()].filter(unfinishedOrder), payments: [...payments.values()].filter(unfinishedPayment), earns: [...earns.values()].filter((e) => e.status === "pending"), ids, fired, skipped, owner: s.owners.length > 0 };
+  // the owner's entries at a paper account (what their own entries a day count, a restart notwithstanding: the service keeps the last two
+  // days' by the clock that stamped them), and the plans kept on their orders (what a trade opened before the restart and closed after it
+  // carries to the journal)
+  const all = [...orders.values()];
+  const ownEntries = all.filter((o) => o.entry && o.authority === "owner" && !(o.status === "canceled" && !(o.filledQty > 0))).map((o) => ({ clientId: o.clientId, at: o.at }));
+  const ownPlans = all.flatMap((o) => (o.plan && o.authority === "owner" ? [[o.clientId, o.plan] as const] : []));
+  return { state: s, dial, authorisations: [...kept.values()], connections: [...connections.values()], orders: all.filter(unfinishedOrder), payments: [...payments.values()].filter(unfinishedPayment), earns: [...earns.values()].filter((e) => e.status === "pending"), ids, fired, skipped, owner: s.owners.length > 0, selfSigned, ownEntries, ownPlans };
 }
 
 /** a wallet's proof kept on its connection row, checked again: the wallet's signature over the sentence, naming the address */

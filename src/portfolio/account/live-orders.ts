@@ -35,6 +35,7 @@ import type { CardLike, Outcome } from "./exchange.ts";
 import type { LiveEngine, LiveMoney, LiveVenue } from "./live-moves.ts";
 import { figure, orderLine } from "./statement.ts";
 import { CARD_TTL_MS } from "./mode-rules.ts";
+import type { TradePlan } from "./plans.ts";
 import { micro, type AgentAction, type Envelope, type OwnerAction } from "./sign.ts";
 import { covers, renewSpend, spendFor, type AgentKey, type SpendApproval } from "./state.ts";
 
@@ -109,6 +110,10 @@ export interface LiveOrder {
    * while its venue refused this network, so what it held of a limit was given back and nothing is asked of the venue about it. What became
    * of it is the venue's to show */
   unfollowed?: true | undefined;
+  /** the owner's plan signed for it on the ticket (account/plans.ts), carried to the journal's trade it opens */
+  plan?: TradePlan | undefined;
+  /** an owner's order at a paper account that opened or added to a position: what the owner's own entries a day are counted in */
+  entry?: true | undefined;
   /** the owner asked to cancel it while its venue refused this network: the account sends that cancel again by itself once a check of the
    * network finds the venue answering, and follows the order again from the venue's answer */
   cancelWanted?: true | undefined;
@@ -144,11 +149,19 @@ export interface AutonomyHook {
   autonomy?(signer: string, venue: string): string | undefined;
 }
 
+/** THE OWNER'S PLAN AND OWN LIMITS (account/plans.ts): the plan the owner signed for their next entry, read (`keep`) or taken for the order
+ * it goes on, and what holds a new entry of theirs back at a paper account — asked only of the owner's order at a paper account that opens
+ * or adds to a position (opens), never of a close. Their words go back to the owner as the refusal's (E_ACCOUNT_LIMIT) */
+export interface PlanHook {
+  takePlan?(venue: string, symbol: string, side: string, keep?: boolean): TradePlan | undefined;
+  selfBlock?(o: { planned?: boolean | undefined }): { why: string; until?: string | undefined } | undefined;
+}
+
 /** what this door uses of the engine, besides what the money door uses */
 export interface OrderEngine extends LiveEngine {
   orders: LiveOrder[];
   nextOrderId(): string;
-  host: LiveEngine["host"] & AutonomyHook;
+  host: LiveEngine["host"] & AutonomyHook & PlanHook;
 }
 
 interface Fields {
@@ -558,6 +571,12 @@ export class LiveOrders {
     if (isRefusal(p)) return p;
     const line = await this.placeRule(p.v, p.side, p.reduceOnly, p.m.symbol);
     if (line) return line;
+    // the owner's own limits that pass with time (a day's loss, a streak's pause, the entries a day), said before anything is signed: a plan
+    // is signed with the order, after this
+    if (await this.opens(p)) {
+      const held = this.e.host.selfBlock?.({});
+      if (held) return no("E_ACCOUNT_LIMIT", { venue: p.v.id, message: held.why, detail: { self: true, ...(held.until ? { until: held.until } : {}) } });
+    }
     // a buy signs the most it may cost; a sell signs what it is worth now, and a market sell may then fetch at most 2% less
     const worth = (p.side === "buy" ? cents(p.maxUsd) : Math.floor(p.notional * 100 + 1e-6) / 100).toFixed(2);
     const { refuses, note: _also, ...est } = await this.estimateOf(p);
@@ -607,7 +626,32 @@ export class LiveOrders {
     if (this.money()!.realNow() > a.deadline) return no("E_ACCOUNT_EXPIRED", { message: "this order was good for ten minutes after it was prepared: prepare it again" });
     const p = this.hold(planned, a.symbol, Number(a.maxNotional), "signed for");
     if (isRefusal(p)) return p;
-    return this.place(p, { signer: who.signer, authority: "owner", action: who.hash, envelope: who.envelope });
+    // THE OWNER'S OWN LIMITS (account/plans.ts): a new entry at a paper account — never a close — is held to them, a plan kept for it read
+    // first and taken only once the entry goes, so a refused entry leaves its plan for the next try
+    const entry = await this.opens(p);
+    const plan = entry ? this.e.host.takePlan?.(p.v.id, p.m.symbol, p.side, true) : undefined;
+    if (entry) {
+      const held = this.e.host.selfBlock?.({ planned: plan !== undefined });
+      if (held) return no("E_ACCOUNT_LIMIT", { venue: p.v.id, message: held.why, detail: { self: true, ...(held.until ? { until: held.until } : {}) } });
+      this.e.host.takePlan?.(p.v.id, p.m.symbol, p.side);
+    }
+    return this.place(p, { signer: who.signer, authority: "owner", action: who.hash, envelope: who.envelope, ...(plan ? { plan } : {}), ...(entry ? { entry: true } : {}) });
+  }
+
+  /** An order of the owner's at a PAPER account that opens a position or adds to one — where the owner's own limits hold (account/plans.ts).
+   * Not one that only closes or cuts: reduce-only; a sell where selling only sells what is held (a coin, a share, a contract of an event);
+   * a perpetual's order against the position it holds, no bigger than it. A position the venue does not answer for is taken as none */
+  private async opens(p: Plan): Promise<boolean> {
+    if (p.v.paper !== true || p.reduceOnly) return false;
+    if (p.side === "sell" && (p.m.sellsReduce === true || (p.m.kind !== "perp" && p.m.kind !== "future"))) return false;
+    if (p.m.kind !== "perp" && p.m.kind !== "future") return true;
+    const read = p.v.trader.positions;
+    if (!read) return true;
+    const held = await safely(() => read.call(p.v.trader), p.v.id, p.v.name, 5_000);
+    const pos = isRefusal(held) ? undefined : held.find((x) => x.symbol === p.m.symbol && x.qty > 0);
+    if (!pos) return true;
+    const against = (pos.side === "long" && p.side === "sell") || (pos.side === "short" && p.side === "buy");
+    return !(against && p.qty <= pos.qty * (1 + 1e-9));
   }
 
   /** the superagent's words for this order (AutonomyHook), or undefined: asked only in Guard, only at a venue that is paper by its own
@@ -903,6 +947,8 @@ export class LiveOrders {
       ...(who.card ? { card: who.card } : {}),
       ...(who.approval ? { approval: who.approval } : {}),
       ...(who.action ? { action: who.action } : {}),
+      ...(who.plan ? { plan: who.plan } : {}),
+      ...(who.entry ? { entry: true as const } : {}),
       note: "",
       updatedAt: at,
       native: r.native,
@@ -1726,6 +1772,9 @@ interface Who {
   action?: Hex | undefined;
   approval?: string | undefined;
   envelope?: Envelope | undefined;
+  /** the owner's plan signed for this order (account/plans.ts), and that it opens or adds to a position at a paper account: kept on it */
+  plan?: TradePlan | undefined;
+  entry?: boolean | undefined;
 }
 
 /** A venue call that throws answers as a refusal, never as an exception through the door. A READ may also be given a time limit; a call that

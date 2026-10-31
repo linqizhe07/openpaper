@@ -166,6 +166,9 @@
 .tk-adv summary { list-style: none; display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; }
 .tk-adv summary::-webkit-details-marker { display: none; }
 .tk-adv-t { font-weight: 600; font-size: 13px; flex: none; }
+/* THE PLAN (ui/trade.js, at a paper account): the Advanced line's look; its size button sits on the risk field's line, its words under it */
+.tk-plan .tk-plan-size { align-self: end; min-height: 38px; }
+.tk-plan [data-plan-say] { margin: 6px 0 0; }
 .tk-adv-s { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk-adv summary .ico { flex: none; transition: transform 180ms cubic-bezier(.2,.8,.2,1); }
 .tk-adv[open] summary .ico { transform: rotate(180deg); }
