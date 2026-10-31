@@ -566,7 +566,8 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     // the dial as the page needs it: the agents' session, the venues switched off for agents, the most leverage they may set
     // and how each venue connected live has answered lately (its health, for the Venues board)
     // and the command an agent's owner runs to add this account's seat (the server's own origin, the seat by its absolute path)
-    res.json({ ok: true, version: VERSION, commit: commitSha(), ...(view.real ? realPage(view) : view), mode: o.mode, live: svc.live, dial: { sessionExpiresAt: o.sessionExpiresAt, sessionEnded: Date.parse(o.sessionExpiresAt) <= Date.parse(view.now), revoked: o.revoked, maxLeverage: o.maxLeverage ?? 1 }, health: svc.venueHealth(), memoryAsks: svc.memoryAsks(), agentSetup: agentSetupOf(origin || `${req.protocol}://${req.get("host") ?? "127.0.0.1"}`) });
+    // and the owner's own limits on their paper trading (account/plans.ts): in force, a loosening waiting, what holds a new entry back now
+    res.json({ ok: true, version: VERSION, commit: commitSha(), ...(view.real ? realPage(view) : view), mode: o.mode, live: svc.live, self: svc.selfView(), dial: { sessionExpiresAt: o.sessionExpiresAt, sessionEnded: Date.parse(o.sessionExpiresAt) <= Date.parse(view.now), revoked: o.revoked, maxLeverage: o.maxLeverage ?? 1 }, health: svc.venueHealth(), memoryAsks: svc.memoryAsks(), agentSetup: agentSetupOf(origin || `${req.protocol}://${req.get("host") ?? "127.0.0.1"}`) });
   }));
 
   app.post("/api/account/pair", (req, res) => {

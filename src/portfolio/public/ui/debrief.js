@@ -22,7 +22,13 @@
    "lesson" {op: propose · adopt · reject · retire}): adopted, its rule is one of Risk's hard checks and its words are in its seats' prompts.
    "Test in the lab…" puts a lesson's rule in the Backtest page's desk form (ui/backtest.js BT.deskRules), for the owner to run the desk over
    the same bars with it. Only the owner sees the buttons; a viewer reads. And THE DESK'S VERSIONS: each configuration it ran under, what
-   changed, and what its trades made (the Debrief's version slice). */
+   changed, and what its trades made (the Debrief's version slice).
+
+   YOUR PLANS AND YOUR OWN LIMITS (account/plans.ts). The owner's trades with a plan signed on the Trade ticket beside those without — the
+   planned ones in R, the stops not kept, the winners closed before their target, the setups, how sure the owner said they were against how
+   often they won (the debrief's `plans`). And the limits the owner holds their own paper trading to (setPolicy change "self"): what holds
+   now, a loosening waiting and from when, what holds a new entry back now — set and taken away by the owner's signature, a loosening
+   waiting the hours the limits in force say. */
 
 const DB = { read: null, err: "", venue: "", who: "", days: "" };
 const DB_HOURS = ["00–04", "04–08", "08–12", "12–16", "16–20", "20–24"];
@@ -91,7 +97,7 @@ function dbDraw(el) {
   if (DB.err && !DB.read) return paint(body, `<div class="msg no">${esc(DB.err)}</div>`);
   if (!DB.read) return;
   const d = DB.read.debrief;
-  paint(body, `${DB.err ? `<div class="msg no">${esc(DB.err)}</div>` : ""}${d && d.trades ? `${debriefHtml(d)}${dbLessonsHtml(DB.read)}${dbLatestHtml(DB.read.latest || [])}` : `${dbEmptyHtml()}${dbLessonsHtml(DB.read)}`}`);
+  paint(body, `${DB.err ? `<div class="msg no">${esc(DB.err)}</div>` : ""}${d && d.trades ? `${debriefHtml(d)}${dbSelfHtml(DB.read.self)}${dbLessonsHtml(DB.read)}${dbLatestHtml(DB.read.latest || [])}` : `${dbEmptyHtml()}${dbSelfHtml(DB.read.self)}${dbLessonsHtml(DB.read)}`}`);
 }
 
 /* the header: what this is, and the scope — whose trades, which paper account, the window */
@@ -115,7 +121,7 @@ const dbFew = (n) => (n < 30 ? ' <span class="tag" title="Fewer than 30 trades: 
 /** THE DEBRIEF'S BODY (see the top of this file), for the journal's trades or a backtest's run */
 function debriefHtml(d) {
   if (!d || !d.trades) return '<p class="empty">No closed trade: nothing to debrief.</p>';
-  return `<div class="db-grid">${dbFindingsHtml(d)}${dbFiguresHtml(d)}</div><div class="db-grid">${dbMoneyHtml(d)}${dbEndsHtml(d)}</div><div class="db-grid">${dbScatterHtml(d)}${dbRHtml(d)}</div>${dbSlicesHtml(d)}${dbCalibrationHtml(d)}${dbCurveHtml(d)}`;
+  return `<div class="db-grid">${dbFindingsHtml(d)}${dbFiguresHtml(d)}</div><div class="db-grid">${dbMoneyHtml(d)}${dbEndsHtml(d)}</div><div class="db-grid">${dbScatterHtml(d)}${dbRHtml(d)}</div>${dbPlansHtml(d)}${dbSlicesHtml(d)}${dbCalibrationHtml(d)}${dbCurveHtml(d)}`;
 }
 
 function dbFindingsHtml(d) {
@@ -224,6 +230,72 @@ function dbCurveHtml(d) {
   const line = `M${pts.map(([t, u]) => `${x(t)},${y(u)}`).join("L")}`;
   const end = pts[pts.length - 1][1];
   return `<section class="sec db-curve" aria-labelledby="db-cv-h"><div class="card-head"><h2 class="h2" id="db-cv-h">Trade after trade</h2><span class="small">${chg(end, "$")}</span></div><svg class="db-cv" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(`The net result trade after trade, from ${money(0)} to ${money(end)}; lowest ${money(lo)}, highest ${money(hi)}`)}"><line class="zero" x1="0" y1="${y(0)}" x2="${w}" y2="${y(0)}"/><path class="line ${end < 0 ? "down" : "up"}" d="${line}"/></svg></section>`;
+}
+
+/* YOUR PLANS (see the top of this file): the owner's trades with a plan beside those without, the planned ones in R, the stops not kept,
+   the winners closed before their target, the setups and how sure the owner said they were — nothing where none of the trades is theirs */
+function dbPlansHtml(d) {
+  const p = d.plans;
+  if (!p) return "";
+  if (!p.planned.n) return `<section class="sec db-plans" aria-labelledby="db-pl-h"><div class="card-head"><h2 class="h2" id="db-pl-h">Your plans</h2></div><p class="empty">None of your ${esc(plural(p.unplanned.n, "trade"))} here had a plan. On the Trade ticket, at a paper account, write why under Plan before you sign: the journal keeps it with the trade, and this says whether it was kept.</p></section>`;
+  const row = (label, x) => `<tr><th scope="row">${esc(label)}</th><td class="r">${esc(x.n)}${dbFew(x.n)}</td><td class="r">${x.n ? `${esc(dbNum(x.winRatePct, 0))}%` : '<span class="dim">—</span>'}</td><td class="r">${x.n ? chg(x.meanPct) : '<span class="dim">—</span>'}</td><td class="r">${x.n ? chg(x.netUsd, "$") : '<span class="dim">—</span>'}</td></tr>`;
+  const kept = [p.r ? `In R: ${dbNum(p.r.meanR)} a trade over ${plural(p.r.trades, "trade")} with a stop.` : "", p.r && p.r.pastStop ? `${plural(p.r.pastStop, "trade")} lost more than the stop allowed: the stop was not kept, the price gapped through it, or the size was more than the plan's 1R.` : "", p.early ? `${plural(p.early, "winner")} closed before the target.` : ""].filter(Boolean);
+  const setups = (p.setups || []).length ? `<h3>By setup</h3>${table([{ label: "Setup", cell: (x) => `${esc(x.label)}${dbFew(x.n)}` }, { label: "Trades", r: true, cell: (x) => esc(x.n) }, { label: "Won", r: true, cell: (x) => `${esc(dbNum(x.winRatePct, 0))}%` }, { label: "Net a trade", r: true, cell: (x) => chg(x.meanPct) }], p.setups, { cls: "db-slice-t" })}` : "";
+  const sure = (p.calibration || []).length ? `<h3>How sure you said you were</h3>${table([{ label: "You said", cell: (c) => `${esc(c.label)}${dbFew(c.n)}` }, { label: "Trades", r: true, cell: (c) => esc(c.n) }, { label: "On average", r: true, cell: (c) => `${esc(dbNum(c.saidPct, 0))}%` }, { label: "They won", r: true, cell: (c) => `${esc(dbNum(c.wonPct, 0))}%` }], p.calibration)}` : "";
+  return `<section class="sec db-plans" aria-labelledby="db-pl-h"><div class="card-head"><h2 class="h2" id="db-pl-h">Your plans</h2></div><div class="t-wrap"><table class="t"><thead><tr><th scope="col">Your trades</th><th scope="col" class="r">Trades</th><th scope="col" class="r">Won</th><th scope="col" class="r">Net a trade</th><th scope="col" class="r">Net</th></tr></thead><tbody>${row("With a plan", p.planned)}${row("Without one", p.unplanned)}</tbody></table></div>${kept.length ? `<ul class="db-notes">${kept.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : ""}${setups}${sure}</section>`;
+}
+
+/* YOUR OWN LIMITS (see the top of this file): what holds now, a loosening waiting and from when, what holds a new entry back now; the
+   owner's Set… and Take them away… — each signed (setPolicy self), a loosening waiting the hours the limits in force say */
+function dbSelfHtml(x) {
+  if (!x) return "";
+  const me = owns();
+  const now = x.now ? `<p class="db-self-now">${esc(x.now.words)}.</p>` : '<p class="dim small">None set. Signed while calm, they hold your paper trading when it is not: a day\'s loss line, a pause after a losing streak, the most entries a day, a plan before every entry. They stop new entries only, never a close; a loosening waits the hours you set.</p>';
+  const waiting = x.pending ? `<p class="small db-self-wait"><span class="tag warn">Waiting</span> ${x.pending.to ? esc(x.pending.to.words) : "All of them taken away"} — from ${esc(nyDay(x.pending.from))} ${esc(nyTime(x.pending.from))} New York; signed ${esc(nyDay(x.pending.signedAt))} ${esc(nyTime(x.pending.signedAt))}.</p>` : "";
+  const held = x.held ? `<div class="msg no" role="status">${esc(x.held.why)}</div>` : "";
+  const acts = me ? `<div class="acts">${x.now ? '<button type="button" class="btn btn-sm" data-db-ls="self">Change them…</button><button type="button" class="btn btn-sm" data-db-ls="self-off">Take them away…</button>' : '<button type="button" class="btn btn-sm btn-primary" data-db-ls="self">Set your own limits…</button>'}</div>` : "";
+  return `<section class="sec db-self" aria-labelledby="db-self-h"><div class="card-head"><h2 class="h2" id="db-self-h">Your own limits</h2><span class="dim small">${esc(plural(x.entriesToday || 0, "entry", "entries"))} today</span></div>${held}${now}${waiting}${acts}</section>`;
+}
+
+/* the limits in words, as the account says them (account/plans.ts selfWords) */
+function dbSelfWords(l) {
+  const parts = [l.dayLossUsd !== undefined ? `no new entry after a day's loss of ${money(l.dayLossUsd)}` : "", l.streak ? `${l.streak.coolMin} minutes' pause after ${l.streak.losses} losses in a row` : "", l.maxEntries !== undefined ? `${plural(l.maxEntries, "entry", "entries")} a day at most` : "", l.planFirst ? "a plan before every entry" : ""].filter(Boolean);
+  return `${parts.join(" · ")} — ${l.liftHours === 0 ? "loosened as soon as it is signed" : `loosened only ${l.liftHours} h after it is signed`}`;
+}
+
+/* the sheet that sets them: each limit or none, the hours a loosening waits — prepared, shown and signed in one sheet */
+function dbSelfForm() {
+  const x = (DB.read && DB.read.self) || {};
+  const n = x.now || {};
+  const num = (name, label, attrs, v) => field(label, `<input name="${name}" type="number" inputmode="decimal" ${attrs}${v !== undefined ? ` value="${esc(v)}"` : ""}>`);
+  quoteDialog({
+    title: "Your own limits",
+    sub: "What holds your paper trading when you are not calm, signed now while you are. They stop new entries only — a close always goes. Tightening holds at once; loosening, or taking them away, waits the hours you set here.",
+    fields: `${num("dayLossUsd", "No new entry after a day's loss of ($)", 'min="1" step="any" placeholder="none"', n.dayLossUsd)}<div class="row2">${num("losses", "After this many losses in a row", 'min="2" max="20" step="1" placeholder="none"', n.streak && n.streak.losses)}${num("coolMin", "pause (minutes)", 'min="5" max="1440" step="5" placeholder="30"', n.streak && n.streak.coolMin)}</div>${num("maxEntries", "Entries a day, at most", 'min="1" max="200" step="1" placeholder="none"', n.maxEntries)}<label class="chk1"><input type="checkbox" name="planFirst"${n.planFirst ? " checked" : ""}> A plan before every entry</label>${num("liftHours", "A loosening waits (hours)", 'min="0" max="168" step="1"', n.liftHours !== undefined ? n.liftHours : 24)}`,
+    go: "Sign your limits",
+    draft(form) {
+      const f = formFields(form);
+      const v = (k) => (String(f[k] ?? "").trim() === "" ? undefined : Number(f[k]));
+      const limits = { ...(v("dayLossUsd") !== undefined ? { dayLossUsd: v("dayLossUsd") } : {}), ...(v("losses") !== undefined ? { streak: { losses: v("losses"), coolMin: v("coolMin") !== undefined ? v("coolMin") : 30 } } : {}), ...(v("maxEntries") !== undefined ? { maxEntries: v("maxEntries") } : {}), ...(f.planFirst ? { planFirst: true } : {}), liftHours: v("liftHours") !== undefined ? v("liftHours") : 24 };
+      if (Object.keys(limits).length < 2) return x.now ? "Set one limit at least — to take them all away, use Take them away… instead." : "Set one limit at least.";
+      return { type: "setPolicy", change: "self", value: JSON.stringify(limits) };
+    },
+    show(p) {
+      let l;
+      try {
+        l = JSON.parse(p.action.value);
+      } catch {
+        l = null;
+      }
+      const lift = x.now ? x.now.liftHours : 0;
+      return `<div class="big"><span>Your own limits</span></div><div class="path">${l ? esc(dbSelfWords(l)) : esc(p.action.value)}</div>${lift ? `<p class="dim small">As tight as the ones in force in every limit, or tighter, they hold at once; looser in any, they hold ${esc(lift)} h after you sign, and until then the ones in force hold.</p>` : ""}`;
+    },
+    done: (r) => {
+      forget("/api/account/debrief");
+      dbRead();
+      return (r && r.body && r.body.summary) || "Your limits are signed.";
+    },
+  });
 }
 
 /* THE DESK'S LESSONS (see the top of this file): what its trades here put forward, the ones waiting for the owner, the ones in force, the
@@ -382,6 +454,15 @@ async function dbLessonAct(act, d) {
   const r = DB.read;
   if (!r || !owns()) return;
   if (act === "write") return void dbLessonForm();
+  if (act === "self") return void dbSelfForm();
+  if (act === "self-off") {
+    const lift = r.self && r.self.now ? r.self.now.liftHours : 0;
+    if (!(await confirmSheet(lift ? `Your own limits stop holding ${lift} h from now, as you set them to: until then they hold as they are.` : "Your own limits stop holding at once.", { title: "Take your own limits away", yes: "Sign", danger: true }))) return;
+    return void own({ type: "setPolicy", change: "self", value: "" }, () => {
+      forget("/api/account/debrief");
+      return dbRead();
+    });
+  }
   if (act === "lab") {
     const l = (r.lessons || []).find((x) => x.id === d.id);
     if (!l || !l.rule || typeof BT === "undefined") return;

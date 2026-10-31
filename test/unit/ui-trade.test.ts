@@ -886,6 +886,19 @@ describe("the six kinds, as the page runs them", () => {
     expect(p.out('[tkPriceIn("62", true), tkPriceIn("62", false), tkPriceIn("", true), tkCents(0.625), tkCents(undefined)]')).toEqual(["0.62", "62", "", "62.5¢", "—"]);
   });
 
+  it("reads the ticket's Plan as it is signed (setPlan): why, the setup, how sure, the stop and target — its own, else the bracket's where ticked — and 1R; says the stop's distance, the size 1R makes and the win rate the plan needs after the fee; sizes by risk", () => {
+    expect(p.out('tkPlanOf({ planWhy: "  Broke 100 on volume ", planSetup: " breakout ", planSure: "0.7", planStop: "", planTarget: "", planRisk: "25", tpsl: "on", stopLoss: "99", takeProfit: "105" })')).toEqual({ why: "Broke 100 on volume", setup: "breakout", confidence: 0.7, stop: 99, target: 105, riskUsd: 25 });
+    // its own stop before the bracket's; the bracket's only where Take profit / Stop loss is ticked; no why, no plan
+    expect(p.out('tkPlanOf({ planWhy: "x", planStop: "98", tpsl: "on", stopLoss: "99" })')).toEqual({ why: "x", stop: 98 });
+    expect(p.out('tkPlanOf({ planWhy: "x", stopLoss: "99", takeProfit: "105", planSure: "", planRisk: "0" })')).toEqual({ why: "x" });
+    expect(p.out('tkPlanOf({ planWhy: " ", planStop: "98" })')).toBeNull();
+    expect(p.out('tkPlanWords({ planStop: "98", planTarget: "105", planRisk: "50" }, 100, "buy")')).toBe("The stop is 2.00% from the entry: 1R is $50.00, a size of $2,500.00; at this target and stop it must win 31% of the time to break even, after the fee both ways.");
+    expect(p.out('tkPlanWords({ planStop: "102" }, 100, "sell")')).toBe("The stop is 2.00% from the entry.");
+    expect(p.out('tkPlanWords({ planStop: "102" }, 100, "buy")')).toBe("The stop is on the wrong side of the entry: it would never be the loss.");
+    expect(p.out('tkPlanWords({}, 100, "buy")')).toMatch(/^Why you take it, in a sentence/);
+    expect(p.out('[tkSizeByRisk({ planStop: "98", planRisk: "50" }, 100, "buy"), tkSizeByRisk({ planRisk: "50", tpsl: "on", stopLoss: "99.5" }, 100, "buy"), tkSizeByRisk({ planStop: "98" }, 100, "buy"), tkSizeByRisk({ planStop: "103", planRisk: "30" }, 100, "sell")]')).toEqual([2500, 10000, 0, 1000]);
+  });
+
   it("lists where a market is, kept to the face's kind: yours that trade it (best first), yours that cannot with what to change, public venues to connect — not one already connected, none on a read-only server", () => {
     p.set("A", pageOf([EX, WALLET, READONLY]));
     const item = { kind: "coin", base: "BTC", at: [{ venue: "okx", venueName: "OKX", symbol: "BTC/USDT", connected: true, canTrade: false }, { venue: "kraken-public", venueName: "Kraken", symbol: "BTC/USD", connected: false, canTrade: false, public: true, price: 62000, connectTo: "kraken", connector: "live:exchange:kraken" }, { venue: "wallet", venueName: "Wallet", symbol: "cbBTC/USDC@Base", connected: true, canTrade: true, price: 62100 }] };

@@ -18,9 +18,13 @@
  *   slices          the market, the side, the New York hours it was entered in, how long it was held, who traded it, the desk's
  *                   confidence, the desk's version — each with its count, win rate and mean net, and FEW marked
  *   calibration     for the desk's leads, the confidence Search gave against how often its leads won
+ *   your plans      the owner's own trades with a plan signed on the ticket (account/plans.ts) beside those without; the planned ones in R,
+ *                   the stops not kept, the winners closed before their target, the setups, how sure the owner said they were against how
+ *                   often they won
  *   notes           the findings in plain sentences, numbers only from the trades */
 import type { ClosedTrip, TripEnd } from "../live/trips.ts";
 import type { TradeHand, TradeLead } from "./journal.ts";
+import type { TradePlan } from "./plans.ts";
 import { et } from "./calendar.ts";
 
 /** fewer trades than this, and a figure is said to stand on too few */
@@ -30,7 +34,7 @@ const CURVE_MOST = 400;
 const SCATTER_MOST = 600;
 
 /** a round trip as the debrief reads it: the journal's line, or a backtest's trip (no venue, no hands) */
-export type DebriefTrade = ClosedTrip & { lead?: TradeLead | undefined; by?: TradeHand | undefined; venue?: string | undefined; venueName?: string | undefined };
+export type DebriefTrade = ClosedTrip & { lead?: TradeLead | undefined; by?: TradeHand | undefined; venue?: string | undefined; venueName?: string | undefined; plan?: TradePlan | undefined };
 
 export interface DebriefSlice {
   label: string;
@@ -41,6 +45,18 @@ export interface DebriefSlice {
   /** the mean net a trade, in percent of its entry */
   meanPct: number;
   few: boolean;
+}
+
+export interface DebriefPlans {
+  planned: DebriefSlice;
+  unplanned: DebriefSlice;
+  /** the planned trades' result in R — what each risked to its stop: the plan's own 1R in dollars, else its stop's distance — their mean,
+   * and how many lost more before costs than their stop allowed (the stop not kept, or gapped through) */
+  r?: { trades: number; meanR: number; pastStop: number } | undefined;
+  /** planned trades with a target, closed by an order of the owner's at a gain before the target was reached */
+  early: number;
+  setups: DebriefSlice[];
+  calibration: Array<{ label: string; n: number; saidPct: number; wonPct: number }>;
 }
 
 export interface Debrief {
@@ -71,6 +87,8 @@ export interface Debrief {
   ends: Array<{ end: TripEnd; n: number; netUsd: number; winRatePct: number }>;
   slices: { market: DebriefSlice[]; side: DebriefSlice[]; hours: DebriefSlice[]; held: DebriefSlice[]; by: DebriefSlice[]; confidence: DebriefSlice[]; version: DebriefSlice[] };
   calibration: Array<{ label: string; n: number; saidPct: number; wonPct: number }>;
+  /** THE OWNER'S PLANS (see the top of this file); absent where the owner has no trade here */
+  plans?: DebriefPlans | undefined;
   streaks: { longestLosing: number; now: { won: boolean; n: number } | null };
   /** the result trade after trade: [closed at, ms; the net so far, $] */
   curve: Array<[number, number]>;
@@ -127,21 +145,51 @@ export const heldOf = (h: number): string => (h < 1 ? HELD[0]! : h < 4 ? HELD[1]
 export const confidenceOf = (c: number): string => (c < 0.6 ? CONFIDENCE[0]! : c < 0.7 ? CONFIDENCE[1]! : c < 0.8 ? CONFIDENCE[2]! : CONFIDENCE[3]!);
 const handOf = (b: TradeHand | undefined): string | undefined => (!b ? undefined : b.who === "owner" ? "You" : b.who === "desk" ? `The desk${b.role ? ` (${b.role})` : ""}` : b.who === "agent" ? (b.name ?? "An agent") : "The venue");
 
-/** what the stop risked, in percent of the entry: the bracket's stop where the trade carried one, else the desk's plan */
-function riskPctOf(t: DebriefTrade): number | undefined {
-  if (t.stopLoss !== undefined && t.entryPrice > 0) {
-    const d = t.side === "long" ? t.entryPrice - t.stopLoss : t.stopLoss - t.entryPrice;
-    if (d > 0) return (d / t.entryPrice) * 100;
-  }
-  return t.lead?.slPct !== undefined && t.lead.slPct > 0 ? t.lead.slPct : undefined;
+/** a price's distance from the entry, in percent, on the side that loses (`against`) or wins */
+function distPct(t: DebriefTrade, price: number | undefined, against: boolean): number | undefined {
+  if (price === undefined || !(t.entryPrice > 0)) return undefined;
+  const d = (t.side === "long") === against ? t.entryPrice - price : price - t.entryPrice;
+  return d > 0 ? (d / t.entryPrice) * 100 : undefined;
 }
-/** the take-profit, in percent of the entry: the bracket's where the trade carried one, else the desk's plan */
+/** what the stop risked, in percent of the entry: the bracket's stop where the trade carried one, else the desk's plan, else the owner's */
+function riskPctOf(t: DebriefTrade): number | undefined {
+  const bracket = distPct(t, t.stopLoss, true);
+  if (bracket !== undefined) return bracket;
+  if (t.lead?.slPct !== undefined && t.lead.slPct > 0) return t.lead.slPct;
+  return distPct(t, t.plan?.stop, true);
+}
+/** the take-profit, in percent of the entry: the bracket's where the trade carried one, else the desk's plan, else the owner's target */
 function takePctOf(t: DebriefTrade): number | undefined {
-  if (t.takeProfit !== undefined && t.entryPrice > 0) {
-    const d = t.side === "long" ? t.takeProfit - t.entryPrice : t.entryPrice - t.takeProfit;
-    if (d > 0) return (d / t.entryPrice) * 100;
-  }
-  return t.lead?.tpPct !== undefined && t.lead.tpPct > 0 ? t.lead.tpPct : undefined;
+  const bracket = distPct(t, t.takeProfit, false);
+  if (bracket !== undefined) return bracket;
+  if (t.lead?.tpPct !== undefined && t.lead.tpPct > 0) return t.lead.tpPct;
+  return distPct(t, t.plan?.target, false);
+}
+
+/** THE OWNER'S PLANS (see the top of this file) over these trades, or nothing where none is the owner's */
+function plansOf(ts: readonly DebriefTrade[]): DebriefPlans | undefined {
+  const own = ts.filter((t) => t.by?.who === "owner" || t.plan);
+  if (!own.length) return undefined;
+  const planned = own.filter((t) => t.plan);
+  // R: the plan's own 1R where it named one, else the stop's distance; past the stop, a loss before costs beyond what the stop allowed
+  const rs = planned.flatMap((t) => {
+    if (t.plan?.riskUsd) return [{ r: t.netUsd / t.plan.riskUsd, past: t.grossUsd < -1.05 * t.plan.riskUsd }];
+    const risk = riskPctOf(t);
+    return risk ? [{ r: t.returnPct / risk, past: grossPct(t) / risk < -1.05 }] : [];
+  });
+  const early = planned.filter((t) => t.end === "closed" && t.netUsd > 0 && t.plan?.target !== undefined && (t.side === "long" ? t.exitPrice < t.plan.target : t.exitPrice > t.plan.target)).length;
+  const sure = planned.filter((t) => t.plan?.confidence !== undefined);
+  return {
+    planned: sliceOf("with a plan", planned),
+    unplanned: sliceOf("without one", own.filter((t) => !t.plan)),
+    ...(rs.length ? { r: { trades: rs.length, meanR: r2(mean(rs.map((x) => x.r))), pastStop: rs.filter((x) => x.past).length } } : {}),
+    early,
+    setups: slicesBy(planned, (t) => t.plan?.setup || undefined),
+    calibration: CONFIDENCE.map((label) => {
+      const xs = sure.filter((t) => confidenceOf(t.plan!.confidence!) === label);
+      return { label, n: xs.length, saidPct: r2(mean(xs.map((t) => t.plan!.confidence! * 100))), wonPct: r2(pctOf(xs.filter(won).length, xs.length)) };
+    }).filter((c) => c.n > 0),
+  };
 }
 
 /** THE INVERSION TEST (see the top of this file), in words */
@@ -242,6 +290,7 @@ export function debriefOf(trades: readonly DebriefTrade[]): Debrief {
     return { label, n: xs.length, saidPct: r2(mean(xs.map((t) => t.lead!.confidence! * 100))), wonPct: r2(pctOf(xs.filter(won).length, xs.length)) };
   }).filter((c) => c.n > 0);
 
+  const plans = plansOf(ts);
   // THE NOTES: the findings, most telling first
   const notes: string[] = [];
   if (n) {
@@ -256,6 +305,12 @@ export function debriefOf(trades: readonly DebriefTrade[]): Debrief {
     const named: Array<[DebriefSlice, string]> = [...slices.market.map((x): [DebriefSlice, string] => [x, x.label]), ...slices.side.map((x): [DebriefSlice, string] => [x, `${x.label} trades`]), ...slices.hours.map((x): [DebriefSlice, string] => [x, `entered ${x.label} New York`]), ...slices.held.map((x): [DebriefSlice, string] => [x, `held ${x.label}`]), ...slices.confidence.map((x): [DebriefSlice, string] => [x, `Search's confidence ${x.label}`])];
     const weakest = named.filter(([x]) => x.n >= 10 && x.meanPct < 0).sort((a, b) => a[0].meanPct - b[0].meanPct)[0];
     if (weakest) notes.push(`The weakest slice with ten trades or more: ${weakest[1]} — ${weakest[0].n} trades, ${signedPct(weakest[0].meanPct, 3)} a trade, ${pct(weakest[0].winRatePct, 0)} won.`);
+    // the owner's plans, where they made any
+    if (plans && plans.planned.n) {
+      notes.push(`Your trades with a plan made ${signedPct(plans.planned.meanPct, 3)} a trade (${plans.planned.n}); without one, ${plans.unplanned.n ? `${signedPct(plans.unplanned.meanPct, 3)} (${plans.unplanned.n})` : "none was made"}.`);
+      if (plans.r?.pastStop) notes.push(`${plans.r.pastStop} of your planned trades lost more than their stop allowed: the stop was not kept, the price gapped through it, or the size was more than the plan's 1R.`);
+      if (plans.early) notes.push(`You closed ${plans.early} winner${plans.early === 1 ? "" : "s"} before ${plans.early === 1 ? "its" : "their"} target.`);
+    }
   }
 
   return {
@@ -289,6 +344,7 @@ export function debriefOf(trades: readonly DebriefTrade[]): Debrief {
     ends,
     slices,
     calibration,
+    ...(plans ? { plans } : {}),
     streaks: { longestLosing, now },
     curve,
     notes,

@@ -81,8 +81,9 @@ describe("the page against the door and /api/account", () => {
     const iface = exchange.slice(exchange.indexOf("export interface AccountPage {"));
     const body = iface.slice(0, iface.indexOf("\n}\n"));
     // beside the page object: the dial, the venues' health, the agents' memories waiting for the owner (service.ts memoryAsks), the agent
-    // setup command, the lists the door accepts (server.ts DOOR_LISTS), and which openpaper this is (version.ts: version, commit)
-    const sent = new Set([...matches(body, /^  ([a-zA-Z]+)\??:/gm), "ok", "mode", "live", "dial", "health", "memoryAsks", "agentSetup", "dollars", "networks", "bridgeChains", "version", "commit"]);
+    // setup command, the lists the door accepts (server.ts DOOR_LISTS), which openpaper this is (version.ts: version, commit), and the
+    // owner's own limits (service.ts selfView)
+    const sent = new Set([...matches(body, /^  ([a-zA-Z]+)\??:/gm), "ok", "mode", "live", "dial", "health", "memoryAsks", "agentSetup", "dollars", "networks", "bridgeChains", "version", "commit", "self"]);
     const readByPage = matches(pageScripts, /\bA\.([a-zA-Z_]+)/g);
     expect(readByPage.filter((f) => !sent.has(f))).toEqual([]);
   });

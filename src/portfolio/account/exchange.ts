@@ -71,6 +71,7 @@ import { LiveEarns, type EarnDesk, type EarnQuote, type LiveEarn } from "./live-
 import type { KeptAuthorisation } from "./pay-real.ts";
 import { CARD_TTL_MS, modeRules, type ModeRule } from "./mode-rules.ts";
 import { TOPIC_WORDS, type MemoryStore } from "./memory.ts";
+import type { TradePlan } from "./plans.ts";
 import { activeAgents, agentStatus, applyOwner, applyReport, ASK_TTL_MS, askProblem, ASKS_PER_AGENT, ASKS_PER_HOUR, cleanName, covers, deviceKeys, EARN_NAMES, emptyState, FIRED_ALERTS_KEPT, isOwner, MAX_ASKS, nameHolder, refsOf, renewSpend, spendFor, type AccountState, type AgentKey, type AgentReport, type Alert, type AskKind, type FiredAlert, type OwnerKey, type SpendApproval, type SubAccount } from "./state.ts";
 
 const HUB = "metamask";
@@ -186,6 +187,16 @@ export interface Host {
   /** THE DESK (account/desk.ts): the owner's `setDesk` and a seat's `agentDeskSay` land here once the door has checked the signature, the
    * nonce and the key (absent: this account keeps no desk) */
   desk?(action: Extract<Action, { type: "setDesk" | "agentDeskSay" }>, who: { signer: string; agent?: AgentKey | undefined }): Promise<Outcome>;
+  /** THE OWNER'S PLAN for their next entry (account/plans.ts): the owner's setPlan lands here once the door has checked it, and is kept for
+   * the order it names until that order is placed or ten minutes pass (absent: this account keeps no plans) */
+  plan?(action: Extract<Action, { type: "setPlan" }>): Outcome | Refusal;
+  /** the plan kept for the owner's entry at this venue, in this market, on this side — taken: it goes on that order and is kept no longer
+   * (`keep`: only read, the entry not yet sure to go) */
+  takePlan?(venue: string, symbol: string, side: string, keep?: boolean): TradePlan | undefined;
+  /** WHAT HOLDS THE OWNER'S NEW ENTRY BACK at a paper account, if anything (account/plans.ts selfBlock): the owner's own limits read against
+   * their paper trades and entries today. `planned`: the entry carries a plan; undefined while the order is only prepared (a plan is signed
+   * with it, after) */
+  selfBlock?(o: { planned?: boolean | undefined }): { why: string; until?: string | undefined } | undefined;
   /** A BRAIN'S KEY (account/brain-keys.ts): the owner's setBrainKey lands here once the door has checked the signature, the owner, the
    * nonce and the ten minutes. The key itself is not in the action: the route that took it staged it under this action's `hash`, and the
    * host takes it from there and writes the provider's key file — `summary` (what the ledger's row says) names the provider, the base
@@ -816,6 +827,14 @@ export class AccountEngine {
       case "forgetMemory":
       case "setMemoryRules":
         return this.ownerMemory(action, signer);
+      case "setPlan": {
+        // the owner's plan for their next entry: words and numbers of their own, held for that order — no money moves
+        if (!this.host.plan) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no plans" });
+        const r = this.host.plan(action);
+        if (isRefusal(r)) return r;
+        this.host.log({ kind: "action", venue: action.venue, tool: action.type, signer, envelope, outcome: "ok", reason: r.kind === "account" ? r.summary : action.type });
+        return r;
+      }
       case "setDesk":
       case "agentDeskSay": {
         // the desk (account/desk.ts): the owner's settings and words, a seat's words in the room — none of it authority
