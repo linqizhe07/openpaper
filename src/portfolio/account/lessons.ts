@@ -97,7 +97,13 @@ export const RULE_GUIDE = `{"kind":"chase","maxPct":n} no lead on a market that 
 
 const fig = (x: number): string => String(Number(x.toFixed(4)));
 const signed = (x: number, places = 2): string => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x).toFixed(places)}%`;
-const USD_COMPACT = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
+/** dollars in the large — $10M, $2.5B, $750K — written out here, not by Intl: its compact currency keeps a ".0" on some runtimes' ICU
+ * ($10.0M on Node 22) and not on others, and a rule's words are the same wherever they are said */
+export const usdShort = (x: number): string => {
+  const a = Math.abs(x);
+  const [v, u] = a >= 1e12 ? [1e12, "T"] : a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "K"] : [1, ""];
+  return `${x < 0 ? "−" : ""}$${Number((a / v).toFixed(1))}${u}`;
+};
 /** a field's name said back only where it is a plain identifier: anything else is "a field it was sent" */
 const named = (k: string): string => (/^[A-Za-z_]\w{0,30}$/.test(k) ? `"${k}"` : "a field it was sent");
 
@@ -181,7 +187,7 @@ export function ruleWords(rule: LessonRule): string {
     case "funding":
       return `no lead that would pay more than ${fig(rule.maxPctDay)}% of funding a day`;
     case "volume":
-      return `no lead on a market that traded less than ${USD_COMPACT.format(rule.minUsd)} over the day`;
+      return `no lead on a market that traded less than ${usdShort(rule.minUsd)} over the day`;
     case "hours":
       return `no lead entered ${rule.skip.join(", ")} New York`;
     case "side":
@@ -264,7 +270,7 @@ export function judge(rule: LessonRule, x: LeadFacts): Judged {
       return way * x.fundingPctDay > rule.maxPctDay ? { stop: true, why: `a ${x.side === "buy" ? "long" : "short"} on ${x.symbol} pays ${Math.abs(x.fundingPctDay).toFixed(4)}% of funding a day` } : { stop: false };
     case "volume":
       if (!known(x.volumeUsd24h)) return { stop: false, unjudged: "no day's volume" };
-      return x.volumeUsd24h < rule.minUsd ? { stop: true, why: `${x.symbol} traded ${USD_COMPACT.format(x.volumeUsd24h)} over the day` } : { stop: false };
+      return x.volumeUsd24h < rule.minUsd ? { stop: true, why: `${x.symbol} traded ${usdShort(x.volumeUsd24h)} over the day` } : { stop: false };
     case "hours": {
       const band = hoursBandOf(x.at);
       return rule.skip.includes(band) ? { stop: true, why: `it is ${band} New York` } : { stop: false };

@@ -198,6 +198,7 @@ describe("the desk's lessons (dbLessonsHtml)", () => {
     expect(p.run('dbRuleOf({ kind: "plan", minTpPct: "2", minSlPct: "", maxHours: "24" }, null)')).toEqual({ kind: "plan", minTpPct: 2, maxHours: 24 });
     expect(p.run('dbRuleWords({ kind: "plan", minTpPct: 2, maxHours: 24 })')).toBe("the plan held to a take-profit of at least 2%, 24 h at most");
     expect(p.run('dbRuleWords({ kind: "chase", maxPct: 8 })')).toBe("no lead on a market that moved more than 8% over the day its way");
+    expect(p.run('dbRuleWords({ kind: "volume", minUsd: 10000000 })')).toBe("no lead on a market that traded less than $10M over the day");
   });
 
   it("the owner's word, signed as the desk takes it: a candidate adopted after a yes, kept as a proposal without one; a lesson adopted, rejected and retired by its id; nothing signed on a no", async () => {

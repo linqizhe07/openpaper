@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DebriefTrade } from "../../src/portfolio/account/debrief.ts";
-import { candidatesOf, effectOf, fundingPctDay, holdPlan, judge, LESSONS_KEPT, makeRoom, noChange, parseRoles, parseRule, ruleKey, ruleWords, sameLesson, type Lesson, type LeadFacts, type LessonRule } from "../../src/portfolio/account/lessons.ts";
+import { candidatesOf, effectOf, fundingPctDay, holdPlan, judge, LESSONS_KEPT, makeRoom, noChange, parseRoles, parseRule, ruleKey, ruleWords, sameLesson, usdShort, type Lesson, type LeadFacts, type LessonRule } from "../../src/portfolio/account/lessons.ts";
 
 /** LESSONS (account/lessons.ts): the rules a lesson may be — read strictly, said in words, judged on a lead as Risk sees it and on the
  * trades the journal kept — what a rule would have done to the desk's trades, and the candidates the Debrief puts forward: a slice of the
@@ -51,7 +51,9 @@ describe("a rule, read strictly", () => {
     expect(parseRule({ kind: "plan", maxHours: 24, minSlPct: null })).toEqual({ kind: "plan", maxHours: 24 });
     const words = (r: unknown) => ruleWords(parseRule(r) as LessonRule);
     expect(words({ kind: "chase", maxPct: 8 })).toBe("no lead on a market that moved more than 8% over the day its way");
+    // dollars in the large written out, the same on every runtime (Intl's compact currency says $10.0M on Node 22's ICU)
     expect(words({ kind: "volume", minUsd: 10_000_000 })).toBe("no lead on a market that traded less than $10M over the day");
+    expect([2_500_000_000, 750_000, 1_000, 3e12].map(usdShort)).toEqual(["$2.5B", "$750K", "$1K", "$3T"]);
     expect(words({ kind: "hours", skip: ["00–04"] })).toBe("no lead entered 00–04 New York");
     expect(words({ kind: "side", only: "sell" })).toBe("shorts only");
     expect(words({ kind: "confidence", min: 0.6 })).toBe("no lead Search is less than 0.6 sure of");

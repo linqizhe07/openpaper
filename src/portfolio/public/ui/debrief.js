@@ -271,13 +271,20 @@ function dbEffectHtml(e) {
   return `<p class="small">Here it would have stopped ${esc(stopped)}; the ${esc(k.n)} it let through made ${esc(money(k.netUsd))}, ${esc(dbPct(k.meanPct, 3))} a trade.${esc(unjudged)}${s.n ? dbFew(s.n) : ""}</p>`;
 }
 
+/* dollars in the large, as the desk writes them (account/lessons.ts usdShort): $10M, $2.5B, $750K */
+function dbUsdShort(x) {
+  const a = Math.abs(Number(x));
+  const [v, u] = a >= 1e12 ? [1e12, "T"] : a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "K"] : [1, ""];
+  return `${Number(x) < 0 ? "−" : ""}$${Number((a / v).toFixed(1))}${u}`;
+}
+
 /* a rule in a person's words, as the desk says it (account/lessons.ts ruleWords) — for the sheet's preview of one being written */
 function dbRuleWords(r) {
   const n = (x) => String(Number(Number(x).toFixed(4)));
   switch (r && r.kind) {
     case "chase": return `no lead on a market that moved more than ${n(r.maxPct)}% over the day its way`;
     case "funding": return `no lead that would pay more than ${n(r.maxPctDay)}% of funding a day`;
-    case "volume": return `no lead on a market that traded less than ${money(r.minUsd)} over the day`;
+    case "volume": return `no lead on a market that traded less than ${dbUsdShort(r.minUsd)} over the day`;
     case "hours": return `no lead entered ${r.skip.join(", ")} New York`;
     case "side": return r.only === "buy" ? "longs only" : "shorts only";
     case "markets": return `never ${r.skip.join(", ")}`;
