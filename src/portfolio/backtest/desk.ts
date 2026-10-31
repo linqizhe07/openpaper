@@ -20,6 +20,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { momentumScriptBrain } from "../account/brain-script.ts";
+import { readJournal, tripOfRow } from "../account/journal.ts";
 import { ROLE_SPECS, type RoleId } from "../account/desk.ts";
 import type { Outcome } from "../account/exchange.ts";
 import { signDevice, simKey } from "../account/sign.ts";
@@ -236,6 +237,8 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
     equity,
     fills,
     funding: { paidUsd: Number(paid.toFixed(2)), receivedUsd: Number(received.toFixed(2)), hours: rows.length },
+    // the round trips it closed, as its account's journal kept them, each with the lead that placed it
+    trips: readJournal(o.work).rows.map(tripOfRow),
     refused: [],
     metrics,
     notes,

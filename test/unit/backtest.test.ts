@@ -256,6 +256,25 @@ describe("the engine, through the paper account", () => {
   });
 });
 
+describe("a run's round trips", () => {
+  it("every fill is in one: a coin bought on the way up and sold on the way down — the trips' net is the run's whole result, their fees its fees, and each trip's extremes are the bars it was held through", async () => {
+    const closes = [...Array.from({ length: 60 }, (_, i) => 100 + i), ...Array.from({ length: 60 }, (_, i) => 159 - i)];
+    const r = await run({ markets: [spot(pathOf(closes))], strategy: spec("sma", { fast: 5, slow: 20, weight: 1 }) });
+    const trips = r.trips!;
+    expect(trips.length).toBeGreaterThanOrEqual(1);
+    // nothing is held at the end: every fill is a trip's, and the trips are the whole result
+    expect(trips.reduce((n, t) => n + t.fills, 0)).toBe(r.fills.length);
+    expect(trips.reduce((s, t) => s + t.netUsd, 0)).toBeCloseTo(r.equity[r.equity.length - 1]!.usd - r.cashUsd, 2);
+    expect(trips.reduce((s, t) => s + t.feesUsd, 0)).toBeCloseTo(r.metrics.feesUsd, 2);
+    for (const t of trips) {
+      expect(t).toMatchObject({ symbol: "X/USD", kind: "spot", side: "long", end: "closed", fundingUsd: 0 });
+      const held = pathOf(closes).filter((b) => b.t >= Date.parse(t.openedAt) && b.t < Date.parse(t.closedAt));
+      expect(t.hi).toBe(Math.max(...held.map((b) => b.h)));
+      expect(t.lo).toBeLessThanOrEqual(Math.min(t.entryPrice, t.exitPrice));
+    }
+  });
+});
+
 describe("the figures", () => {
   it("are the textbook's: return, the deepest drawdown and the time under it, a Sharpe scaled by the steps in a year", () => {
     const eq = [100, 110, 99, 120].map((usd, i) => ({ t: T0 + i * D, usd }));

@@ -120,6 +120,7 @@ import { CBOE_DELAY_MS, cboeQuoteInSession, US_STOCKS_ID, usLineAt, usSession } 
 import type { HubQuote, HubRange, HubTick, MarketHub } from "./stream-hub.ts";
 import { FRESH_MS as US_FRESH_MS } from "./us-quotes.ts";
 import { badOrder, CANDLE_INTERVALS, ceilTo, floorTo, HISTORY_MOST, INTERVAL_MS, inDollars, onStep, pick, type Candle, type CandleInterval, type CandlePage, type LiveTrader, type Market, type MarketKind, type MarketStats, type OrderBook, type OrderEstimate, type OrderRequest, type OrderState, type OrderStatus, type OrderType, type Position, type SessionPhase, type Side, type TimeInForce } from "./trade.ts";
+import { tripFill, tripFunding, tripPrice, tripRange, type ClosedTrip, type OpenTrip, type TripEnd } from "./trips.ts";
 import { isStable, type LiveBalance, type LiveSource, type PaperControls, type PaperEvents } from "./types.ts";
 
 export const PAPER_DEFAULT_CASH = 10_000;
@@ -388,6 +389,11 @@ export interface PaperBook {
    * came back cut short): from when, and since when it has been owed — judged against bars at a later look, never at the quote in the
    * meantime, and given up only past OWED_MOST_MS, saying so on its orders */
   owed?: Record<string, { from: string; since: string }> | undefined;
+  /** THE ROUND TRIPS OPEN NOW, by market (live/trips.ts): what each held market was bought and sold at since it was held from nothing, its
+   * fees and funding, and the highest and lowest price the book saw it at — kept with the book so a restart carries them, and told as a
+   * closed trip (PaperChange.trips) once the market is held no more. A book from before them: none, and a market held then joins only once
+   * it is held from nothing again */
+  trips?: Record<string, OpenTrip> | undefined;
   seq: number;
 }
 
@@ -580,6 +586,8 @@ export interface PaperChange {
   /** the book was started again (resetPaper) by this write: what was there is archived as `archived`, and nothing a listener kept of it
    * stands — it reads the account afresh */
   reset?: { archived: string; at: string } | undefined;
+  /** the round trips this write closed (live/trips.ts): what the account's journal keeps (account/journal.ts) */
+  trips?: ClosedTrip[] | undefined;
   summary: PaperBookSummary;
 }
 /** an order as the book tells it: the venue's own ref and the client id the account gave it (its LiveOrder's), and its state */
@@ -848,6 +856,23 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   const freshRefs = new Set<string>();
   /** orders went from the book (pruned to the archive, or the book started again) since the last word: the word looks for them */
   let ordersGone = false;
+  /** the round trips closed since the last word (tripOf): told with it */
+  const closedTrips: ClosedTrip[] = [];
+  /** what the book holds of a market now, signed: a perpetual's short below zero */
+  const heldOf = (symbol: string): number => {
+    const p = b.positions[symbol];
+    return p ? (p.side === "long" ? p.qty : -p.qty) : (b.holdings[symbol]?.qty ?? 0);
+  };
+  /** THE ROUND TRIP A FILL MADE (live/trips.ts), once the book holds what the fill left: added to the trip open in its market, or the trip
+   * closed and kept for the next word of the book's change. `o` is the order that filled (its client id, its bracket); `end`, how a close
+   * came about where the order alone does not say it */
+  const tripOf = (f: PaperFill, o: PaperOrder, end?: TripEnd): void => {
+    const after = heldOf(f.symbol);
+    const before = after - (f.side === "buy" ? f.qty : -f.qty);
+    const closed = tripFill((b.trips ??= {}), { symbol: f.symbol, kind: b.markets[f.symbol]?.kind ?? "spot", side: f.side, qty: f.qty, price: f.price, feeUsd: f.feeUsd, at: f.at, ref: f.ref, clientId: o.clientId, takeProfit: o.takeProfit, stopLoss: o.stopLoss, end }, before, after);
+    if (closed) closedTrips.push(closed);
+    if (!Object.keys(b.trips ?? {}).length) delete b.trips;
+  };
   const live = (o: { status: OrderStatus }): boolean => o.status === "open" || o.status === "pending";
   /** an order put on the book: indexed, and looked at by the next word of the book's change */
   const track = (o: PaperOrder): void => {
@@ -1215,6 +1240,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
     if (!ref) return got;
     const price = got.m.kind === "perp" ? (got.mark ?? pos(got.m.price)) : pos(got.m.price);
     ref.last = { ...(price !== undefined ? { price } : {}), ...(pos(got.m.bid) !== undefined ? { bid: got.m.bid } : {}), ...(pos(got.m.ask) !== undefined ? { ask: got.m.ask } : {}), at: stampOf(got) ?? got.at };
+    if (price !== undefined && b.trips) tripPrice(b.trips, symbol, price);
     if (pos(got.m.maxLeverage) !== undefined) ref.maxLeverage = got.m.maxLeverage;
     if (got.m.closeTime) ref.closeTime = got.m.closeTime;
     return got;
@@ -1477,6 +1503,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       // no one listens: the first listener takes the book as it stands then (toldNow)
       freshRefs.clear();
       ordersGone = false;
+      closedTrips.length = 0;
       return;
     }
     const orders: PaperOrderSaid[] = [];
@@ -1524,8 +1551,9 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
     toldCash = b.cashUsd;
     const reset = b.resetFrom && b.resetFrom.at !== toldReset ? { archived: b.resetFrom.file, at: b.resetFrom.at } : undefined;
     toldReset = b.resetFrom?.at;
-    if (!orders.length && !fills.length && !positions.length && cash === undefined && !reset) return;
-    const change: PaperChange = { orders, fills, positions, ...(cash !== undefined ? { cashUsd: cash } : {}), ...(reset ? { reset } : {}), summary: summaryNow() };
+    const trips = closedTrips.splice(0);
+    if (!orders.length && !fills.length && !positions.length && cash === undefined && !reset && !trips.length) return;
+    const change: PaperChange = { orders, fills, positions, ...(cash !== undefined ? { cashUsd: cash } : {}), ...(reset ? { reset } : {}), ...(trips.length ? { trips } : {}), summary: summaryNow() };
     for (const fn of [...listeners]) {
       try {
         fn(change);
@@ -1665,7 +1693,9 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
     const said = [o.parent ? `${o.type === "limit" ? "take-profit" : "stop-loss"} of ${o.parent}` : "", past].filter(Boolean).join(" · ");
     // what a close realised — a perpetual's at the price (its fee said beside it), a holding sold its proceeds less its fee and what that part
     // cost (fees in): the trade's result, said on the fill as a venue's trade history says a closed trade's
-    record({ ref: o.ref, symbol: o.symbol, side: o.side, qty: o.qty, price: px, feeUsd: fee, at: when, ...(realized !== undefined ? { realizedUsd: realized } : {}), ...(said ? { note: said } : {}) });
+    const made: PaperFill = { ref: o.ref, symbol: o.symbol, side: o.side, qty: o.qty, price: px, feeUsd: fee, at: when, ...(realized !== undefined ? { realizedUsd: realized } : {}), ...(said ? { note: said } : {}) };
+    record(made);
+    tripOf(made, o, o.parent ? (o.type === "limit" ? "take-profit" : "stop-loss") : undefined);
     // one exit of a bracket filled: the other is no longer needed
     if (o.oco) {
       const sib = b.orders[o.oco];
@@ -1990,6 +2020,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
         const row: PaperFunding = { at: iso(h), symbol, usd: paid, side: p.side, qty: p.qty, price, rate, ...(read === undefined ? { quoted: true as const } : {}) };
         (b.funding ??= []).push(row);
         if (b.funding.length > FUNDING_KEPT) b.funding.splice(0, b.funding.length - FUNDING_KEPT);
+        if (b.trips) tripFunding(b.trips, symbol, paid);
         req.onFunding?.(row);
       }
       settled = h;
@@ -2010,8 +2041,10 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
     const o: PaperOrder = { ref: `p${++b.seq}`, clientId: `liquidation-${b.seq}`, symbol, side: p.side === "long" ? "sell" : "buy", type: "market", qty: p.qty, reduceOnly: true, status: "filled", filledQty: p.qty, avgPrice: mark, feeUsd: fee, lossPastMarginUsd: round(Math.max(0, fee - left), 6), realizedUsd: round(pnl, 6), at: iso(at), updatedAt: iso(at), filledAt: iso(at), note: said };
     b.orders[o.ref] = o;
     track(o);
-    record({ ref: o.ref, symbol, side: o.side, qty: p.qty, price: mark, feeUsd: fee, at: iso(at), realizedUsd: round(pnl, 6), note: o.note });
+    const made: PaperFill = { ref: o.ref, symbol, side: o.side, qty: p.qty, price: mark, feeUsd: fee, at: iso(at), realizedUsd: round(pnl, 6), note: o.note };
+    record(made);
     delete b.positions[symbol];
+    tripOf(made, o, "liquidated");
     // its exits have nothing left to close
     cancelExits(symbol, undefined, `canceled: the position was liquidated (${o.ref})`, at);
   };
@@ -2116,10 +2149,12 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       const o: PaperOrder = { ref: `p${++b.seq}`, clientId: `settlement-${b.seq}`, symbol, side: "sell", type: "market", qty: h.qty, status: "filled", filledQty: h.qty, avgPrice: s.payout, feeUsd: 0, realizedUsd: round(paid - h.costUsd, 6), at: iso(at), updatedAt: iso(at), filledAt: iso(at), note: `settled by ${source.name}: ${usd(s.payout)} a contract${s.payout >= 1 ? " to this side, which won" : s.payout <= 0 ? " — this side lost" : ""}, ${usd(paid)} for ${qtyText(h.qty)}` };
       b.orders[o.ref] = o;
       track(o);
-      record({ ref: o.ref, symbol, side: "sell", qty: h.qty, price: s.payout, feeUsd: 0, at: iso(at), realizedUsd: round(paid - h.costUsd, 6), note: o.note });
+      const made: PaperFill = { ref: o.ref, symbol, side: "sell", qty: h.qty, price: s.payout, feeUsd: 0, at: iso(at), realizedUsd: round(paid - h.costUsd, 6), note: o.note };
+      record(made);
       ref.settled = { payout: s.payout, at: s.at ?? iso(at) };
       delete ref.closed;
       delete b.holdings[symbol];
+      tripOf(made, o, "settled");
       // its exits have nothing left to sell
       for (const x of openIn(symbol)) if (x.status === "open") Object.assign(x, { status: "canceled", note: `canceled: the market settled (${o.ref})`, updatedAt: iso(at) });
       changed = true;
@@ -2242,6 +2277,9 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
         // amended
         const opens = openIn(symbol).filter((o) => o.status === "open" && Date.parse(o.amendedAt ?? o.at) <= bar.t).sort((x, y) => stopFirst(x) - stopFirst(y) || Number(x.ref.slice(1)) - Number(y.ref.slice(1)));
         for (const o of opens) if (o.status === "open" && byBar(o, bar, end, note, q)) changed = true;
+        // the trip open in the market after the bar was judged — from before the bar: its whole range (one the bar closed counts at its fill)
+        const trip = b.trips?.[symbol];
+        if (trip && Date.parse(trip.openedAt) <= bar.t) tripRange(b.trips!, symbol, bar.l, bar.h);
       }
     }
     return changed;
