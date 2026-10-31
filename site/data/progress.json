@@ -1,7 +1,28 @@
 {
-  "asOf": "2026-10-29",
+  "asOf": "2026-10-31",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 50,
+      "title": "The Debrief: why the paper trades made or lost money, from the black box",
+      "mergedAt": "2026-10-31T01:01:15Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/50",
+      "branch": "feat/debrief-page"
+    },
+    {
+      "number": 49,
+      "title": "A black box for the paper accounts: every round trip kept, with who made it and why",
+      "mergedAt": "2026-10-31T01:01:07Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/49",
+      "branch": "feat/black-box-journal"
+    },
+    {
+      "number": 48,
+      "title": "The desk backtest keeps its record in memory and reads only what a step needs",
+      "mergedAt": "2026-10-31T01:00:58Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/48",
+      "branch": "feat/desk-backtest-faster"
+    },
     {
       "number": 45,
       "title": "The desk runs from the Backtest page, by the owner's signature",
