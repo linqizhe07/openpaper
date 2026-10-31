@@ -110,7 +110,7 @@ import { DETECT_BODY_WORDS, detectBrain, type Detected } from "./account/brain-d
 import { brainProviders, presetBest, presetHost, testBrain } from "./account/brains.ts";
 import { marketText, realHistorySources, type HistorySources } from "./backtest/data.ts";
 import { labWalkForward, WALK_COMBOS_MOST, WALK_FOLDS, WALK_RUNS_MOST, walkAskOf, walkSummary } from "./backtest/walk.ts";
-import { askOf, DESK_INTERVALS, deskAskOf, holdoutStartMs, labCatalog, labEvaluate, labList, labRead, labRun, outcomeSummary, readHoldout, readTrials, setHoldout, WINDOW_DEFAULT_DAYS, type LabDeps, type TrialRow } from "./backtest/lab.ts";
+import { askOf, DESK_INTERVALS, deskAskOf, holdoutStartMs, labCatalog, labEvaluate, labList, labRead, labRun, labScreen, outcomeSummary, readHoldout, readTrials, screenAskOf, screenSummary, setHoldout, WINDOW_DEFAULT_DAYS, type LabDeps, type TrialRow } from "./backtest/lab.ts";
 import { DESK_NAME, DESK_PARAMS, deskParamWords, DESK_WORDS } from "./backtest/desk-params.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -1904,6 +1904,19 @@ export class PortfolioService {
     return this.labOnce(async () => {
       const w = await labWalkForward({ ...ask, by: "request", maxWork: this.opts.backtest?.maxWalkWork ?? BACKTEST_WALK_WORK }, this.labDeps());
       return isRefusal(w) ? w : walkSummary(w);
+    });
+  }
+  /** AN EXIT SWEEP AN UNSIGNED REQUEST ASKS FOR (POST /api/account/backtest/screen; an agent's portfolio_backtest_screen): a kept desk
+   * run's entries closed by every rule of a grid, screened over its bars (backtest/screen.ts) — on training data only, the sweep a row of
+   * the ledger with the seat it names, every rule counted as a strategy tried. One at a time, with the backtests. `grid`: every rule's
+   * figures in the answer too */
+  async backtestScreen(body: Record<string, unknown>, o: { grid?: boolean } = {}): Promise<Record<string, unknown> | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const ask = screenAskOf(body);
+    if (typeof ask === "string") return no("E_ACCOUNT_BAD_ACTION", { message: ask });
+    return this.labOnce(async () => {
+      const out = await labScreen({ ...ask, by: "request" }, this.labDeps());
+      return isRefusal(out) ? out : screenSummary(out, o);
     });
   }
   /** THE LEDGER as it stands: the holdout, the rows and whether their chain holds, how many runs and distinct strategies, the latest runs */

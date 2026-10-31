@@ -4,6 +4,8 @@ import { createContext, runInContext, Script } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { DESK_PARAMS, DESK_WORDS } from "../../src/portfolio/backtest/desk-params.ts";
 import { STRATEGIES } from "../../src/portfolio/backtest/strategies.ts";
+import { baselineOf, screenCosts, sweepOf, tapeOf, type ScreenedTrade } from "../../src/portfolio/backtest/screen.ts";
+import type { BacktestMarket } from "../../src/portfolio/backtest/source.ts";
 
 /** THE BACKTEST PANE (ui/backtest.js): the lab as the owner reads and runs it — the form drawn from the account's catalog, what it asks
  * the account for, the result (the equity beside the buy-and-hold's, the drawdown, the figures, how it is judged, the fills), the trials
@@ -322,5 +324,113 @@ describe("the trials and the header", () => {
     expect(ids).toHaveLength(12);
     expect(ids[0]).toBe("20261029T120002-0000000000");
     expect(run(`btLooks()["20261029T120013-0000000000"].metrics.returnPct`)).toBe(13);
+  });
+});
+
+/** a stand-in tape: flat hourly bars at 100, a bar that rises to 103 every ten — and the entries just before each rise, the desk's plan
+ * closing them, as the screen takes a run's round trips */
+const T0 = Date.parse("2026-05-01T00:00:00Z");
+const SAW: BacktestMarket = { symbol: "BTC-PERP", kind: "perp", base: "BTC", quote: "USD", name: "Bitcoin", from: "a test", interval: "1h", bars: Array.from({ length: 300 }, (_, i) => (i % 10 === 0 ? { t: T0 + i * 3_600_000, o: 100, h: 103, l: 99.9, c: 100 } : { t: T0 + i * 3_600_000, o: 100, h: 100.3, l: 99.7, c: 100 })) };
+const RISES = (n: number): ScreenedTrade[] => Array.from({ length: n }, (_, k) => ({ tape: 0, bar: k * 10, side: 1 as const, rule: { tp: 0.02, sl: 0.01, bars: 3 }, usd: 1_000, plan: { tpPct: 2, slPct: 1, maxHours: 3 } }));
+const RUN_ID = "20261029T120000-0123456789";
+function sweepRow() {
+  const sw = sweepOf({ tapes: [tapeOf(SAW)], trades: RISES(30), grid: { tpPct: [1, 2, 4], slPct: [0.5, 1], hours: [1, 3] }, costs: screenCosts(10, 1), from: T0, to: T0 + 300 * 3_600_000, cashUsd: 10_000, seed: "s" })!;
+  return { v: 1, seq: 7, ts: "2026-10-29T16:40:00.000Z", kind: "screen", by: "request", seat: "page", run: RUN_ID, window: "train", key: "k", strategy: "desk", params: {}, markets: ["perp:BTC"], interval: "1h", from: "2026-05-01T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", cashUsd: 10_000, feeBps: 10, costs: {}, trades: sw.trades, grid: sw.grid, rules: sw.rules, means: sw.means, sharpes: sw.sharpes, best: sw.best, own: sw.own, dsr: sw.deflated.dsr, sr0: sw.deflated.sr0, trials: sw.deflated.trials, chance: sw.chance, words: sw.words, prev: "", hash: "" };
+}
+const DESK_VIEW = (o: Record<string, unknown> = {}) => ({ id: RUN_ID, window: "train", strategy: { id: "desk", name: "The desk", paramWords: "sizeUsd 1000 · tpPct 2", params: { sizeUsd: 1000, tpPct: 2, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3, dayLossPct: 5 } }, markets: [{ symbol: "BTC-PERP", interval: "1h" }], asked: ["perp:BTC"], interval: "1h", from: "2026-05-01T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", cashUsd: 10_000, costs: { halfSpreadBps: 1, participation: 0.05, levelBps: 2, levels: 5 }, metrics: metrics(), curve: [], trips: 30, screens: [], ...o });
+
+describe("a run's entries beside random ones, and a desk run's exit rules", () => {
+  it("draws the baseline: its verdict and rank in a line, its words, the tries as bars with the run's own a line across them, said for a screen reader — too few said so, and none where the run closed no trade", () => {
+    const { run } = page();
+    const better = baselineOf({ tapes: [tapeOf(SAW)], trades: RISES(30), costs: screenCosts(10, 1), seed: "a" })!;
+    const html = run<string>(`btBaselineHtml(${JSON.stringify(DESK_VIEW({ baseline: better }))})`);
+    expect(html).toContain("<summary>Random entries · better than chance · better than 100% of 1,000 tries</summary>");
+    expect(html).toContain("their timing beat chance (p 0.001)");
+    expect(html.match(/<rect class="try"/g)).toHaveLength(20);
+    expect(html).toContain('<line class="own"');
+    expect(html).toMatch(/aria-label="1000 tries of random entries by their net a trade, from [+−][\d.]+% to [+−][\d.]+%; this run&#39;s entries \+[\d.]+%"/);
+    const few = baselineOf({ tapes: [tapeOf(SAW)], trades: RISES(10), costs: screenCosts(10, 1), seed: "a" })!;
+    expect(run<string>(`btBaselineHtml(${JSON.stringify(DESK_VIEW({ baseline: few }))})`)).toContain("<summary>Random entries · too few to say</summary>");
+    expect(run(`btBaselineHtml(${JSON.stringify(DESK_VIEW())})`)).toBe("");
+    // under the result, after the debrief and before the fills
+    const result = run<string>(`btResultHtml(${JSON.stringify(DESK_VIEW({ baseline: better }))})`);
+    expect(result.indexOf("Random entries")).toBeGreaterThan(-1);
+  });
+
+  it("shows a desk run's latest sweep — its words and how its best is judged, the map of take-profit × stop at the best rule's time limit with the run's own exits outlined and the best in bold, a switch to the others, the best five each to run as the desk for the owner — and the form that sweeps again", () => {
+    const { run, set } = page();
+    const row = sweepRow();
+    set("BT.sweepOpen", RUN_ID);
+    const html = run<string>(`btSweepHtml(${JSON.stringify(DESK_VIEW({ screens: [row] }))})`);
+    expect(html).toMatch(/^<details class="bt-screen bt-sweep" data-id="20261029T120000-0123456789" open><summary>Exit rules · the best of 12 rules: take-profit 2%, stop [\d.]+%, \d h — \+[\d.]+% a trade<\/summary>/);
+    expect(html).toContain(row.words.slice(0, 30));
+    expect(html).toContain(`row 7 of the ledger`);
+    expect(html).toContain('<table class="bt-heat">');
+    // the map at the best rule's time limit: two stops by three take-profits, the run's own exits (2% · 1% · 3 h) outlined where shown
+    expect(html.match(/<td[^>]*style="background: color-mix/g)).toHaveLength(6);
+    expect(html).toContain(`aria-pressed="true">${row.best.hours} h</button>`);
+    expect(html).toContain('class="best"');
+    expect(html.match(/data-bt-act="desk-exits"/g)).toHaveLength(5);
+    expect(html).toContain('data-bt-sweep data-id="20261029T120000-0123456789" data-trips="30"');
+    expect(html).toContain('name="tpPct" value="1, 2, 4"');
+    expect(html).toContain("12 rules over 30 round trips, screened in a second or so from the bars. Every rule is counted in the ledger as a strategy tried");
+    expect(html).toContain(">Screen the rules</button>");
+    // the other time limit, pressed
+    set("BT.sweepHours", row.best.hours === 1 ? 3 : 1);
+    const other = run<string>(`btSweepHtml(${JSON.stringify(DESK_VIEW({ screens: [row] }))})`);
+    expect(other).toContain(`aria-pressed="true">${row.best.hours === 1 ? 3 : 1} h</button>`);
+    expect(other.includes('class="own"')).toBe(row.best.hours === 1);
+    // a viewer who does not sign: no desk to run; no sweep yet: the form, with the account's default grid
+    run(`Owner.role = "viewer"`);
+    expect(run<string>(`btSweepHtml(${JSON.stringify(DESK_VIEW({ screens: [row] }))})`)).not.toContain("desk-exits");
+    const fresh = run<string>(`btSweepHtml(${JSON.stringify(DESK_VIEW())})`);
+    expect(fresh).toContain("<summary>Exit rules · other take-profits, stops and time limits on these entries</summary>");
+    expect(fresh).toContain('name="hours" value="1, 4, 12, 24, 72, 168"');
+    expect(fresh).toContain("384 rules over 30 round trips");
+    // too few round trips to sweep; a strategy's run and a look at the held-out data have none
+    expect(run<string>(`btSweepHtml(${JSON.stringify(DESK_VIEW({ trips: 12 }))})`)).toContain("disabled>12 round trips: 30 at least to sweep</button>");
+    expect(run(`btSweepHtml(${JSON.stringify(DESK_VIEW({ strategy: { id: "tsmom", name: "Time-series momentum" } }))})`)).toBe("");
+    expect(run(`btSweepHtml(${JSON.stringify(DESK_VIEW({ window: "holdout" }))})`)).toBe("");
+  });
+
+  it("asks the account for a sweep — the lists as typed, the page as who asks — and reads the run again with its sweeps; a refusal is said under the form in the account's words", async () => {
+    const row = sweepRow();
+    const kept = { ok: true, id: RUN_ID, window: "train", markets: ["perp:BTC"], interval: "1h", run: { strategy: { id: "desk", name: "The desk", params: {} }, markets: [], trips: new Array(30).fill({}), equity: [], fills: [] }, screens: [row] };
+    let refuse = false;
+    const { run, asked, sandbox } = page({ fetch: async (path, init) => (path.startsWith("/api/account/backtest/screen") ? (refuse ? { ok: false, refusal: { code: "E_ACCOUNT_BAD_ACTION", message: "an exit sweep needs 30 round trips at least: run x closed 12" } } : { ok: true, rules: 2, best: { hours: 24, meanPct: 0.5 } }) : path.startsWith("/api/account/backtest?id=") ? kept : init?.method === "POST" ? {} : LIST) });
+    sandbox.toast = () => {};
+    run(`BT.view = ${JSON.stringify(DESK_VIEW())}`);
+    run(`M = { className: "", textContent: "" }; F = { dataset: { id: "${RUN_ID}", trips: "30" }, querySelector: (q) => q === "[data-bt-sweep-msg]" ? M : q.startsWith("[name=") ? { value: ${JSON.stringify({ tpPct: "1, 2", slPct: "1", hours: "24" })}[q.slice(7, -2)] } : null }`);
+    await run<Promise<void>>("btSweepSend(F)");
+    expect(asked.find((a) => a.method === "POST")).toEqual({ path: "/api/account/backtest/screen", method: "POST", body: { run: RUN_ID, tpPct: [1, 2], slPct: [1], hours: [24], seat: "page" } });
+    expect(asked.some((a) => a.path === `/api/account/backtest?id=${RUN_ID}`)).toBe(true);
+    expect(run("BT.sweepOpen")).toBe(RUN_ID);
+    expect(run("BT.sweepHours")).toBe(24);
+    expect(run("BT.view.screens.length")).toBe(1);
+    expect(run("BT.running")).toBe(false);
+    refuse = true;
+    await run<Promise<void>>("btSweepSend(F)");
+    expect(run("M.textContent")).toBe("an exit sweep needs 30 round trips at least: run x closed 12");
+    expect(run("M.className")).toBe("msg no");
+  });
+
+  it("hands a rule to the desk's form: the same run again — its markets, bars, window, money, numbers and costs — with the rule's take-profit, stop and time limit, for the owner to sign there", () => {
+    const { run } = page();
+    run(`I = {}; FORM = { querySelector: (q) => { const m = /^\\[name="([^"]+)"\\]$/.exec(q); return m ? (I[m[1]] ??= { value: "" }) : null; }, querySelectorAll: () => [] }; EL = { querySelector: (q) => (q === "[data-bt-form]" ? FORM : null) }`);
+    run(`btDeskExits(EL, ${JSON.stringify(DESK_VIEW())}, 3, 1.5, 72)`);
+    expect(run("BT.mode")).toBe("desk");
+    expect(run("Object.fromEntries(Object.entries(I).map(([k, v]) => [k, v.value]))")).toEqual({ markets: "perp:BTC", interval: "1h", from: "2026-05-01", to: "2026-07-31", cash: "10000", "d.sizeUsd": "1000", "d.tpPct": "3", "d.slPct": "1.5", "d.maxHours": "72", "d.riskPct": "10", "d.maxOpen": "3", "d.dayLossPct": "5", halfSpreadBps: "1", participation: "0.05", levelBps: "2" });
+  });
+
+  it("lists a sweep among the trials: what it swept and how many rules, its best rule's net a trade and Sharpe, Open for the run it swept — and the header counts the sweeps", () => {
+    const { run } = page();
+    const { means: _m, sharpes: _s, ...line } = sweepRow();
+    const L = { ...LIST, ledger: { ...LIST.ledger, screens: 1, distinct: 15 }, runs: [line, ...LIST.runs] };
+    const html = run<string>(`btTrialsHtml(${JSON.stringify(L)}, true, {})`);
+    expect(html).toContain("4 runs · 1 exit sweep · 15 distinct strategies tried before the holdout");
+    expect(html).toContain("<b>exit sweep</b>");
+    expect(html).toMatch(/12 rules · best \+[\d.]+% a trade<\/span>/);
+    expect([...html.matchAll(/data-bt-act="open" data-id="([^"]+)"/g)].map((m) => m[1])).toEqual([RUN_ID, TRIAL(2).run]);
+    expect([...html.matchAll(/data-bt-act="look" data-id="([^"]+)"/g)].map((m) => m[1])).toEqual([TRIAL(4).run, TRIAL(2).run]);
   });
 });
