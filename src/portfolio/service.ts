@@ -118,11 +118,13 @@ export const BACKTEST_API_WORK = 200_000;
  * many short runs (some fifty seconds at the speed measured on this machine) */
 export const BACKTEST_WALK_WORK = 400_000;
 /** the most steps the desk may take when the owner's signature runs it (setBacktest desk): 4,500 holds the 180 days of hourly bars a run
- * takes when it names no start (4,320). The desk is a whole account stepping — about twenty milliseconds a step measured on this machine
- * (2,823 steps in 57 seconds), some ninety seconds at the most; the command at the owner's terminal may take more */
+ * takes when it names no start (4,320). The desk is a whole account stepping — about two milliseconds a step on one market measured on
+ * this machine (the 4,321 hourly steps of BTC in 9.5 seconds, 67 before the desk's record was kept in memory for the run), about three a
+ * market on more; the command at the owner's terminal may take more */
 export const BACKTEST_DESK_STEPS = 4_500;
-/** a desk step's time as measured on this machine, for the words before the owner signs: how long the run will take, about */
-const DESK_STEP_MS = 20;
+/** a desk step's time on each of its markets as measured on this machine, for the words before the owner signs: how long the run will
+ * take, about */
+const DESK_STEP_MS = 3;
 /** a setBacktest whose change is none of the three, in words */
 const LAB_CHANGES = (change: unknown): string => `a backtest's change is holdout (a day), evaluate (a training run's id) or desk (the desk's run, as JSON), not "${String(change).slice(0, 30)}"`;
 export const FIXTURES = join(ROOT, "fixtures", "home", "portfolio");
@@ -183,8 +185,9 @@ export interface ServiceOptions {
   /** THE DESK (account/desk.ts), on a real account: the brains its house seats may think with and how often its clock ticks (0: only when
    * asked, as in tests). The brains, by default: every provider the Brains place offers (account/brains.ts brainProviders) — Claude through
    * the Anthropic API and each OpenAI-format preset — each ready when its key is there; a scripted one in tests. `env`: the environment
-   * those brains read before their key files, as the answer to a key typed on the page says it (envWins); the process's own by default */
-  desk?: { brain?: Brain | Brain[] | undefined; tickMs?: number | undefined; firstCycleMs?: number | undefined; env?: NodeJS.ProcessEnv | undefined } | undefined;
+   * those brains read before their key files, as the answer to a key typed on the page says it (envWins); the process's own by default.
+   * `deferSaves`: its record kept in memory until Desk.flush (DeskOptions.deferSaves; a desk played over recorded bars) */
+  desk?: { brain?: Brain | Brain[] | undefined; tickMs?: number | undefined; firstCycleMs?: number | undefined; env?: NodeJS.ProcessEnv | undefined; deferSaves?: boolean | undefined } | undefined;
   /** THE VENUES' LIVE STREAMS as a test hands them in (a hub over a stand-in WebSocket, or test/standin's stand-in prices): the real server
    * starts its own instead (watchStreams), and without either nothing is streamed — every price is a REST read, as before */
   streams?: MarketHub | undefined;
@@ -414,7 +417,7 @@ export class PortfolioService {
     this.account = opts.account !== undefined || opts.venues === "frontline" ? new AccountEngine(this.host(), opts.account ?? {}) : undefined;
     if (this.account) this.catalog = opts.connectable ?? loadConnectable();
     // the desk lives on a real account only: its seats are keys at the real door, its leads orders at a venue connected live
-    this.desk = this.account && opts.real ? new Desk(this.deskWorld(), { brain: opts.desk?.brain ?? brainProviders(opts.home, { env: opts.desk?.env }), tickMs: opts.desk?.tickMs, firstCycleMs: opts.desk?.firstCycleMs, onChange: (c) => this.stream.emit("desk", { ...c, at: this.now() }) }) : undefined;
+    this.desk = this.account && opts.real ? new Desk(this.deskWorld(), { brain: opts.desk?.brain ?? brainProviders(opts.home, { env: opts.desk?.env }), tickMs: opts.desk?.tickMs, firstCycleMs: opts.desk?.firstCycleMs, deferSaves: opts.desk?.deferSaves, onChange: (c) => this.stream.emit("desk", { ...c, at: this.now() }) }) : undefined;
     // the payees are simulated hosts: a real account has none. A real account pays real ones, from agent wallets (account/pay-real.ts)
     this.payees = this.account && !opts.real ? mountPayees(this.account) : undefined;
     if (this.account && opts.real && opts.liveWrites) this.account.usePayer(new RealPayer(this.account, { http: opts.payHttp ?? guardedHttp, chain: this.liveDeps().chain, wallet: (name) => agentWalletKey(opts.home, name), clock: () => this.liveDeps().clock(), capUsd: () => this.capUsd }));
@@ -1975,7 +1978,7 @@ export class PortfolioService {
       const steps = Math.floor((to - from) / INTERVAL_MS[ask.interval]);
       const most = this.opts.backtest?.maxDeskSteps ?? BACKTEST_DESK_STEPS;
       if (steps > most) return no("E_ACCOUNT_LIMIT", { message: `the desk steps ${most.toLocaleString("en-US")} times at most when it runs from here; this one would step about ${steps.toLocaleString("en-US")} — ${ask.interval === "1h" ? "4h bars or a shorter window" : "a shorter window"} (the terminal runs it longer)`, detail: { steps, most } });
-      const secs = Math.round((steps * DESK_STEP_MS) / 1000);
+      const secs = Math.round((steps * DESK_STEP_MS * ask.refs.length) / 1000);
       const took = secs < 2 ? "a second or two" : secs < 120 ? `some ${secs} seconds` : `some ${Math.round(secs / 60)} minutes`;
       const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
       return { words: `Run the desk (${deskParamWords(ask.spec.params)}) on ${ask.refs.map(marketText).join(", ")} in ${ask.interval} bars from ${day(from)} to ${day(to)}, with $${ask.cashUsd.toLocaleString("en-US")} on paper beside buying and holding them: about ${steps.toLocaleString("en-US")} steps, ${took}. A training run, counted in the trials like any other.` };

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,7 @@ import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { ANTHROPIC_KEY_SHAPE, brainReach, claudeBrain } from "../../src/portfolio/account/brain-claude.ts";
 import { shq } from "../../src/portfolio/account/brain-key.ts";
 import { keyRejected, rejectedFix } from "../../src/portfolio/account/brain-key.ts";
-import { BRAIN_MODELS, BRAIN_NOT_OBJECT, DECISIONS, deskPath, FIRST_CYCLE_MS, KEY_IN_MODEL, KEY_IN_PROVIDER, readRoom, ROLE_SPECS, ROLES, roomPath, scriptedBrain, type Brain, type BrainAbout, type RoleId } from "../../src/portfolio/account/desk.ts";
+import { BRAIN_MODELS, BRAIN_NOT_OBJECT, DECISIONS, deskPath, FIRST_CYCLE_MS, KEY_IN_MODEL, KEY_IN_PROVIDER, nextNyAt, nextNyMidnight, ny, readDesk, readRoom, ROLE_SPECS, ROLES, roomPath, scriptedBrain, type Brain, type BrainAbout, type RoleId } from "../../src/portfolio/account/desk.ts";
 import type { Outcome } from "../../src/portfolio/account/exchange.ts";
 import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
 import { register, type LiveDeps } from "../../src/portfolio/live/index.ts";
@@ -93,7 +93,7 @@ const brainOf = (s: Script = {}): Brain =>
 const noBrain: Brain = { id: "none", label: "no brain", models: [], ready: () => ({ ok: false, model: "none", why: "no key" }), decide: async () => ({ out: null, why: "no key", usage: { inputTokens: 0, outputTokens: 0 } }) };
 
 let registered = false;
-async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record<string, Market>; at?: number; cap?: number; tickMs?: number; firstCycleMs?: number } = {}) {
+async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record<string, Market>; at?: number; cap?: number; tickMs?: number; firstCycleMs?: number; deferSaves?: boolean } = {}) {
   const home = o.home ?? mkdtempSync(join(tmpdir(), "account-desk-"));
   if (!o.home) homes.push(home);
   const markets = o.prices ?? { "BTC/USDT": SPOT("BTC/USDT", 60_000), "ETH/USDT": SPOT("ETH/USDT", 3_000) };
@@ -109,7 +109,7 @@ async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record
   // the real clock and the account's clock move together: `advance` pushes both, so kept reads (markets, prices) expire as they would
   let skew = o.at ?? 0;
   const liveDeps: Partial<LiveDeps> = { clock: () => REAL + skew, http: async () => ({ status: 599, body: undefined, text: "" }), price: async () => undefined };
-  const svc = await PortfolioService.create({ home, now: () => new Date(START + skew).toISOString(), venues: "frontline", real: true, liveDeps, publicMarkets: [], liveWrites: { capUsd: o.cap ?? 100, pairingCode: "K7QX-M2PA" }, account: { owners: [{ id: owner.address, kind: "eoa", label: "owner", addedAt: new Date(START).toISOString() }] }, desk: { brain: o.brain ?? brainOf(), tickMs: o.tickMs ?? 0, firstCycleMs: o.firstCycleMs } });
+  const svc = await PortfolioService.create({ home, now: () => new Date(START + skew).toISOString(), venues: "frontline", real: true, liveDeps, publicMarkets: [], liveWrites: { capUsd: o.cap ?? 100, pairingCode: "K7QX-M2PA" }, account: { owners: [{ id: owner.address, kind: "eoa", label: "owner", addedAt: new Date(START).toISOString() }] }, desk: { brain: o.brain ?? brainOf(), tickMs: o.tickMs ?? 0, firstCycleMs: o.firstCycleMs, deferSaves: o.deferSaves } });
   await svc.restoring;
   const own = async (a: NoNonce<OwnerAction>) => svc.exchange(await signOwner(owner, { ...a, nonce: START + skew + ++n } as OwnerAction));
   const as = async (key: ReturnType<typeof simKey>, a: NoNonce<AgentAction>) => svc.exchange(await signAgent(key, { ...a, nonce: START + skew + ++n } as AgentAction));
@@ -776,6 +776,71 @@ describe("the floor, the clock, the words", () => {
     expect(v.open.map((l) => l.id)).toEqual(["L-0001"]);
     expect(v.room.length).toBe(before.room.length);
     expect(v.session?.state).toBe("live");
+  });
+});
+
+describe("the desk's clock and record, kept cheap for a run over recorded bars", () => {
+  /** New York's wall clock as the formatter reads it, every time: what ny() kept an hour's offset of */
+  const NYF = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short" });
+  const formatted = (ms: number) => {
+    const p = Object.fromEntries(NYF.formatToParts(new Date(ms)).map((x) => [x.type, x.value])) as Record<string, string>;
+    return { day: `${p.year}-${p.month}-${p.day}`, minutes: (Number(p.hour) % 24) * 60 + Number(p.minute), dow: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday ?? "") };
+  };
+  /** the two days around each of 2026's clock changes (8 March forward, 1 November back), from the day before */
+  const around = (step: number): number[] => {
+    const out: number[] = [];
+    for (const from of [Date.parse("2026-03-07T00:00:00Z"), Date.parse("2026-10-31T00:00:00Z")]) for (let t = from; t < from + 3 * DAY; t += step) out.push(t);
+    return out;
+  };
+
+  it("ny() reads the wall clock the formatter reads, at every minute's kind of moment around the clock's changes and across years", () => {
+    const times = [...around(7 * 60_000 + 13_000)];
+    let x = 1;
+    for (let i = 0; i < 2_000; i++) times.push(Date.parse("2020-01-01T00:00:00Z") + Math.floor(((x = (x * 48_271) % 2_147_483_647) / 2_147_483_647) * 11 * 365 * DAY));
+    for (const t of times) expect(ny(t), new Date(t).toISOString()).toEqual(formatted(t));
+  });
+
+  it("the next midnight and the next report's minute are the ones a walk a minute at a time finds — on the days the clock goes forward and back too", () => {
+    const walkMidnight = (ms: number): number => {
+      let t = ms + 60_000;
+      const day = ny(ms).day;
+      while (ny(t).day === day) t += 60_000;
+      return t - (t % 60_000);
+    };
+    const walkAt = (ms: number, at: number): number => {
+      const now = ny(ms);
+      let t = ms - (ms % 60_000);
+      for (let i = 0; i < 2 * 24 * 60; i++, t += 60_000) if (ny(t).minutes === at && (ny(t).day !== now.day || now.minutes < at)) return t;
+      return t;
+    };
+    for (const t of around(97 * 60_000 + 29_000)) expect(nextNyMidnight(t), new Date(t).toISOString()).toBe(walkMidnight(t));
+    // midnight, the hour the clock repeats, the hour it skips, the evening report, the last minute of the day
+    for (const at of [0, 90, 150, 21 * 60, 23 * 60 + 59]) for (const t of around(131 * 60_000 + 7_000)) expect(nextNyAt(t, at), `${at} from ${new Date(t).toISOString()}`).toBe(walkAt(t, at));
+  });
+
+  it("a desk that defers its saves writes nothing until flush(), then the record and room one writing as it goes wrote; its step's read is the view's", async () => {
+    const eager = await boot();
+    const lazy = await boot({ deferSaves: true });
+    for (const b of [eager, lazy]) {
+      expect(code(await b.hire())).toBe("account");
+      await b.own({ type: "setPolicy", change: "mode", value: "open" });
+      await b.desk.cycle("test");
+    }
+    expect(existsSync(deskPath(lazy.home))).toBe(false);
+    expect(existsSync(roomPath(lazy.home))).toBe(false);
+    const v = (await lazy.desk.view())!;
+    expect(v.open).toHaveLength(1);
+    expect(await lazy.desk.glance()).toEqual({ session: { state: "live", cycles: v.session!.cycles }, venueUsd: v.venue.usd, openUsd: v.open[0]!.sizeUsd, funnel: v.funnel });
+    lazy.desk.flush();
+    const said = (home: string) => readRoom(home).map((m) => [m.seq, m.from, m.kind, m.lead, m.text]);
+    expect(said(lazy.home)).toEqual(said(eager.home));
+    expect(readDesk(lazy.home)?.leads.map((l) => [l.id, l.state, l.symbol, l.sizeUsd, l.entry?.price])).toEqual(readDesk(eager.home)?.leads.map((l) => [l.id, l.state, l.symbol, l.sizeUsd, l.entry?.price]));
+    expect(readDesk(lazy.home)?.counters).toEqual(readDesk(eager.home)?.counters);
+    // flushed, nothing is left to write: a second flush changes nothing
+    const before = readFileSync(deskPath(lazy.home), "utf8");
+    lazy.desk.flush();
+    expect(readFileSync(deskPath(lazy.home), "utf8")).toBe(before);
+    expect(said(lazy.home)).toEqual(said(eager.home));
   });
 });
 
