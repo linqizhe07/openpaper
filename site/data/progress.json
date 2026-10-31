@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 51,
+      "title": "The screen: a run's entries beside random ones, a desk run's exits swept fast, every rule counted",
+      "mergedAt": "2026-10-31T13:19:09Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/51",
+      "branch": "feat/backtest-screen"
+    },
+    {
       "number": 50,
       "title": "The Debrief: why the paper trades made or lost money, from the black box",
       "mergedAt": "2026-10-31T01:01:15Z",
