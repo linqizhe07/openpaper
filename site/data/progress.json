@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 53,
+      "title": "Lessons tested: on the trades after them, in the lab, and the desk versioned",
+      "mergedAt": "2026-10-31T16:42:56Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/53",
+      "branch": "feat/lesson-tests"
+    },
+    {
       "number": 52,
       "title": "Lessons: what the desk's trades teach, binding only by the owner's signature",
       "mergedAt": "2026-10-31T15:42:27Z",
