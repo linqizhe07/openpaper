@@ -178,7 +178,11 @@
  *                                                        whether the losses could be turned round, MAE and MFE, R, how trades ended,
  *                                                        slices, the desk's calibration, the curve, the findings in words — of one venue,
  *                                                        one hand (you, desk, agents), the last 7, 30 or 90 days — with the venues there
- *                                                        are and the latest 50 trades. A kept run's (GET /api/account/backtest) is in it
+ *                                                        are and the latest 50 trades. A kept run's (GET /api/account/backtest) is in it.
+ *                                                        And the desk's lessons (account/lessons.ts): the candidates its trades among
+ *                                                        these put forward, every lesson it keeps with what each rule would have done to
+ *                                                        them, and whether a desk is hired — the owner adopts one with a signed setDesk
+ *                                                        change "lesson"
  *   GET  /api/account/book?venue=&symbol=&depth=20        one market's order book, best first (a market whose source has no book: its best
  *                                                        bid and ask only, depth "top"); kept a second and a half
  *   GET  /api/account/trades?venue=&symbol=&limit=30      one market's latest trades, newest first; kept three seconds (a source that

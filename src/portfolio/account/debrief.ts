@@ -116,11 +116,15 @@ function slicesBy(ts: readonly DebriefTrade[], keyOf: (t: DebriefTrade) => strin
   return order ? out.sort((a, b) => order.indexOf(a.label) - order.indexOf(b.label)) : out.sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
 }
 
-const HOURS = ["00–04", "04–08", "08–12", "12–16", "16–20", "20–24"];
-const HELD = ["under an hour", "1–4 hours", "4–24 hours", "over a day"];
-const CONFIDENCE = ["under 0.6", "0.6–0.7", "0.7–0.8", "0.8 and over"];
-const heldOf = (h: number): string => (h < 1 ? HELD[0]! : h < 4 ? HELD[1]! : h < 24 ? HELD[2]! : HELD[3]!);
-const confidenceOf = (c: number): string => (c < 0.6 ? CONFIDENCE[0]! : c < 0.7 ? CONFIDENCE[1]! : c < 0.8 ? CONFIDENCE[2]! : CONFIDENCE[3]!);
+/** the slices' parts, in their order: the New York hours a trade was entered in, how long it was held, Search's confidence (lessons.ts
+ * names a rule's hours and a candidate's slice in these same words) */
+export const HOURS = ["00–04", "04–08", "08–12", "12–16", "16–20", "20–24"];
+export const HELD = ["under an hour", "1–4 hours", "4–24 hours", "over a day"];
+export const CONFIDENCE = ["under 0.6", "0.6–0.7", "0.7–0.8", "0.8 and over"];
+/** the four New York hours a moment falls in */
+export const hoursBandOf = (ms: number): string => HOURS[Math.floor((et(ms).minutes % 1440) / 240)]!;
+export const heldOf = (h: number): string => (h < 1 ? HELD[0]! : h < 4 ? HELD[1]! : h < 24 ? HELD[2]! : HELD[3]!);
+export const confidenceOf = (c: number): string => (c < 0.6 ? CONFIDENCE[0]! : c < 0.7 ? CONFIDENCE[1]! : c < 0.8 ? CONFIDENCE[2]! : CONFIDENCE[3]!);
 const handOf = (b: TradeHand | undefined): string | undefined => (!b ? undefined : b.who === "owner" ? "You" : b.who === "desk" ? `The desk${b.role ? ` (${b.role})` : ""}` : b.who === "agent" ? (b.name ?? "An agent") : "The venue");
 
 /** what the stop risked, in percent of the entry: the bracket's stop where the trade carried one, else the desk's plan */
@@ -226,7 +230,7 @@ export function debriefOf(trades: readonly DebriefTrade[]): Debrief {
   const slices: Debrief["slices"] = {
     market: slicesBy(ts, (t) => t.symbol),
     side: slicesBy(ts, (t) => t.side, ["long", "short"]),
-    hours: slicesBy(ts, (t) => HOURS[Math.floor((et(Date.parse(t.openedAt)).minutes % 1440) / 240)], HOURS),
+    hours: slicesBy(ts, (t) => hoursBandOf(Date.parse(t.openedAt)), HOURS),
     held: slicesBy(ts, (t) => heldOf(t.hours), HELD),
     by: slicesBy(ts, (t) => handOf(t.by)),
     confidence: slicesBy(ts, (t) => (t.lead?.confidence !== undefined ? confidenceOf(t.lead.confidence) : undefined), CONFIDENCE),

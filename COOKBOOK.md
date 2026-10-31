@@ -592,6 +592,53 @@ portfolio_backtests  {id: "<id>"}        多了 baseline（随机入场对照）
 POST /api/account/backtest/screen {run, tpPct, slPct, hours}
 ```
 
+## 6g · 教训：从复盘到 Desk 的规则，要你签名
+
+Debrief 页（第 6e 条）下面多了一块 **Lessons for the desk**。一条教训是一句话；能写成数字的，再带一条规则。提出来的教训什么都不改，**只有你签名采用之后才生效**：
+
+- 规则成为 Risk 的一道硬检查，从下一条线索开始，在问它的大脑之前按数字判断，和点差、当天亏损额度那几道检查一样。已经开着的线索保留原来的计划。
+- 这句话写进它点名的那几个席位（Search、Risk、Exit、Head）的提示词。话只是引导大脑，真正约束 Desk 的是规则。
+
+教训从四个地方来：
+
+- **晚报**：Head 每天写的「明天改一件事」自动成为一条待定教训；能写成规则时，Head 会顺带给出规则。写「none」就不提。
+- **周评**：周日「停掉一件事」也一样。
+- **Debrief**：Desk 自己的交易里，某个切片（市场、方向、纽约时段、持有时长、Search 的把握度）满 30 笔、每笔是亏的、比其余的差，而且差得超出偶然（t ≤ −2），就列出来，带上对应的规则，并写明一共看了几个同类切片：看得越多，最差的那个越可能只是运气。
+- **你**：点 Write a lesson…，用自己的话写一条，可以带规则，也可以只写话。
+
+规则只写数字，一共八种：
+
+| 规则 | 意思 |
+|---|---|
+| `chase {maxPct}` | 当天顺着方向已经走了超过 maxPct% 的市场不做（涨了不追多，跌了不追空） |
+| `funding {maxPctDay}` | 每天要付超过 maxPctDay% 资金费的不做（资金费为正时的多单，为负时的空单） |
+| `volume {minUsd}` | 当天成交额低于 minUsd 的市场不做 |
+| `hours {skip}` | 这几个纽约时段不开新单（和 Debrief 的四小时分段一致） |
+| `side {only}` | 只做多（`buy`）或只做空（`sell`） |
+| `markets {skip}` | 这几个市场不做 |
+| `confidence {min}` | Search 把握度低于 min 的不做 |
+| `plan {minTpPct, minSlPct, maxHours}` | Risk 给的计划要守在这里面：止盈不低于、止损不窄于、持有不超过；只调计划，不拒线索 |
+
+一条规则如果缺它要的数（比如这个市场没给当天涨跌），这条线索照样放行，但 Risk 那一行会写明「没有判断」，不会悄悄放过去。
+
+每条带规则的教训旁边写着：放在这些交易上，它会挡掉哪几笔、这几笔赚了还是亏了，放过去的又怎样。这些往往就是找出这条教训的那批交易，所以**这只是描述，不是检验**。检验要靠没参与挑选的数据：实验室里的回测，或者教训提出之后 Desk 新平的那些交易。
+
+驳回和退役的教训都留档，Head 也不会再提同一句。同时最多采用 12 条，因为每一条都要写进对应席位的每一次提示里。重新雇 Desk、重启服务，教训都还在。
+
+agent（MCP）和 API：
+
+```
+portfolio_debrief {who?, venue?, days?}   复盘的数字和话，加上 candidates（候选）、lessons（每条教训和它的 effect）、desk
+portfolio_desk                            多了 lessons（已采用的）和 yourSeat.lessons（给这个席位的）
+GET /api/account/debrief                  同上，加上 deskTrades（这批里 Desk 的交易笔数）
+```
+
+agent 不能采用教训。想提一条，就在 Desk 的房间里说（`portfolio_desk_say`）。你在页面上签的是：
+
+```
+setDesk {desk: "desk", change: "lesson", value: {op: "propose" | "adopt" | "reject" | "retire", id?, text?, rule?, roles?, why?}}
+```
+
 ## 7 · 动钱
 
 Portfolio 的快捷操作 "Move"（不止一个账户能动钱时先问从哪个），或 Account 抽屉（Accounts 那一行的 "Details"）里的 "Move…"。"What" 里只有这个账户做得了的：Withdraw to another account of yours（提到你自己的地方）、Between its own ledgers（账本之间划转）、Swap stablecoins（稳定币互换；下单票的 Pay with 不做这件事，它在这里）、Send from this wallet（从钱包发）、Across chains（跨链，下面）。预览里是**账户替你向目的地要来的地址**、手续费上限、网络，点 "Sign and send"。币、网络、桥的目的链三个下拉来自账户公布的 `dollars` / `networks` / `bridgeChains`（账户认的每一种美元稳定币、它们所在的链、桥能到的链），不是页面写死的表；往一个 agent 钱包挪钱，网络默认是那个钱包有钱的那条链。Statement 里有这一笔，场所或链说到了才算到账。要知道往哪打钱，用 Portfolio 的 "Receive"（第 2b 条）。

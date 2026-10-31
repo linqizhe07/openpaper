@@ -62,3 +62,29 @@
   .db-bar { grid-template-columns: minmax(80px, 7em) minmax(0, 1fr) auto; }
   .db-sc { height: 160px; }
 }
+
+/* THE DESK'S LESSONS (ui/debrief.js dbLessonsHtml): each one its words, its rule and what that would have done here, the owner's buttons
+   under it; a mark down its left side — the warn colour while it waits for the owner, the up colour while in force */
+.db-lessons h3 { font-size: 13px; font-weight: 700; color: var(--dim); margin: 18px 0 8px; }
+.db-ls-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.db-ls { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; min-width: 0; }
+.db-ls.proposed { border-left-color: var(--warn); }
+.db-ls.adopted { border-left-color: var(--up); }
+.db-ls p { margin: 4px 0 0; max-width: 78ch; overflow-wrap: anywhere; }
+.db-ls-text { font-size: 14px; line-height: 1.5; }
+.db-ls-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.db-ls .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.db-ls-write { margin-top: 16px; }
+/* the sheet that writes one: a rule's own fields only for the rule picked */
+.db-ls-rule { display: none; }
+.qd:has(select[name="kind"] option[value="chase"]:checked) .db-ls-rule[data-k="chase"],
+.qd:has(select[name="kind"] option[value="funding"]:checked) .db-ls-rule[data-k="funding"],
+.qd:has(select[name="kind"] option[value="volume"]:checked) .db-ls-rule[data-k="volume"],
+.qd:has(select[name="kind"] option[value="hours"]:checked) .db-ls-rule[data-k="hours"],
+.qd:has(select[name="kind"] option[value="side"]:checked) .db-ls-rule[data-k="side"],
+.qd:has(select[name="kind"] option[value="markets"]:checked) .db-ls-rule[data-k="markets"],
+.qd:has(select[name="kind"] option[value="confidence"]:checked) .db-ls-rule[data-k="confidence"],
+.qd:has(select[name="kind"] option[value="plan"]:checked) .db-ls-rule[data-k="plan"] { display: block; }
+.db-ls-hours { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 0; padding: 0; margin: 0; font-size: 14px; }
+.db-ls-hours legend { font-size: 13px; color: var(--dim); margin-bottom: 6px; padding: 0; }
+.db-ls-hours label { display: inline-flex; gap: 6px; align-items: center; font-variant-numeric: tabular-nums; }

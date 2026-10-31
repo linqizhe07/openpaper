@@ -11,10 +11,22 @@
    profit factor, the win rate the sizes of the wins and losses need beside the one won, and the plan's) · where the money went (gross,
    fees, funding, net, each a bar on one scale) · how trades ended · the excursions (each trade's MAE against its MFE, won or lost) · R ·
    the slices (market, side, the New York hours entered, how long held, who traded, Search's confidence) · the desk's calibration · the
-   result trade after trade · the latest trades. A figure that stands on fewer than 30 trades says so.
-   debriefHtml(d) is the body without the header: the Backtest page draws a kept run's debrief with it. */
+   result trade after trade · THE DESK'S LESSONS · the latest trades. A figure that stands on fewer than 30 trades says so.
+   debriefHtml(d) is the body without the header: the Backtest page draws a kept run's debrief with it.
+
+   THE DESK'S LESSONS (account/lessons.ts), from the same read: what the desk's trades here put forward (a slice that lost beyond chance
+   against the rest, with the rule that would say it and how many slices were looked at), and every lesson the desk keeps — the Head's
+   proposals from its evening report and weekly review, the Debrief's, the owner's — each rule with what it would have done to these
+   trades. A lesson changes nothing until the owner adopts it, signed (setDesk change "lesson" {op: propose · adopt · reject · retire}):
+   adopted, its rule is one of Risk's hard checks and its words are in its seats' prompts. Only the owner sees the buttons; a viewer reads. */
 
 const DB = { read: null, err: "", venue: "", who: "", days: "" };
+const DB_HOURS = ["00–04", "04–08", "08–12", "12–16", "16–20", "20–24"];
+const DB_LS_STATE = { proposed: "Waiting for you", adopted: "Adopted", rejected: "Rejected", retired: "Retired" };
+const DB_LS_FROM = { evening: "the evening report", weekly: "the weekly review", debrief: "the Debrief", you: "you" };
+const DB_LS_CUT = { market: "market", side: "side", hours: "hours", held: "holding-time", confidence: "confidence" };
+const DB_LS_SEAT = { search: "Search", risk: "Risk", exit: "Exit", head: "the Head" };
+const DB_RULES = [["", "Words only — no rule"], ["chase", "Don't chase a move"], ["funding", "Don't pay heavy funding"], ["volume", "Leave thin markets alone"], ["hours", "Skip some hours"], ["side", "One side only"], ["markets", "Leave some markets alone"], ["confidence", "Search sure enough"], ["plan", "Hold the plan"]];
 const DB_WHO = [["", "Everyone"], ["you", "You"], ["desk", "The desk"], ["agents", "Agents"]];
 const DB_DAYS = [["", "All"], ["90", "90 days"], ["30", "30 days"], ["7", "7 days"]];
 const DB_ENDS = { "take-profit": "Take-profit", "stop-loss": "Stop-loss", closed: "Closed by an order", liquidated: "Liquidated", settled: "Settled" };
@@ -49,6 +61,8 @@ function dbAgain() {
 
 function dbWire(el) {
   el.addEventListener("click", (e) => {
+    const ls = e.target.closest("[data-db-ls]");
+    if (ls && !ls.disabled) return void dbLessonAct(ls.dataset.dbLs, ls.dataset);
     const b = e.target.closest("[data-db-who],[data-db-days]");
     if (!b) return;
     if (b.dataset.dbWho !== undefined) DB.who = b.dataset.dbWho;
@@ -72,7 +86,7 @@ function dbDraw(el) {
   if (DB.err && !DB.read) return paint(body, `<div class="msg no">${esc(DB.err)}</div>`);
   if (!DB.read) return;
   const d = DB.read.debrief;
-  paint(body, `${DB.err ? `<div class="msg no">${esc(DB.err)}</div>` : ""}${d && d.trades ? `${debriefHtml(d)}${dbLatestHtml(DB.read.latest || [])}` : dbEmptyHtml()}`);
+  paint(body, `${DB.err ? `<div class="msg no">${esc(DB.err)}</div>` : ""}${d && d.trades ? `${debriefHtml(d)}${dbLessonsHtml(DB.read)}${dbLatestHtml(DB.read.latest || [])}` : `${dbEmptyHtml()}${dbLessonsHtml(DB.read)}`}`);
 }
 
 /* the header: what this is, and the scope — whose trades, which paper account, the window */
@@ -205,6 +219,167 @@ function dbCurveHtml(d) {
   const line = `M${pts.map(([t, u]) => `${x(t)},${y(u)}`).join("L")}`;
   const end = pts[pts.length - 1][1];
   return `<section class="sec db-curve" aria-labelledby="db-cv-h"><div class="card-head"><h2 class="h2" id="db-cv-h">Trade after trade</h2><span class="small">${chg(end, "$")}</span></div><svg class="db-cv" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(`The net result trade after trade, from ${money(0)} to ${money(end)}; lowest ${money(lo)}, highest ${money(hi)}`)}"><line class="zero" x1="0" y1="${y(0)}" x2="${w}" y2="${y(0)}"/><path class="line ${end < 0 ? "down" : "up"}" d="${line}"/></svg></section>`;
+}
+
+/* THE DESK'S LESSONS (see the top of this file): what its trades here put forward, the ones waiting for the owner, the ones in force, the
+   ones given up — and, for the owner, a lesson in their own words. Nothing where there is no desk and nothing to show */
+function dbLessonsHtml(r) {
+  const cands = (r && r.candidates) || [];
+  const lessons = (r && r.lessons) || [];
+  if (!r || (!r.desk && !lessons.length)) return "";
+  const me = owns() && r.desk;
+  const waiting = lessons.filter((l) => l.state === "proposed");
+  const adopted = lessons.filter((l) => l.state === "adopted");
+  const done = lessons.filter((l) => l.state === "rejected" || l.state === "retired");
+  const n = r.deskTrades || 0;
+  const found = cands.length
+    ? `<ul class="db-ls-list">${cands.map((c, i) => dbCandHtml(c, i, me)).join("")}</ul>`
+    : `<p class="empty">${n < 30 ? `${esc(plural(n, "trade"))} of the desk's here: a slice is put forward from 30 trades in it.` : "No slice of the desk's trades here lost beyond chance against the rest: nothing to put forward."}</p>`;
+  const list = (ls) => `<ul class="db-ls-list">${ls.map((l) => dbLessonHtml(l, me)).join("")}</ul>`;
+  const counts = [adopted.length ? `${adopted.length} adopted` : "", waiting.length ? `${waiting.length} waiting for you` : ""].filter(Boolean).join(" · ");
+  return `<section class="sec db-lessons" aria-labelledby="db-ls-h"><div class="card-head"><h2 class="h2" id="db-ls-h">Lessons for the desk</h2>${counts ? `<span class="dim small">${esc(counts)}</span>` : ""}</div><p class="dim small">A lesson changes nothing until you adopt it. Adopted, its words go to the seats it names, and its rule — where it has one — is one of Risk's hard checks from the next lead, judged before the brain is asked. What a rule would have done to these trades describes the trades it was likely found in: it does not test it.</p><h3>What the desk's trades here suggest</h3>${found}${waiting.length ? `<h3>Waiting for you</h3>${list(waiting)}` : ""}${adopted.length ? `<h3>In force</h3>${list(adopted)}` : ""}${done.length ? `<details class="db-slice"><summary>Rejected and retired · ${esc(done.length)}</summary>${list(done)}</details>` : ""}${me ? `<div class="acts db-ls-write"><button type="button" class="btn btn-sm" data-db-ls="write">Write a lesson…</button></div>` : ""}</section>`;
+}
+
+/* one candidate: its words, its rule, its slice against the rest, how many slices were looked at; Adopt… and Keep as a proposal */
+function dbCandHtml(c, i, me) {
+  const cut = DB_LS_CUT[c.from] || c.from;
+  const looked = c.looked > 1 ? `the worst of ${c.looked} ${cut} slices with 30 trades or more` : `the one ${cut} slice with 30 trades or more`;
+  const kept = c.kept ? ` <span class="tag${c.kept.state === "adopted" ? " up" : ""}">${esc(c.kept.id)} · ${esc(DB_LS_STATE[c.kept.state] || c.kept.state)}</span>` : "";
+  const acts = me && !c.kept ? `<div class="acts"><button type="button" class="btn btn-sm btn-primary" data-db-ls="cand-adopt" data-i="${i}">Adopt…</button><button type="button" class="btn btn-sm" data-db-ls="cand-propose" data-i="${i}">Keep as a proposal</button></div>` : "";
+  return `<li class="db-ls"><p class="db-ls-text">${esc(c.text)}${kept}</p><p class="dim small">Rule: ${esc(c.words)} · ${esc(dbNum(c.winRatePct, 0))}% of the ${esc(plural(c.n, "trade"))} won · t ${esc(dbNum(c.t, 1))}, ${esc(looked)}</p>${acts}</li>`;
+}
+
+/* one lesson kept: its id and state, where it came from, its words, its rule, what that would have done here, its seats; the owner's buttons */
+function dbLessonHtml(l, me) {
+  const when = l.decidedAt ? ` ${nyDay(l.decidedAt)}` : "";
+  const tag = l.state === "adopted" ? " up" : l.state === "proposed" ? " warn" : "";
+  const rule = l.rule ? `<p class="small">Rule: ${esc(l.words || "")}</p>` : '<p class="small dim">Words only: no rule binds the desk to it.</p>';
+  const eff = l.effect ? dbEffectHtml(l.effect) : l.rule && l.rule.kind === "plan" ? '<p class="dim small">A plan rule changes exits: what it would have made is a run\'s to say — sweep a desk run\'s exits on the Backtest page.</p>' : "";
+  const seats = (l.roles || []).map((x) => DB_LS_SEAT[x] || x).join(", ");
+  const btn = (act, label, cls = "btn btn-sm") => `<button type="button" class="${cls}" data-db-ls="${act}" data-id="${esc(l.id)}">${esc(label)}</button>`;
+  const acts = !me ? "" : l.state === "proposed" ? `<div class="acts">${btn("adopt", "Adopt…", "btn btn-sm btn-primary")}${btn("reject", "Reject…")}</div>` : l.state === "adopted" ? `<div class="acts">${btn("retire", "Retire…")}</div>` : "";
+  return `<li class="db-ls ${esc(l.state)}"><div class="db-ls-head"><b>${esc(l.id)}</b> <span class="tag${tag}">${esc(DB_LS_STATE[l.state] || l.state)}${esc(when)}</span> <span class="dim small">from ${esc(l.source || DB_LS_FROM[l.from] || l.from)} · to ${esc(seats)}</span></div><p class="db-ls-text">“${esc(l.text)}”</p>${rule}${eff}${l.why ? `<p class="dim small">Why: ${esc(l.why)}</p>` : ""}${acts}</li>`;
+}
+
+/* what a rule would have done to the desk's trades here: the ones it stops and what they made, against the ones it lets through */
+function dbEffectHtml(e) {
+  if (!e.trades) return '<p class="dim small">No trade of the desk\'s here to read it on.</p>';
+  const s = e.stopped;
+  const k = e.kept;
+  const stopped = s.n ? `${plural(s.n, "trade")} of the desk's ${e.trades}: ${money(s.netUsd)}, ${dbPct(s.meanPct, 3)} a trade, ${dbNum(s.winRatePct, 0)}% won` : `none of the desk's ${e.trades} trades`;
+  const unjudged = e.unjudged ? ` ${plural(e.unjudged, "trade")} it could not judge: the number it needs was not kept with ${e.unjudged === 1 ? "it" : "them"}.` : "";
+  return `<p class="small">Here it would have stopped ${esc(stopped)}; the ${esc(k.n)} it let through made ${esc(money(k.netUsd))}, ${esc(dbPct(k.meanPct, 3))} a trade.${esc(unjudged)}${s.n ? dbFew(s.n) : ""}</p>`;
+}
+
+/* dollars in the large, as the desk writes them (account/lessons.ts usdShort): $10M, $2.5B, $750K */
+function dbUsdShort(x) {
+  const a = Math.abs(Number(x));
+  const [v, u] = a >= 1e12 ? [1e12, "T"] : a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "K"] : [1, ""];
+  return `${Number(x) < 0 ? "−" : ""}$${Number((a / v).toFixed(1))}${u}`;
+}
+
+/* a rule in a person's words, as the desk says it (account/lessons.ts ruleWords) — for the sheet's preview of one being written */
+function dbRuleWords(r) {
+  const n = (x) => String(Number(Number(x).toFixed(4)));
+  switch (r && r.kind) {
+    case "chase": return `no lead on a market that moved more than ${n(r.maxPct)}% over the day its way`;
+    case "funding": return `no lead that would pay more than ${n(r.maxPctDay)}% of funding a day`;
+    case "volume": return `no lead on a market that traded less than ${dbUsdShort(r.minUsd)} over the day`;
+    case "hours": return `no lead entered ${r.skip.join(", ")} New York`;
+    case "side": return r.only === "buy" ? "longs only" : "shorts only";
+    case "markets": return `never ${r.skip.join(", ")}`;
+    case "confidence": return `no lead Search is less than ${n(r.min)} sure of`;
+    case "plan": return `the plan held to ${[r.minTpPct !== undefined ? `a take-profit of at least ${n(r.minTpPct)}%` : "", r.minSlPct !== undefined ? `a stop of at least ${n(r.minSlPct)}%` : "", r.maxHours !== undefined ? `${n(r.maxHours)} h at most` : ""].filter(Boolean).join(", ")}`;
+    default: return "";
+  }
+}
+
+/* the rule a lesson being written names, from its sheet's fields: undefined for words only, a string for what is missing */
+function dbRuleOf(f, form) {
+  const num = (k) => (String(f[k] ?? "").trim() === "" ? undefined : Number(f[k]));
+  switch (f.kind) {
+    case "": return undefined;
+    case "chase": return num("maxPct") > 0 ? { kind: "chase", maxPct: num("maxPct") } : "Say how far a move goes before the desk leaves it.";
+    case "funding": return num("maxPctDay") > 0 ? { kind: "funding", maxPctDay: num("maxPctDay") } : "Say how much funding a day is too much.";
+    case "volume": return num("minUsd") > 0 ? { kind: "volume", minUsd: num("minUsd") } : "Say the least a market trades over the day.";
+    case "hours": {
+      const skip = [...form.querySelectorAll('input[name="skipHours"]:checked')].map((x) => x.value);
+      return skip.length ? { kind: "hours", skip } : "Tick the hours to skip.";
+    }
+    case "side": return { kind: "side", only: f.only === "sell" ? "sell" : "buy" };
+    case "markets": {
+      const skip = String(f.skipMarkets || "").split(",").map((s) => s.trim()).filter(Boolean);
+      return skip.length ? { kind: "markets", skip } : "Name the markets, as the venue lists them.";
+    }
+    case "confidence": return num("min") > 0 ? { kind: "confidence", min: num("min") } : "Say how sure Search must be, 0 to 1.";
+    case "plan": {
+      const p = { kind: "plan", ...(num("minTpPct") !== undefined ? { minTpPct: num("minTpPct") } : {}), ...(num("minSlPct") !== undefined ? { minSlPct: num("minSlPct") } : {}), ...(num("maxHours") !== undefined ? { maxHours: num("maxHours") } : {}) };
+      return Object.keys(p).length > 1 ? p : "Give the plan at least one bound.";
+    }
+    default: return "Pick a rule, or words only.";
+  }
+}
+
+/* the owner's own lesson: their words, a rule or none, kept as a proposal or adopted at once — prepared, shown and signed in one sheet */
+function dbLessonForm() {
+  const num = (name, label, attrs) => field(label, `<input name="${name}" type="number" inputmode="decimal" ${attrs}>`);
+  quoteDialog({
+    title: "Write a lesson",
+    sub: "What the desk does differently from now on, in a sentence — and, where it can be one, as a rule in numbers. A rule binds the desk only once you adopt it: Risk judges it on every lead from then on, before its brain is asked. Words alone go to the seats' prompts.",
+    fields: `${field("The lesson", '<input name="text" maxlength="240" placeholder="Don\'t buy what already ran on the day">')}${field("As a rule", select("kind", DB_RULES, ""))}<div class="db-ls-rule" data-k="chase">${num("maxPct", "A move over the day, its way, of more than (%)", 'min="0.5" max="100" step="0.5" value="8"')}</div><div class="db-ls-rule" data-k="funding">${num("maxPctDay", "Funding a day of more than (%)", 'min="0.001" max="10" step="0.01" value="0.1"')}</div><div class="db-ls-rule" data-k="volume">${num("minUsd", "A day's volume under ($)", 'min="1000" step="1000" value="10000000"')}</div><div class="db-ls-rule" data-k="hours"><fieldset class="db-ls-hours"><legend>No lead in these New York hours</legend>${DB_HOURS.map((h) => `<label><input type="checkbox" name="skipHours" value="${h}"> ${h}</label>`).join("")}</fieldset></div><div class="db-ls-rule" data-k="side">${field("Only", select("only", [["buy", "Longs"], ["sell", "Shorts"]], "buy"))}</div><div class="db-ls-rule" data-k="markets">${field("Never these markets (as the venue lists them, a comma between)", '<input name="skipMarkets" placeholder="DOGE/USDT, PEPE/USDT">')}</div><div class="db-ls-rule" data-k="confidence">${num("min", "Search at least this sure (0 to 1)", 'min="0.05" max="0.99" step="0.05" value="0.6"')}</div><div class="db-ls-rule" data-k="plan"><div class="row2">${num("minTpPct", "A take-profit of at least (%)", 'min="0.2" max="25" step="0.1"')}${num("minSlPct", "A stop of at least (%)", 'min="0.2" max="15" step="0.1"')}</div>${num("maxHours", "Open for at most (hours)", 'min="1" max="168" step="1"')}</div>${field("Now", select("op", [["propose", "Keep it as a proposal"], ["adopt", "Adopt it now"]], "propose"))}`,
+    go: "Sign the lesson",
+    draft(form) {
+      const f = formFields(form);
+      const text = String(f.text || "").trim();
+      if (!text) return "Say the lesson in a sentence.";
+      const rule = dbRuleOf(f, form);
+      if (typeof rule === "string") return rule;
+      return { type: "setDesk", desk: "desk", change: "lesson", value: JSON.stringify({ op: f.op === "adopt" ? "adopt" : "propose", text, ...(rule ? { rule } : {}) }) };
+    },
+    show(p) {
+      const x = JSON.parse(p.action.value);
+      return `<div class="big"><span>“${esc(x.text)}”</span></div><div class="path">${x.rule ? `As a rule: ${esc(dbRuleWords(x.rule))}` : "Words only: no rule binds the desk to it"} · ${x.op === "adopt" ? "adopted now: in force from the next lead" : "kept as a proposal: it changes nothing until you adopt it"}</div>`;
+    },
+    done: () => {
+      forget("/api/account/debrief");
+      forget("/api/account/desk");
+      dbRead();
+      return "The lesson is signed.";
+    },
+  });
+}
+
+/* the owner's word on a lesson or a candidate: each signed as setDesk change "lesson", after a yes that says what it does */
+async function dbLessonAct(act, d) {
+  const r = DB.read;
+  if (!r || !owns()) return;
+  if (act === "write") return void dbLessonForm();
+  const send = (value) => own({ type: "setDesk", desk: "desk", change: "lesson", value: JSON.stringify(value) }, () => {
+    forget("/api/account/debrief");
+    forget("/api/account/desk");
+    return dbRead();
+  });
+  const binds = (rule, words) => (rule ? (rule.kind === "plan" ? `From the next lead Risk holds every plan it gives to it: ${words}.` : `From the next lead Risk holds the desk to it, before its brain is asked: ${words}.`) : "Its words go to the desk's seats; no rule binds the desk to it.");
+  if (act === "cand-adopt" || act === "cand-propose") {
+    const c = (r.candidates || [])[Number(d.i)];
+    if (!c) return;
+    if (act === "cand-adopt" && !(await confirmSheet(`${c.text} ${binds(c.rule, c.words)} You can retire it at any time; it stays on file.`, { title: "Adopt this lesson", yes: "Sign and adopt" }))) return;
+    return void send({ op: act === "cand-adopt" ? "adopt" : "propose", text: c.text, rule: c.rule, from: "debrief", source: `the Debrief: the ${DB_LS_CUT[c.from] || c.from} slice ${c.slice}` });
+  }
+  const l = (r.lessons || []).find((x) => x.id === d.id);
+  if (!l) return;
+  if (act === "adopt") {
+    if (!(await confirmSheet(`“${l.text}” ${binds(l.rule, l.words)} You can retire it at any time; it stays on file.`, { title: `Adopt lesson ${l.id}`, yes: "Sign and adopt" }))) return;
+    return void send({ op: "adopt", id: l.id });
+  }
+  if (act === "reject") {
+    if (!(await confirmSheet(`“${l.text}” stays on file as rejected, and the Head does not propose it again.`, { title: `Reject lesson ${l.id}`, yes: "Sign and reject", danger: true }))) return;
+    return void send({ op: "reject", id: l.id });
+  }
+  if (act === "retire") {
+    if (!(await confirmSheet(`“${l.text}” stops binding the desk from the next lead${l.rule ? ": Risk no longer judges its rule" : ""}, and its words leave the seats' prompts. It stays on file.`, { title: `Retire lesson ${l.id}`, yes: "Sign and retire", danger: true }))) return;
+    return void send({ op: "retire", id: l.id });
+  }
 }
 
 /* the latest trades, newest first: when, the market and side, entry → exit, net, MAE · MFE, how it ended, who, and the desk's thesis */

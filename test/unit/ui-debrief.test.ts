@@ -129,3 +129,94 @@ describe("a kept backtest run (ui/backtest.js)", () => {
     expect(p.run<string>("btResultHtml(btViewOfKept(K2))")).not.toContain("bt-debrief");
   });
 });
+
+describe("the desk's lessons (dbLessonsHtml)", () => {
+  /* a read as the account answers it (service.ts debrief): a candidate, one already kept, and a lesson in each state */
+  const READ = {
+    desk: true,
+    deskTrades: 80,
+    candidates: [
+      { from: "market", slice: "DOGE/USDT", text: "Leave DOGE/USDT alone: the desk's 40 trades there made −0.600% a trade, the other 40 +0.200%.", rule: { kind: "markets", skip: ["DOGE/USDT"] }, words: "never DOGE/USDT", n: 40, meanPct: -0.6, winRatePct: 0, netUsd: -240, rest: { n: 40, meanPct: 0.2 }, t: -9.3, looked: 2 },
+      { from: "hours", slice: "00–04", text: "No new lead 00–04 New York: …", rule: { kind: "hours", skip: ["00–04"] }, words: "no lead entered 00–04 New York", n: 31, meanPct: -0.3, winRatePct: 20, netUsd: -93, rest: { n: 49, meanPct: 0.1 }, t: -2.4, looked: 1, kept: { id: "LS-0004", state: "adopted" } },
+    ],
+    lessons: [
+      { id: "LS-0005", at: "2026-10-30T01:10:00Z", from: "evening", text: "Keep the size small while the tape is thin.", roles: ["search", "risk", "exit", "head"], state: "proposed", source: "the evening report of 2026-10-29" },
+      { id: "LS-0004", at: "2026-10-29T01:10:00Z", from: "debrief", text: "No new lead 00–04 New York.", roles: ["search", "risk"], rule: { kind: "hours", skip: ["00–04"] }, words: "no lead entered 00–04 New York", state: "adopted", decidedAt: "2026-10-29T14:00:00Z", source: "the Debrief: the hours slice 00–04", effect: { trades: 80, unjudged: 3, stopped: { n: 12, netUsd: -40.1, meanPct: -0.31, winRatePct: 25 }, kept: { n: 68, netUsd: 12, meanPct: 0.02, winRatePct: 51 }, few: true } },
+      { id: "LS-0003", at: "2026-10-28T01:10:00Z", from: "you", text: "Close by four hours.", roles: ["risk", "exit"], rule: { kind: "plan", maxHours: 4 }, words: "the plan held to 4 h at most", state: "adopted", decidedAt: "2026-10-28T14:00:00Z" },
+      { id: "LS-0002", at: "2026-10-27T01:10:00Z", from: "weekly", text: "Stop trading <b>thin</b> coins.", roles: ["search", "risk"], state: "rejected", decidedAt: "2026-10-27T14:00:00Z", why: "too vague" },
+    ],
+  };
+
+  it("what the desk's trades here put forward, the ones waiting for the owner, the ones in force with what each rule would have done, the ones given up — escaped, with the owner's buttons", () => {
+    const p = page();
+    p.set("R", READ);
+    const html = p.run<string>("dbLessonsHtml(R)");
+    expect(html).toContain('<h2 class="h2" id="db-ls-h">Lessons for the desk</h2><span class="dim small">2 adopted · 1 waiting for you</span>');
+    expect(html).toContain("A lesson changes nothing until you adopt it.");
+    // the candidate: its rule, its trades, how many slices were looked at; the one already kept says so and offers nothing
+    expect(html).toContain("Rule: never DOGE/USDT · 0% of the 40 trades won · t −9.3, the worst of 2 market slices with 30 trades or more");
+    expect(html).toContain('data-db-ls="cand-adopt" data-i="0">Adopt…</button>');
+    expect(html).toContain('<span class="tag up">LS-0004 · Adopted</span>');
+    expect(html).not.toContain('data-i="1"');
+    // waiting: Adopt and Reject; in force: Retire, and what the rule would have done here; a plan rule sends to the exit sweep
+    expect(html).toContain('<li class="db-ls proposed"><div class="db-ls-head"><b>LS-0005</b> <span class="tag warn">Waiting for you</span> <span class="dim small">from the evening report of 2026-10-29 · to Search, Risk, Exit, the Head</span></div>');
+    expect(html).toContain('data-db-ls="reject" data-id="LS-0005"');
+    expect(html).toContain("Words only: no rule binds the desk to it.");
+    expect(html).toContain("Here it would have stopped 12 trades of the desk&#39;s 80: -$40.10, −0.310% a trade, 25% won; the 68 it let through made $12.00, +0.020% a trade. 3 trades it could not judge: the number it needs was not kept with them.");
+    expect(html).toContain('data-db-ls="retire" data-id="LS-0004"');
+    expect(html).toContain("A plan rule changes exits: what it would have made is a run's to say");
+    expect(html).toContain("<summary>Rejected and retired · 1</summary>");
+    expect(html).toContain("Stop trading &lt;b&gt;thin&lt;/b&gt; coins.");
+    expect(html).toContain("Why: too vague");
+    expect(html).toContain('data-db-ls="write">Write a lesson…</button>');
+  });
+
+  it("a viewer reads and signs nothing; no desk and no lesson draws nothing; fewer than thirty of the desk's trades put nothing forward, said so", () => {
+    const p = page();
+    p.set("R", READ);
+    p.run('Owner.role = "viewer"');
+    const html = p.run<string>("dbLessonsHtml(R)");
+    expect(html).toContain("Lessons for the desk");
+    expect(html).not.toContain("data-db-ls=");
+    p.run('Owner.role = "owner"');
+    expect(p.run<string>("dbLessonsHtml({ desk: false, lessons: [], candidates: [] })")).toBe("");
+    expect(p.run<string>("dbLessonsHtml({ desk: true, deskTrades: 12, lessons: [], candidates: [] })")).toContain("12 trades of the desk's here: a slice is put forward from 30 trades in it.");
+    expect(p.run<string>("dbLessonsHtml({ desk: true, deskTrades: 80, lessons: [], candidates: [] })")).toContain("No slice of the desk's trades here lost beyond chance against the rest");
+  });
+
+  it("the sheet that writes one reads the rule from its fields — what is missing said — and words it as the desk does", () => {
+    const p = page();
+    const form = (checked: string[] = []) => ({ querySelectorAll: () => checked.map((value) => ({ value })) });
+    p.set("F", { kind: "chase", maxPct: "8" });
+    expect(p.run("dbRuleOf(F, { querySelectorAll: () => [] })")).toEqual({ kind: "chase", maxPct: 8 });
+    expect(p.run('dbRuleOf({ kind: "" }, null)')).toBeUndefined();
+    expect(p.run('dbRuleOf({ kind: "volume", minUsd: "" }, null)')).toBe("Say the least a market trades over the day.");
+    (p.run("globalThis") as Record<string, unknown>).FORM = form(["00–04", "20–24"]);
+    expect(p.run('dbRuleOf({ kind: "hours" }, FORM)')).toEqual({ kind: "hours", skip: ["00–04", "20–24"] });
+    expect(p.run('dbRuleOf({ kind: "markets", skipMarkets: " DOGE/USDT, ,PEPE/USDT" }, null)')).toEqual({ kind: "markets", skip: ["DOGE/USDT", "PEPE/USDT"] });
+    expect(p.run('dbRuleOf({ kind: "plan", minTpPct: "", minSlPct: "", maxHours: "" }, null)')).toBe("Give the plan at least one bound.");
+    expect(p.run('dbRuleOf({ kind: "plan", minTpPct: "2", minSlPct: "", maxHours: "24" }, null)')).toEqual({ kind: "plan", minTpPct: 2, maxHours: 24 });
+    expect(p.run('dbRuleWords({ kind: "plan", minTpPct: 2, maxHours: 24 })')).toBe("the plan held to a take-profit of at least 2%, 24 h at most");
+    expect(p.run('dbRuleWords({ kind: "chase", maxPct: 8 })')).toBe("no lead on a market that moved more than 8% over the day its way");
+    expect(p.run('dbRuleWords({ kind: "volume", minUsd: 10000000 })')).toBe("no lead on a market that traded less than $10M over the day");
+  });
+
+  it("the owner's word, signed as the desk takes it: a candidate adopted after a yes, kept as a proposal without one; a lesson adopted, rejected and retired by its id; nothing signed on a no", async () => {
+    const p = page();
+    p.set("R", READ);
+    p.run("DB.read = R; LS_SENT = []; LS_YES = true; confirmSheet = async () => LS_YES; own = async (d) => { LS_SENT.push(d); return { status: 200, body: { ok: true } }; }");
+    const sent = () => (p.run<Array<{ type: string; change: string; value: string }>>("LS_SENT")).map((d) => ({ type: d.type, change: d.change, ...JSON.parse(d.value) }));
+    await p.run<Promise<void>>('dbLessonAct("cand-adopt", { i: "0" })');
+    await p.run<Promise<void>>('dbLessonAct("cand-propose", { i: "0" })');
+    await p.run<Promise<void>>('dbLessonAct("adopt", { id: "LS-0005" })');
+    await p.run<Promise<void>>('dbLessonAct("retire", { id: "LS-0004" })');
+    p.run("LS_YES = false");
+    await p.run<Promise<void>>('dbLessonAct("reject", { id: "LS-0005" })');
+    expect(sent()).toEqual([
+      { type: "setDesk", change: "lesson", op: "adopt", text: READ.candidates[0]!.text, rule: { kind: "markets", skip: ["DOGE/USDT"] }, from: "debrief", source: "the Debrief: the market slice DOGE/USDT" },
+      { type: "setDesk", change: "lesson", op: "propose", text: READ.candidates[0]!.text, rule: { kind: "markets", skip: ["DOGE/USDT"] }, from: "debrief", source: "the Debrief: the market slice DOGE/USDT" },
+      { type: "setDesk", change: "lesson", op: "adopt", id: "LS-0005" },
+      { type: "setDesk", change: "lesson", op: "retire", id: "LS-0004" },
+    ]);
+  });
+});

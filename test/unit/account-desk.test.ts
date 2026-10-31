@@ -8,6 +8,7 @@ import { shq } from "../../src/portfolio/account/brain-key.ts";
 import { keyRejected, rejectedFix } from "../../src/portfolio/account/brain-key.ts";
 import { BRAIN_MODELS, BRAIN_NOT_OBJECT, DECISIONS, deskPath, FIRST_CYCLE_MS, KEY_IN_MODEL, KEY_IN_PROVIDER, nextNyAt, nextNyMidnight, ny, readDesk, readRoom, ROLE_SPECS, ROLES, roomPath, scriptedBrain, type Brain, type BrainAbout, type RoleId } from "../../src/portfolio/account/desk.ts";
 import type { Outcome } from "../../src/portfolio/account/exchange.ts";
+import { appendTrade, type JournalTrade } from "../../src/portfolio/account/journal.ts";
 import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
 import { register, type LiveDeps } from "../../src/portfolio/live/index.ts";
 import { ceilTo, floorTo, type LiveTrader, type Market, type OrderRequest, type OrderState, type OrderType } from "../../src/portfolio/live/trade.ts";
@@ -1077,5 +1078,195 @@ describe("what the desk says, as a person reads it", () => {
     expect(f.session?.state).toBe("paused");
     expect(f.room.at(-1)?.text).toBe("You paused the desk: no cycle runs until you resume it. Open leads keep their plan when it does.");
     expect(f.seq).toBe(f.room.at(-1)?.seq);
+  });
+});
+
+describe("the desk's lessons (account/lessons.ts)", () => {
+  const lesson = (value: Record<string, unknown>) => ({ type: "setDesk" as const, desk: "desk", change: "lesson", value: JSON.stringify(value) });
+
+  it("the owner's word alone: proposed, adopted, rejected and retired by signature, each said in the room and kept on file; refused in words where it does not fit; a desk hired again and a restart keep them", async () => {
+    const first = await boot();
+    const { own, hire, desk, home } = first;
+    expect(code(await own(lesson({ op: "propose", text: "No lessons before a desk." })))).toBe("E_ACCOUNT_BAD_ACTION");
+    await hire();
+    expect(code(await own(lesson({ op: "propose", text: "Don't buy what already ran on the day.", rule: { kind: "chase", maxPct: 8 } })))).toBe("account");
+    let v = (await desk.view())!;
+    expect(v.lessons).toEqual([{ id: "LS-0001", at: v.lessons[0]!.at, from: "you", text: "Don't buy what already ran on the day.", roles: ["search", "risk"], rule: { kind: "chase", maxPct: 8 }, state: "proposed" }]);
+    expect(readRoom(home).at(-1)?.text).toBe("You proposed lesson LS-0001: “Don't buy what already ran on the day.” — as a rule: no lead on a market that moved more than 8% over the day its way. It changes nothing until you adopt it.");
+    // the same words or the same rule again is the one kept
+    const again = await own(lesson({ op: "propose", text: "Other words, same rule", rule: { kind: "chase", maxPct: 8 } }));
+    expect(isRefusal(again) && again.message).toBe("that is lesson LS-0001, proposed already");
+    const bad = await own(lesson({ op: "propose", text: "Too far", rule: { kind: "chase", maxPct: 500 } }));
+    expect(isRefusal(bad) && bad.message).toBe("a chase rule's maxPct is 0.5 to 100, not 500");
+    expect(isRefusal(await own(lesson({ op: "forget", id: "LS-0001" })))).toBe(true);
+    expect(code(await own(lesson({ op: "adopt", id: "LS-0001" })))).toBe("account");
+    expect(readRoom(home).at(-1)?.text).toBe("You adopted lesson LS-0001: “Don't buy what already ran on the day.” — as a rule: no lead on a market that moved more than 8% over the day its way. Risk holds the desk to it from the next lead, before its brain is asked. It goes to Search, Risk.");
+    const twice = await own(lesson({ op: "reject", id: "LS-0001" }));
+    expect(isRefusal(twice) && twice.message).toBe("lesson LS-0001 is adopted: only a proposed lesson is rejected");
+    // adopted at once, in the owner's words; a proposal turned down
+    expect(code(await own(lesson({ op: "adopt", text: "Close by four hours.", rule: { kind: "plan", maxHours: 4 } })))).toBe("account");
+    expect(code(await own(lesson({ op: "propose", text: "Trade only at night." })))).toBe("account");
+    expect(code(await own(lesson({ op: "reject", id: "LS-0003", why: "no reason to think so" })))).toBe("account");
+    expect(code(await own(lesson({ op: "retire", id: "LS-0002" })))).toBe("account");
+    v = (await desk.view())!;
+    expect(v.lessons.map((l) => [l.id, l.state, l.from, l.roles.join("+")])).toEqual([["LS-0003", "rejected", "you", "search+risk+exit+head"], ["LS-0002", "retired", "you", "risk+exit"], ["LS-0001", "adopted", "you", "search+risk"]]);
+    expect(v.lessons[0]!.why).toBe("no reason to think so");
+    expect(readDesk(home)?.lessons?.map((l) => l.state)).toEqual(["adopted", "retired", "rejected"]);
+    // a desk ended and hired again keeps them, the adopted in force; so does a restart
+    await own({ type: "setDesk", desk: "desk", change: "end", value: "" });
+    expect(code(await hire())).toBe("account");
+    expect((await desk.view())!.lessons.map((l) => l.state)).toEqual(["rejected", "retired", "adopted"]);
+    const back = await boot({ home, at: 10 * 60_000 });
+    expect(back.desk.adopted().map((l) => l.id)).toEqual(["LS-0001"]);
+  });
+
+  it("at most twelve adopted: the thirteenth waits for one to be retired", async () => {
+    const { own, hire } = await boot();
+    await hire();
+    for (let i = 0; i < 12; i++) expect(code(await own(lesson({ op: "adopt", text: `Leave market ${i} alone.`, rule: { kind: "markets", skip: [`C${i}/USDT`] } })))).toBe("account");
+    const full = await own(lesson({ op: "adopt", text: "One more." }));
+    expect(isRefusal(full) && full.message).toBe("12 lessons are adopted already: retire one first (each one's words are in its seats' every prompt)");
+    expect(code(await own(lesson({ op: "propose", text: "One more." })))).toBe("account");
+  });
+
+  it("Risk holds the desk to an adopted rule before its brain is asked, and a proposed one changes nothing; a plan rule holds the plan the brain gives; the words reach the seats they go to and no other", async () => {
+    const hot = (symbol: string, price: number): Market => ({ ...SPOT(symbol, price), changePct24h: 12 });
+    const systems: Partial<Record<RoleId, string>> = {};
+    let names = ["SOL/USDT"];
+    let asked: string[] = [];
+    let risked = "";
+    const brain = scriptedBrain(({ role, input, system }) => {
+      systems[role] = system;
+      if (role === "search") return { leads: names.map((symbol) => ({ symbol, side: "buy", thesis: `${symbol} is moving`, confidence: 0.7 })), note: "" };
+      if (role === "risk") return (asked.push(/Lead (L-\d+)/.exec(input)![1]!), (risked = input), { verdict: "clear", why: "tight spread", sizeUsd: 40, tpPct: 2, slPct: 1, maxHours: 12 });
+      if (role === "exit") return { decisions: [] };
+      return { worked: "L-0001 was cleared.", change: "none" };
+    });
+    const { desk, hire, own, home, advance } = await boot({ brain, prices: { "BTC/USDT": SPOT("BTC/USDT", 60_000), "ETH/USDT": hot("ETH/USDT", 3_000), "SOL/USDT": hot("SOL/USDT", 150) } });
+    await hire({ maxOpen: 10 });
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    // proposed, the rule changes nothing: SOL ran 12% on the day and is cleared
+    await own(lesson({ op: "propose", text: "Don't buy what already ran on the day.", rule: { kind: "chase", maxPct: 8 } }));
+    await desk.cycle("test");
+    expect(asked).toEqual(["L-0001"]);
+    expect(systems.search).not.toContain("Lessons the owner adopted");
+    await own(lesson({ op: "adopt", id: "LS-0001" }));
+    await own(lesson({ op: "adopt", text: "Close by four hours.", rule: { kind: "plan", maxHours: 4 } }));
+    names = ["ETH/USDT", "BTC/USDT"];
+    asked = [];
+    advance(20 * 60_000);
+    await desk.cycle("test");
+    const v = (await desk.view())!;
+    // adopted: ETH is stopped by the lesson before the brain is asked; BTC passes it, and its plan is held to four hours
+    expect(asked).toEqual(["L-0003"]);
+    expect(v.recent.find((l) => l.id === "L-0002")).toMatchObject({ state: "rejected", why: "lesson LS-0001: no lead on a market that moved more than 8% over the day its way — ETH/USDT moved +12.00% over the day" });
+    const btc = v.open.find((l) => l.id === "L-0003")!;
+    expect(btc).toMatchObject({ maxHours: 4, tpPct: 2, slPct: 1, cleared: "tight spread — the plan held to lesson LS-0002" });
+    expect(btc.checks).toMatchObject({ changePct24h: 2.5, volumeUsd24h: 2_000_000_000 });
+    expect(risked).toContain("· lessons LS-0001 passed");
+    const lines = readRoom(home).filter((m) => m.kind === "clearance").map((m) => m.text);
+    expect(lines.find((t) => t.includes("L-0002"))).toBe("RISK CLEARANCE L-0002 | lesson LS-0001: no lead on a market that moved more than 8% over the day its way — ETH/USDT moved +12.00% over the day | Verdict: REJECT");
+    expect(lines.find((t) => t.includes("L-0003"))).toContain("· 4 h | Verdict: CLEAR → SNIPER");
+    // the words: the chase lesson to Search and Risk, the plan to Risk and Exit, neither to the Head
+    expect(systems.search).toContain('Lessons the owner adopted for this desk: LS-0001 "Don\'t buy what already ran on the day." (the account holds the desk to it: no lead on a market that moved more than 8% over the day its way).');
+    expect(systems.risk).toContain("LS-0001");
+    expect(systems.risk).toContain("LS-0002");
+    expect(systems.exit).toContain('LS-0002 "Close by four hours."');
+    expect(systems.exit).not.toContain("LS-0001");
+    await own({ type: "setDesk", desk: "desk", change: "report", value: "" });
+    expect(systems.head).toBeDefined();
+    expect(systems.head).not.toContain("Lessons the owner adopted");
+  });
+
+  it("a rule the market gives no number for lets the lead through, said not judged in Risk's line", async () => {
+    const quiet = SPOT("BTC/USDT", 60_000);
+    delete quiet.changePct24h;
+    const { desk, hire, own, home } = await boot({ prices: { "BTC/USDT": quiet } });
+    await hire();
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    await own(lesson({ op: "adopt", text: "Don't chase.", rule: { kind: "chase", maxPct: 8 } }));
+    await desk.cycle("test");
+    expect((await desk.view())!.open.map((l) => l.id)).toEqual(["L-0001"]);
+    expect(readRoom(home).find((m) => m.kind === "clearance")?.text).toContain("· lessons LS-0001 not judged (no day's change)");
+  });
+
+  it("the Head's change for tomorrow and its prune become proposed lessons — with the rule it names where that is one, its words alone where it is not, once for the same, none for 'none' — and the report says so", async () => {
+    let change = "Stop buying what already ran 8% on the day.";
+    let rule: unknown = { kind: "chase", maxPct: 8 };
+    let heard = "";
+    const brain = brainOf({ head: (input) => ((heard = input), input.startsWith("The week's leads") ? { roles: [], prune: "Stop trading thin coins.", rule: { kind: "volume", minUsd: 10_000_000 } } : { worked: "L-0001 was cleared.", change, rule }) });
+    const { desk, hire, own, advance } = await boot({ brain });
+    await hire({ hours: 24 * 8 });
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    await desk.cycle("test");
+    advance(10 * HOUR + 5 * 60_000);
+    await desk.tick();
+    let v = (await desk.view())!;
+    expect(v.lessons).toEqual([{ id: "LS-0001", at: v.lessons[0]!.at, from: "evening", text: "Stop buying what already ran 8% on the day.", roles: ["search", "risk"], rule: { kind: "chase", maxPct: 8 }, state: "proposed", source: "the evening report of 2026-10-12" }]);
+    expect(v.reports.at(-1)?.text).toContain("One change for tomorrow: Stop buying what already ran 8% on the day. — proposed as lesson LS-0001 (as a rule: no lead on a market that moved more than 8% over the day its way): it changes nothing until you adopt it");
+    expect(heard).toContain('"rule": if the change is one the account can hold the desk to, that rule as JSON, one of: {"kind":"chase","maxPct":n}');
+    expect(heard).toContain('Lessons kept already — propose none of them again: [].');
+    // the same change again (the owner's report button: a day with nothing scanned asks the Head nothing): the one kept; then a rule that is
+    // not one, kept as words alone
+    const report = () => own({ type: "setDesk", desk: "desk", change: "report", value: "" });
+    advance(24 * HOUR);
+    await report();
+    v = (await desk.view())!;
+    expect(v.lessons).toHaveLength(1);
+    expect(v.reports.at(-1)?.text).toContain("— already lesson LS-0001 (proposed)");
+    expect(heard).toContain('[{"id":"LS-0001","state":"proposed","text":"Stop buying what already ran 8% on the day."}]');
+    change = "Wait for the spread to settle after the open.";
+    rule = { kind: "chase", maxPct: 500 };
+    advance(24 * HOUR);
+    await report();
+    v = (await desk.view())!;
+    expect(v.lessons[0]).toMatchObject({ id: "LS-0002", from: "evening", text: "Wait for the spread to settle after the open.", roles: ["search", "risk", "exit", "head"], state: "proposed" });
+    expect(v.lessons[0]!.rule).toBeUndefined();
+    change = "None.";
+    advance(24 * HOUR);
+    await report();
+    expect((await desk.view())!.lessons).toHaveLength(2);
+    // Sunday 18 October 2026, 21:10 New York: the weekly review's prune
+    advance(Date.parse("2026-10-19T01:10:00Z") - (START + 10 * HOUR + 5 * 60_000 + 3 * 24 * HOUR));
+    await desk.tick();
+    v = (await desk.view())!;
+    expect(v.lessons[0]).toMatchObject({ id: "LS-0003", from: "weekly", text: "Stop trading thin coins.", rule: { kind: "volume", minUsd: 10_000_000 }, source: "the weekly review of 2026-10-18" });
+    expect(v.reports.find((r) => r.kind === "weekly")?.text).toContain("Prune: Stop trading thin coins. — proposed as lesson LS-0003 (as a rule: no lead on a market that traded less than $10M over the day)");
+  });
+
+  it("the Debrief reads them over the journal's trades: what the desk's trades put forward, the lesson already kept that says it, what each rule would have done", async () => {
+    const { svc, own, hire, home } = await boot();
+    await hire();
+    // forty desk trades on DOGE that lost, forty on BTC that made a little; a trade of the owner's that no rule reads
+    const row = (i: number, symbol: string, net: number, o: { change?: number; desk?: boolean } = {}): JournalTrade => ({ symbol, kind: "spot", side: "long", openedAt: new Date(START - (100 - i) * HOUR).toISOString(), closedAt: new Date(START - (100 - i) * HOUR + 30 * 60_000).toISOString(), hours: 0.5, openRef: `o${i}`, closeRef: `c${i}`, qty: 1, entryPrice: 100, exitPrice: 100 + net, entryUsd: 1000, grossUsd: net * 10 + 2, feesUsd: 2, fundingUsd: 0, netUsd: net * 10, returnPct: net, maePct: Math.min(0, net), mfePct: Math.max(0, net), hi: 0, lo: 0, fills: 2, end: net > 0 ? "take-profit" : "stop-loss", venue: "pap", venueName: "Paper", paper: true, by: o.desk === false ? { who: "owner" } : { who: "desk", role: "sniper" }, closedBy: { who: "venue" }, ...(o.desk === false ? {} : { lead: { id: `L-${i}`, thesis: "momentum", confidence: 0.7, checks: { spreadPct: 0.1, maxSizeUsd: 50, lossRoomUsd: 250, minNotionalUsd: null, changePct24h: o.change ?? 2 } } }) });
+    for (let i = 0; i < 40; i++) appendTrade(home, row(i, "DOGE/USDT", -0.8 + (i % 5) * 0.1, { change: 10 }), START);
+    for (let i = 40; i < 80; i++) appendTrade(home, row(i, "BTC/USDT", 0.1 + (i % 5) * 0.05), START);
+    appendTrade(home, row(80, "DOGE/USDT", -5, { desk: false }), START);
+    await own(lesson({ op: "adopt", text: "Don't chase.", rule: { kind: "chase", maxPct: 8 } }));
+    let d = svc.debrief({});
+    if (isRefusal(d)) throw new Error(d.message);
+    expect(d.desk).toBe(true);
+    expect(d.deskTrades).toBe(80);
+    expect(d.candidates.map((c) => [c.from, c.slice, c.words, c.kept])).toEqual([["market", "DOGE/USDT", "never DOGE/USDT", undefined]]);
+    expect(d.lessons).toEqual([expect.objectContaining({ id: "LS-0001", state: "adopted", words: "no lead on a market that moved more than 8% over the day its way", effect: { trades: 80, unjudged: 0, stopped: { n: 40, netUsd: -240, meanPct: -0.6, winRatePct: 0 }, kept: { n: 40, netUsd: 80, meanPct: 0.2, winRatePct: 100 }, few: false } })]);
+    // the candidate adopted from the Debrief: kept, and said so beside it
+    const c = d.candidates[0]!;
+    expect(code(await own(lesson({ op: "adopt", text: c.text, rule: c.rule, from: "debrief", source: "the Debrief: the market slice DOGE/USDT" })))).toBe("account");
+    d = svc.debrief({ who: "desk" });
+    if (isRefusal(d)) throw new Error(d.message);
+    expect(d.candidates[0]?.kept).toEqual({ id: "LS-0002", state: "adopted" });
+    expect(d.lessons[0]).toMatchObject({ id: "LS-0002", from: "debrief", source: "the Debrief: the market slice DOGE/USDT", effect: { stopped: { n: 40 } } });
+  });
+
+  it("an outside seat reads the adopted lessons: the desk's, and its own role's", async () => {
+    const { own, hire, desk } = await boot();
+    await hire();
+    await own(lesson({ op: "adopt", text: "Close by four hours.", rule: { kind: "plan", maxHours: 4 } }));
+    await own(lesson({ op: "propose", text: "Not yet." }));
+    const k = desk.seatKeyOf("exit");
+    if (isRefusal(k)) throw new Error(k.message);
+    const r = (await desk.forSeat(k.address)) as Record<string, unknown> & { yourSeat: { lessons: unknown[] }; lessons: unknown[] };
+    expect(r.lessons).toEqual([{ id: "LS-0001", text: "Close by four hours.", rule: { kind: "plan", maxHours: 4 }, words: "the plan held to 4 h at most", roles: ["risk", "exit"] }]);
+    expect(r.yourSeat.lessons).toEqual(r.lessons);
   });
 });

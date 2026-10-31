@@ -176,7 +176,7 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
   backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
                        desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
-  mcp.ts               the MCP server an agent's seat runs (40 tools)
+  mcp.ts               the MCP server an agent's seat runs (41 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only
 src/core/ src/agent/   shared: the hash-chained ledger (agent/ledger.ts), refusal codes, hashing, jsonl
