@@ -17,8 +17,12 @@
    THE DESK'S LESSONS (account/lessons.ts), from the same read: what the desk's trades here put forward (a slice that lost beyond chance
    against the rest, with the rule that would say it and how many slices were looked at), and every lesson the desk keeps — the Head's
    proposals from its evening report and weekly review, the Debrief's, the owner's — each rule with what it would have done to these
-   trades. A lesson changes nothing until the owner adopts it, signed (setDesk change "lesson" {op: propose · adopt · reject · retire}):
-   adopted, its rule is one of Risk's hard checks and its words are in its seats' prompts. Only the owner sees the buttons; a viewer reads. */
+   trades, and ITS TEST: the trades entered after it was proposed while it was not in force — the ones it would have stopped judged against
+   nothing at all (helps, hurts, not told apart, too few yet). A lesson changes nothing until the owner adopts it, signed (setDesk change
+   "lesson" {op: propose · adopt · reject · retire}): adopted, its rule is one of Risk's hard checks and its words are in its seats' prompts.
+   "Test in the lab…" puts a lesson's rule in the Backtest page's desk form (ui/backtest.js BT.deskRules), for the owner to run the desk over
+   the same bars with it. Only the owner sees the buttons; a viewer reads. And THE DESK'S VERSIONS: each configuration it ran under, what
+   changed, and what its trades made (the Debrief's version slice). */
 
 const DB = { read: null, err: "", venue: "", who: "", days: "" };
 const DB_HOURS = ["00–04", "04–08", "08–12", "12–16", "16–20", "20–24"];
@@ -26,11 +30,12 @@ const DB_LS_STATE = { proposed: "Waiting for you", adopted: "Adopted", rejected:
 const DB_LS_FROM = { evening: "the evening report", weekly: "the weekly review", debrief: "the Debrief", you: "you" };
 const DB_LS_CUT = { market: "market", side: "side", hours: "hours", held: "holding-time", confidence: "confidence" };
 const DB_LS_SEAT = { search: "Search", risk: "Risk", exit: "Exit", head: "the Head" };
+const DB_TEST = { helps: ["up", "Helps"], hurts: ["warn", "Hurts"], unproven: ["", "Not told apart yet"], few: ["", "Too few yet"], lab: ["", "For the lab"] };
 const DB_RULES = [["", "Words only — no rule"], ["chase", "Don't chase a move"], ["funding", "Don't pay heavy funding"], ["volume", "Leave thin markets alone"], ["hours", "Skip some hours"], ["side", "One side only"], ["markets", "Leave some markets alone"], ["confidence", "Search sure enough"], ["plan", "Hold the plan"]];
 const DB_WHO = [["", "Everyone"], ["you", "You"], ["desk", "The desk"], ["agents", "Agents"]];
 const DB_DAYS = [["", "All"], ["90", "90 days"], ["30", "30 days"], ["7", "7 days"]];
 const DB_ENDS = { "take-profit": "Take-profit", "stop-loss": "Stop-loss", closed: "Closed by an order", liquidated: "Liquidated", settled: "Settled" };
-const DB_SLICES = [["market", "Market"], ["side", "Side"], ["hours", "Entered (New York)"], ["held", "Held"], ["by", "Who"], ["confidence", "Search's confidence"]];
+const DB_SLICES = [["market", "Market"], ["side", "Side"], ["hours", "Entered (New York)"], ["held", "Held"], ["by", "Who"], ["confidence", "Search's confidence"], ["version", "Desk version"]];
 
 function renderDebrief({ el }) {
   if (!el.firstElementChild || el.firstElementChild.dataset.db !== "1") {
@@ -237,7 +242,22 @@ function dbLessonsHtml(r) {
     : `<p class="empty">${n < 30 ? `${esc(plural(n, "trade"))} of the desk's here: a slice is put forward from 30 trades in it.` : "No slice of the desk's trades here lost beyond chance against the rest: nothing to put forward."}</p>`;
   const list = (ls) => `<ul class="db-ls-list">${ls.map((l) => dbLessonHtml(l, me)).join("")}</ul>`;
   const counts = [adopted.length ? `${adopted.length} adopted` : "", waiting.length ? `${waiting.length} waiting for you` : ""].filter(Boolean).join(" · ");
-  return `<section class="sec db-lessons" aria-labelledby="db-ls-h"><div class="card-head"><h2 class="h2" id="db-ls-h">Lessons for the desk</h2>${counts ? `<span class="dim small">${esc(counts)}</span>` : ""}</div><p class="dim small">A lesson changes nothing until you adopt it. Adopted, its words go to the seats it names, and its rule — where it has one — is one of Risk's hard checks from the next lead, judged before the brain is asked. What a rule would have done to these trades describes the trades it was likely found in: it does not test it.</p><h3>What the desk's trades here suggest</h3>${found}${waiting.length ? `<h3>Waiting for you</h3>${list(waiting)}` : ""}${adopted.length ? `<h3>In force</h3>${list(adopted)}` : ""}${done.length ? `<details class="db-slice"><summary>Rejected and retired · ${esc(done.length)}</summary>${list(done)}</details>` : ""}${me ? `<div class="acts db-ls-write"><button type="button" class="btn btn-sm" data-db-ls="write">Write a lesson…</button></div>` : ""}</section>`;
+  return `<section class="sec db-lessons" aria-labelledby="db-ls-h"><div class="card-head"><h2 class="h2" id="db-ls-h">Lessons for the desk</h2>${counts ? `<span class="dim small">${esc(counts)}</span>` : ""}</div><p class="dim small">A lesson changes nothing until you adopt it. Adopted, its words go to the seats it names, and its rule — where it has one — is one of Risk's hard checks from the next lead, judged before the brain is asked. What a rule would have done to these trades describes the trades it was likely found in: it does not test it.</p><h3>What the desk's trades here suggest</h3>${found}${waiting.length ? `<h3>Waiting for you</h3>${list(waiting)}` : ""}${adopted.length ? `<h3>In force</h3>${list(adopted)}` : ""}${done.length ? `<details class="db-slice"><summary>Rejected and retired · ${esc(done.length)}</summary>${list(done)}</details>` : ""}${me ? `<div class="acts db-ls-write"><button type="button" class="btn btn-sm" data-db-ls="write">Write a lesson…</button></div>` : ""}${dbVersionsHtml(r)}</section>`;
+}
+
+/* THE DESK'S VERSIONS, the newest first: when each began, what changed, and what its trades here made — the Debrief's version slice */
+function dbVersionsHtml(r) {
+  const vs = (r && r.versions) || [];
+  if (!vs.length) return "";
+  const by = new Map((((r.debrief && r.debrief.slices) || {}).version || []).map((x) => [x.label, x]));
+  const cols = [
+    { label: "Version", cell: (v) => `<b>v${esc(v.v)}</b>` },
+    { label: "Since", cls: "nw", cell: (v) => esc(nyDay(v.at)) },
+    { label: "What changed", cell: (v) => `<span class="small">${esc(v.words)}</span>` },
+    { label: "Trades", r: true, cell: (v) => { const x = by.get(`v${v.v}`); return x ? `${esc(x.n)}${dbFew(x.n)}` : '<span class="dim">0</span>'; } },
+    { label: "Net a trade", r: true, cell: (v) => { const x = by.get(`v${v.v}`); return x ? chg(x.meanPct) : '<span class="dim">—</span>'; } },
+  ];
+  return `<h3>The desk's versions</h3><p class="dim small">A new version each time a signed change altered what the seats decide by — the objective, the brain, a charter, a seat, the autonomy, a lesson adopted or retired — and each trade counted under the one its lead was found in.</p>${table(cols, vs.slice(0, 8), { cls: "db-versions" })}`;
 }
 
 /* one candidate: its words, its rule, its slice against the rest, how many slices were looked at; Adopt… and Keep as a proposal */
@@ -257,8 +277,16 @@ function dbLessonHtml(l, me) {
   const eff = l.effect ? dbEffectHtml(l.effect) : l.rule && l.rule.kind === "plan" ? '<p class="dim small">A plan rule changes exits: what it would have made is a run\'s to say — sweep a desk run\'s exits on the Backtest page.</p>' : "";
   const seats = (l.roles || []).map((x) => DB_LS_SEAT[x] || x).join(", ");
   const btn = (act, label, cls = "btn btn-sm") => `<button type="button" class="${cls}" data-db-ls="${act}" data-id="${esc(l.id)}">${esc(label)}</button>`;
-  const acts = !me ? "" : l.state === "proposed" ? `<div class="acts">${btn("adopt", "Adopt…", "btn btn-sm btn-primary")}${btn("reject", "Reject…")}</div>` : l.state === "adopted" ? `<div class="acts">${btn("retire", "Retire…")}</div>` : "";
-  return `<li class="db-ls ${esc(l.state)}"><div class="db-ls-head"><b>${esc(l.id)}</b> <span class="tag${tag}">${esc(DB_LS_STATE[l.state] || l.state)}${esc(when)}</span> <span class="dim small">from ${esc(l.source || DB_LS_FROM[l.from] || l.from)} · to ${esc(seats)}</span></div><p class="db-ls-text">“${esc(l.text)}”</p>${rule}${eff}${l.why ? `<p class="dim small">Why: ${esc(l.why)}</p>` : ""}${acts}</li>`;
+  const lab = me && l.rule ? btn("lab", "Test in the lab…") : "";
+  const acts = !me ? "" : l.state === "proposed" ? `<div class="acts">${btn("adopt", "Adopt…", "btn btn-sm btn-primary")}${btn("reject", "Reject…")}${lab}</div>` : l.state === "adopted" ? `<div class="acts">${btn("retire", "Retire…")}${lab}</div>` : lab ? `<div class="acts">${lab}</div>` : "";
+  return `<li class="db-ls ${esc(l.state)}"><div class="db-ls-head"><b>${esc(l.id)}</b> <span class="tag${tag}">${esc(DB_LS_STATE[l.state] || l.state)}${esc(when)}</span> <span class="dim small">from ${esc(l.source || DB_LS_FROM[l.from] || l.from)} · to ${esc(seats)}</span></div><p class="db-ls-text">“${esc(l.text)}”</p>${rule}${dbTestHtml(l.test)}${eff}${l.why ? `<p class="dim small">Why: ${esc(l.why)}</p>` : ""}${acts}</li>`;
+}
+
+/* A LESSON'S TEST (account/lessons.ts testOf): its verdict and its words — the trades entered after it was proposed, while it was not in force */
+function dbTestHtml(t) {
+  if (!t) return "";
+  const [cls, label] = DB_TEST[t.verdict] || ["", t.verdict];
+  return `<p class="small db-ls-test"><span class="tag${cls ? ` ${cls}` : ""}">${esc(label)}</span> ${esc(t.words)}${t.unjudged ? ` <span class="dim">${esc(plural(t.unjudged, "trade"))} it could not judge.</span>` : ""}</p>`;
 }
 
 /* what a rule would have done to the desk's trades here: the ones it stops and what they made, against the ones it lets through */
@@ -268,7 +296,7 @@ function dbEffectHtml(e) {
   const k = e.kept;
   const stopped = s.n ? `${plural(s.n, "trade")} of the desk's ${e.trades}: ${money(s.netUsd)}, ${dbPct(s.meanPct, 3)} a trade, ${dbNum(s.winRatePct, 0)}% won` : `none of the desk's ${e.trades} trades`;
   const unjudged = e.unjudged ? ` ${plural(e.unjudged, "trade")} it could not judge: the number it needs was not kept with ${e.unjudged === 1 ? "it" : "them"}.` : "";
-  return `<p class="small">Here it would have stopped ${esc(stopped)}; the ${esc(k.n)} it let through made ${esc(money(k.netUsd))}, ${esc(dbPct(k.meanPct, 3))} a trade.${esc(unjudged)}${s.n ? dbFew(s.n) : ""}</p>`;
+  return `<p class="small dim">On every trade here, the ones it was likely found in among them: it would have stopped ${esc(stopped)}; the ${esc(k.n)} it let through made ${esc(money(k.netUsd))}, ${esc(dbPct(k.meanPct, 3))} a trade.${esc(unjudged)}${s.n ? dbFew(s.n) : ""}</p>`;
 }
 
 /* dollars in the large, as the desk writes them (account/lessons.ts usdShort): $10M, $2.5B, $750K */
@@ -354,6 +382,15 @@ async function dbLessonAct(act, d) {
   const r = DB.read;
   if (!r || !owns()) return;
   if (act === "write") return void dbLessonForm();
+  if (act === "lab") {
+    const l = (r.lessons || []).find((x) => x.id === d.id);
+    if (!l || !l.rule || typeof BT === "undefined") return;
+    // the desk's form on the Backtest page, held to this lesson alone: the owner picks the bars and signs the run (ui/backtest.js)
+    BT.mode = "desk";
+    BT.deskRules = [{ id: l.id, rule: l.rule, words: l.words || dbRuleWords(l.rule) }];
+    toast(`The desk's form on Backtest holds ${l.id}: pick the markets and the window, then Run the desk…`, "ok");
+    return void go("backtest");
+  }
   const send = (value) => own({ type: "setDesk", desk: "desk", change: "lesson", value: JSON.stringify(value) }, () => {
     forget("/api/account/debrief");
     forget("/api/account/desk");

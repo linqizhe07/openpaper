@@ -88,3 +88,6 @@
 .db-ls-hours { display: flex; flex-wrap: wrap; gap: 6px 16px; border: 0; padding: 0; margin: 0; font-size: 14px; }
 .db-ls-hours legend { font-size: 13px; color: var(--dim); margin-bottom: 6px; padding: 0; }
 .db-ls-hours label { display: inline-flex; gap: 6px; align-items: center; font-variant-numeric: tabular-nums; }
+/* a lesson's test, its verdict a pill before its words; the desk's versions, a table under the lessons */
+.db-ls-test .tag { margin-right: 4px; }
+.db-versions td .small { display: inline-block; max-width: 46ch; white-space: normal; }

@@ -16,7 +16,7 @@
  *   R               where the stop is known, each trade's result in units of what it risked to its stop
  *   how they ended  take-profit, stop-loss, liquidated, settled, closed by an order — each with its count and result
  *   slices          the market, the side, the New York hours it was entered in, how long it was held, who traded it, the desk's
- *                   confidence — each with its count, win rate and mean net, and FEW marked
+ *                   confidence, the desk's version — each with its count, win rate and mean net, and FEW marked
  *   calibration     for the desk's leads, the confidence Search gave against how often its leads won
  *   notes           the findings in plain sentences, numbers only from the trades */
 import type { ClosedTrip, TripEnd } from "../live/trips.ts";
@@ -69,7 +69,7 @@ export interface Debrief {
    * spread of them */
   r?: { trades: number; meanR: number; pastStop: number; bins: Array<{ label: string; n: number }> } | undefined;
   ends: Array<{ end: TripEnd; n: number; netUsd: number; winRatePct: number }>;
-  slices: { market: DebriefSlice[]; side: DebriefSlice[]; hours: DebriefSlice[]; held: DebriefSlice[]; by: DebriefSlice[]; confidence: DebriefSlice[] };
+  slices: { market: DebriefSlice[]; side: DebriefSlice[]; hours: DebriefSlice[]; held: DebriefSlice[]; by: DebriefSlice[]; confidence: DebriefSlice[]; version: DebriefSlice[] };
   calibration: Array<{ label: string; n: number; saidPct: number; wonPct: number }>;
   streaks: { longestLosing: number; now: { won: boolean; n: number } | null };
   /** the result trade after trade: [closed at, ms; the net so far, $] */
@@ -234,6 +234,8 @@ export function debriefOf(trades: readonly DebriefTrade[]): Debrief {
     held: slicesBy(ts, (t) => heldOf(t.hours), HELD),
     by: slicesBy(ts, (t) => handOf(t.by)),
     confidence: slicesBy(ts, (t) => (t.lead?.confidence !== undefined ? confidenceOf(t.lead.confidence) : undefined), CONFIDENCE),
+    // the desk's versions, in their order: what each configuration of it made (desk.ts DeskVersion)
+    version: slicesBy(ts, (t) => (t.lead?.version !== undefined ? `v${t.lead.version}` : undefined), [...new Set(ts.flatMap((t) => (t.lead?.version !== undefined ? [t.lead.version] : [])))].sort((a, b) => a - b).map((v) => `v${v}`)),
   };
   const calibration = CONFIDENCE.map((label) => {
     const xs = ts.filter((t) => t.lead?.confidence !== undefined && confidenceOf(t.lead.confidence) === label);

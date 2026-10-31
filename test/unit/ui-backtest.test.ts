@@ -15,7 +15,7 @@ const UI = fileURLToPath(new URL("../../src/portfolio/public/ui/", import.meta.u
 const FILES = ["core.js", "backtest.js"];
 
 type Asked = { path: string; method: string; body?: unknown };
-function page(opts: { fetch?: (path: string, init?: { method?: string; body?: string }) => Promise<unknown> } = {}) {
+function page(opts: { fetch?: (path: string, init?: { method?: string; body?: string }) => Promise<unknown>; files?: string[] } = {}) {
   const asked: Asked[] = [];
   const kept = new Map<string, string>();
   const element = (): Record<string, unknown> => ({ addEventListener() {}, removeAttribute() {}, setAttribute() {}, querySelectorAll: () => [], querySelector: () => null, classList: { add() {}, remove() {}, toggle() {} }, dataset: {}, style: {}, hidden: false, innerHTML: "", textContent: "", value: "" });
@@ -44,7 +44,7 @@ function page(opts: { fetch?: (path: string, init?: { method?: string; body?: st
   };
   const ctx = createContext(sandbox);
   sandbox.window = runInContext("globalThis", ctx);
-  for (const f of FILES) new Script(readFileSync(`${UI}${f}`, "utf8"), { filename: f }).runInContext(ctx);
+  for (const f of opts.files ?? FILES) new Script(readFileSync(`${UI}${f}`, "utf8"), { filename: f }).runInContext(ctx);
   const run = <T = unknown>(code: string): T => runInContext(code, ctx) as T;
   return { run, asked, kept, sandbox, set: (name: string, value: unknown) => run(`${name} = ${JSON.stringify(value)}`) };
 }
@@ -432,5 +432,41 @@ describe("a run's entries beside random ones, and a desk run's exit rules", () =
     expect(html).toMatch(/12 rules · best \+[\d.]+% a trade<\/span>/);
     expect([...html.matchAll(/data-bt-act="open" data-id="([^"]+)"/g)].map((m) => m[1])).toEqual([RUN_ID, TRIAL(2).run]);
     expect([...html.matchAll(/data-bt-act="look" data-id="([^"]+)"/g)].map((m) => m[1])).toEqual([TRIAL(4).run, TRIAL(2).run]);
+  });
+});
+
+describe("a lesson tested in the lab", () => {
+  const RULE = { kind: "markets", skip: ["DOGE/USDT"] };
+  it("the desk's form holds the lessons' rules the run is held to, each to drop, and the ask carries them; none, and it says where they come from", () => {
+    const { run } = page();
+    expect(run<string>("btRulesHtml([])")).toContain("Held to no lesson. To test one in the lab, press Test in the lab… beside it on the Debrief page");
+    run(`BT.deskRules = [{ id: "LS-0004", rule: ${JSON.stringify(RULE)}, words: "never DOGE/USDT" }]`);
+    const html = run<string>("btRulesHtml(BT.deskRules)");
+    expect(html).toContain("Held to 1 lesson — Risk judges it on every lead before the script is asked; a run with it is a strategy of its own in the ledger:");
+    expect(html).toContain('<li><span><b>LS-0004</b> · never DOGE/USDT</span><button type="button" class="link" data-bt-act="rule-drop" data-i="0" aria-label="Drop LS-0004: never DOGE/USDT">Drop</button></li>');
+    expect(run('btDeskAskOf({ markets: "perp:BTC", interval: "1h", "d.tpPct": "2" })')).toEqual({ markets: "perp:BTC", interval: "1h", params: { tpPct: 2 }, rules: [RULE] });
+    run("BT.deskRules = []");
+    expect(run('btDeskAskOf({ markets: "perp:BTC", interval: "1h" })')).not.toHaveProperty("rules");
+  });
+
+  it("a desk run held to lessons sets the same run without them beside it, to open — or, with none in the ledger, offers the owner to run it", () => {
+    const { run } = page({ files: ["core.js", "debrief.js", "backtest.js"] });
+    const held = DESK_VIEW({ strategy: { id: "desk", name: "The desk", paramWords: "sizeUsd 1000 · held to never DOGE/USDT", params: {}, rules: [RULE] }, fills: 30 });
+    const without = { run: "20261029T120000-aaaaaaaaaa", returnPct: -1.5, sharpe: -0.4, maxDrawdownPct: 3.2, fills: 44, kept: true };
+    const html = run<string>(`btHeldHtml(${JSON.stringify({ ...held, without })})`);
+    expect(html).toContain('<h3 class="h3">Held to 1 lesson</h3><p class="small">never DOGE/USDT</p>');
+    expect(html).toContain('<th scope="row">Held to the lessons</th>');
+    expect(html).toContain('<th scope="row">Without them</th>');
+    expect(html).toContain('data-bt-act="open" data-id="20261029T120000-aaaaaaaaaa">Open the run without them</button>');
+    expect(run<string>(`btResultHtml(${JSON.stringify({ ...held, without })})`)).toContain('class="bt-held"');
+    const alone = run<string>(`btHeldHtml(${JSON.stringify(held)})`);
+    expect(alone).toContain("The same run without them is not in the ledger yet: run it, and the two stand side by side here.");
+    expect(alone).toContain('data-bt-act="desk-without">Run it without them…</button>');
+    run('Owner.role = "viewer"');
+    expect(run<string>(`btHeldHtml(${JSON.stringify(held)})`)).not.toContain("desk-without");
+    // in the trials, a desk run held to lessons says so
+    const L = { holdout: { start: "2026-07-31" }, ledger: { rows: 1, intact: true, trials: 1, distinct: 1, looks: 0 }, runs: [{ seq: 1, ts: "2026-10-31T12:00:00Z", kind: "trial", by: "owner", window: "train", strategy: "desk", params: { sizeUsd: 1000 }, rules: [RULE], markets: ["perp:BTC"], interval: "4h", from: "2026-07-20T00:00:00Z", to: "2026-07-31T00:00:00Z", returnPct: -0.5, sharpe: -2.9, maxDrawdownPct: 0.8, fills: 68, kept: true, run: "20261031T162814-6d3b53f897" }] };
+    expect(run<string>(`btTrialsHtml(${JSON.stringify(L)}, true, {})`)).toContain('<span class="tag" title="never DOGE/USDT">held to 1 lesson</span>');
+    expect(run(`btHeldHtml(${JSON.stringify(DESK_VIEW())})`)).toBe("");
   });
 });

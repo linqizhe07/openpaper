@@ -24,6 +24,7 @@ import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { no } from "../refuse.ts";
 import { DEFAULT_QTY_STEP, paperSource, type PaperChange, type PaperFunding } from "../live/paper.ts";
 import type { TradeLead } from "../account/journal.ts";
+import type { LessonRule } from "../account/lessons.ts";
 import type { ClosedTrip } from "../live/trips.ts";
 import { floorTo, INTERVAL_MS, type OrderRequest } from "../live/trade.ts";
 import { barIndexAt, barsClosed, barUnderWay, DEFAULT_COSTS, historySource, type BacktestCosts, type BacktestMarket } from "./source.ts";
@@ -79,7 +80,8 @@ export interface BacktestRefusal {
   why: string;
 }
 export interface BacktestRun {
-  strategy: { id: string; name: string; words: string; params: Record<string, number>; paramWords: string };
+  /** a desk run's `rules`: the lessons' rules it was held to (account/lessons.ts) */
+  strategy: { id: string; name: string; words: string; params: Record<string, number>; paramWords: string; rules?: LessonRule[] | undefined };
   markets: Array<{ symbol: string; kind: string; name: string; from: string; interval: string; bars: number; first: string; last: string; fundingHours: number }>;
   from: string;
   to: string;

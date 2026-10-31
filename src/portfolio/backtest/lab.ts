@@ -39,6 +39,7 @@ import { stepReturns } from "./metrics.ts";
 import { DEFAULT_COSTS, type BacktestCosts, type BacktestMarket } from "./source.ts";
 import { makeStrategy, STRATEGIES, strategySpec, type StrategySpec } from "./strategies.ts";
 import { DESK_NAME, DESK_PARAMS, deskParams, type DeskParams } from "./desk-params.ts";
+import { LESSONS_ADOPTED_MOST, parseRule, ruleKey, type LessonRule } from "../account/lessons.ts";
 import { baselineOf, screenCosts, SWEEP_GRID, SWEEP_WORK_MOST, sweepOf, tapeOf, tradesOf, type Baseline, type Sweep, type SweepGrid, type SweepRule } from "./screen.ts";
 import { dsr, expectedMaxSharpe, moments, pbo, psr } from "./stats.ts";
 
@@ -84,6 +85,8 @@ export interface TrialEntry {
   feeBps: number;
   /** as asked: none, the strategy's own */
   leverage?: number | undefined;
+  /** the desk's: the lessons' rules it was held to (account/lessons.ts) — a run with them is a strategy of its own */
+  rules?: LessonRule[] | undefined;
   costs: BacktestCosts;
   steps: number;
   perYear: number;
@@ -341,15 +344,32 @@ export function overfit(home: string, rows: readonly LabRow[], t: TrialEntry): O
 
 // ---- a run ----
 
-/** the desk itself as a run's strategy (backtest/desk.ts): its numbers read as deskParams reads them */
+/** the desk itself as a run's strategy (backtest/desk.ts): its numbers read as deskParams reads them, and the lessons' rules it is held to,
+ * adopted in its own account as the owner adopts them (account/lessons.ts) — the lab's test of a lesson: the same run with it and without */
 export interface DeskSpec {
   id: "desk";
   params: DeskParams;
+  rules?: LessonRule[] | undefined;
 }
 export const isDesk = (s: StrategySpec | DeskSpec): s is DeskSpec => s.id === "desk";
-export function deskSpec(raw: Record<string, number | string> = {}): DeskSpec | string {
+export function deskSpec(raw: Record<string, number | string> = {}, rules?: unknown): DeskSpec | string {
   const p = deskParams(raw);
-  return typeof p === "string" ? p : { id: "desk", params: p };
+  if (typeof p === "string") return p;
+  if (rules === undefined) return { id: "desk", params: p };
+  const r = deskRules(rules);
+  return typeof r === "string" ? r : { id: "desk", params: p, ...(r.length ? { rules: r } : {}) };
+}
+/** the lessons' rules a desk run is held to, read strictly (account/lessons.ts parseRule), each once, as many as a desk adopts at most */
+export function deskRules(raw: unknown): LessonRule[] | string {
+  if (!Array.isArray(raw)) return 'rules is a list of lessons\' rules: [{"kind": "chase", "maxPct": 8}, …]';
+  if (raw.length > LESSONS_ADOPTED_MOST) return `a desk is held to ${LESSONS_ADOPTED_MOST} lessons at most`;
+  const out: LessonRule[] = [];
+  for (const x of raw) {
+    const r = parseRule(x);
+    if (typeof r === "string") return r;
+    if (!out.some((y) => ruleKey(y) === ruleKey(r))) out.push(r);
+  }
+  return out;
 }
 
 export interface LabAsk {
@@ -402,6 +422,8 @@ export interface LabOutcome {
   psr?: number | undefined;
   looks?: number | undefined;
   overfit?: Overfit | undefined;
+  /** a desk run held to lessons: the same run without them, where the ledger has one */
+  without?: WithoutRules | undefined;
   ledger: { rows: number; intact: boolean; brokenAt?: number | undefined; why?: string | undefined };
 }
 
@@ -412,8 +434,26 @@ export function runId(o: { spec: StrategySpec | DeskSpec; refs: MarketRef[]; int
 }
 
 /** what a trial is, hashed: its key */
-const keyOf = (t: Pick<TrialEntry, "strategy" | "params" | "markets" | "interval" | "from" | "to" | "cashUsd" | "feeBps" | "leverage" | "costs">): string =>
-  sha256(canonical({ strategy: t.strategy, params: t.params, markets: [...t.markets].sort(), interval: t.interval, from: t.from, to: t.to, cashUsd: t.cashUsd, feeBps: t.feeBps, leverage: t.leverage ?? null, costs: t.costs })).slice(0, 16);
+const keyOf = (t: Pick<TrialEntry, "strategy" | "params" | "markets" | "interval" | "from" | "to" | "cashUsd" | "feeBps" | "leverage" | "costs" | "rules">): string =>
+  sha256(canonical({ strategy: t.strategy, params: t.params, markets: [...t.markets].sort(), interval: t.interval, from: t.from, to: t.to, cashUsd: t.cashUsd, feeBps: t.feeBps, leverage: t.leverage ?? null, costs: t.costs, ...(t.rules?.length ? { rules: [...t.rules].sort((a, b) => ruleKey(a).localeCompare(ruleKey(b))) } : {}) })).slice(0, 16);
+
+/** A DESK RUN HELD TO LESSONS beside the same run without them: the latest trial in the ledger with the same desk numbers, markets, bars,
+ * window, money and costs and no rules — the lab's pair for a lesson's test — where one ran */
+export interface WithoutRules {
+  run: string;
+  returnPct: number;
+  sharpe: number;
+  maxDrawdownPct: number;
+  fills: number;
+  kept: boolean;
+}
+function withoutRules(rows: readonly LabRow[], t: TrialEntry): WithoutRules | undefined {
+  if (!t.rules?.length) return undefined;
+  const { rules: _rules, ...bare } = t;
+  const key = keyOf(bare);
+  const w = rows.filter(isTrial).filter((r) => r.key === key && r.window === t.window).at(-1);
+  return w ? { run: w.run, returnPct: w.returnPct, sharpe: w.sharpe, maxDrawdownPct: w.maxDrawdownPct, fills: w.fills, kept: w.kept } : undefined;
+}
 
 /** A BACKTEST RUN, from what was asked to what came of it — on the right side of the holdout, counted in the ledger, kept in the home (see
  * the top of this file) */
@@ -457,7 +497,7 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
     const feeBps = desk ? PAPER_FEE_BPS : ask.feeBps;
     const base = { markets: loaded.markets, from: start, to, cashUsd: ask.cashUsd, feeBps, costs: ask.costs, ...(ask.maxSteps !== undefined ? { maxSteps: ask.maxSteps } : {}) };
     const run = desk
-      ? await (await import("./desk.ts")).runDeskBacktest({ markets: loaded.markets, from: start, to, cashUsd: ask.cashUsd, costs: ask.costs, params: (ask.spec as DeskSpec).params, work: join(work, "desk"), ...(ask.maxSteps !== undefined ? { maxSteps: ask.maxSteps } : {}), say: deps.say })
+      ? await (await import("./desk.ts")).runDeskBacktest({ markets: loaded.markets, from: start, to, cashUsd: ask.cashUsd, costs: ask.costs, params: (ask.spec as DeskSpec).params, ...((ask.spec as DeskSpec).rules?.length ? { rules: (ask.spec as DeskSpec).rules } : {}), work: join(work, "desk"), ...(ask.maxSteps !== undefined ? { maxSteps: ask.maxSteps } : {}), say: deps.say })
       : await runBacktest({ ...base, ...(ask.leverage !== undefined ? { leverage: ask.leverage } : {}), strategy: ask.spec as StrategySpec, home: join(work, "run"), say: deps.say });
     if (isRefusal(run)) return run;
     let benchmark: BacktestRun | undefined;
@@ -490,6 +530,7 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
       cashUsd: ask.cashUsd,
       feeBps,
       ...(ask.leverage !== undefined && !desk ? { leverage: ask.leverage } : {}),
+      ...(desk && (ask.spec as DeskSpec).rules?.length ? { rules: (ask.spec as DeskSpec).rules } : {}),
       costs: ask.costs,
       steps: m.steps,
       perYear: m.perYear,
@@ -511,7 +552,8 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
     if (ask.save) pruneRuns(deps.home);
     const ledger = readTrials(deps.home);
     const judged = judge(deps.home, ledger.rows, trial);
-    return { id, run, ...(benchmark ? { benchmark } : {}), notes, ...(baseline ? { baseline } : {}), ...(saved ? { saved } : {}), window: ask.window, holdout, trial, ...judged, ledger: { rows: ledger.rows.length, intact: ledger.intact, ...(ledger.intact ? {} : { brokenAt: ledger.brokenAt, why: ledger.why }) } };
+    const without = withoutRules(ledger.rows, trial);
+    return { id, run, ...(benchmark ? { benchmark } : {}), notes, ...(baseline ? { baseline } : {}), ...(saved ? { saved } : {}), window: ask.window, holdout, trial, ...judged, ...(without ? { without } : {}), ledger: { rows: ledger.rows.length, intact: ledger.intact, ...(ledger.intact ? {} : { brokenAt: ledger.brokenAt, why: ledger.why }) } };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
@@ -601,14 +643,15 @@ export function askOf(body: Record<string, unknown>): Omit<LabAsk, "by" | "windo
   };
 }
 
-const DESK_FIELDS = ["markets", "interval", "from", "to", "cash", "params", "halfSpreadBps", "participation", "levelBps"] as const;
+const DESK_FIELDS = ["markets", "interval", "from", "to", "cash", "params", "rules", "halfSpreadBps", "participation", "levelBps"] as const;
 /** the bars the desk steps over: a day's bar is longer than its longest cycle */
 export const DESK_INTERVALS: readonly CandleInterval[] = ["1h", "4h"];
 
 /** WHAT THE OWNER'S SIGNATURE ASKS OF THE DESK (setBacktest desk, the Backtest page's desk mode): the signed value is the ask as JSON, read
  * as strictly as a request is — the markets (perpetuals), the bars (1h or 4h), the window, the money, the desk's own numbers
- * (desk-params.ts) and the cost model, a field it does not know refused. What it leaves out is a request's default. A training run like any
- * other: its window ends at the holdout's start at the latest. The desk fills at its paper account's own fee */
+ * (desk-params.ts), the lessons' rules it is held to (deskRules) and the cost model, a field it does not know refused. What it leaves out is
+ * a request's default. A training run like any other: its window ends at the holdout's start at the latest. The desk fills at its paper
+ * account's own fee */
 export function deskAskOf(value: string): (Omit<LabAsk, "by" | "window" | "save" | "maxSteps" | "benchmark" | "spec"> & { spec: DeskSpec }) | string {
   if (value.length > 2_000) return "the desk's ask is 2,000 characters of JSON at most";
   let body: unknown;
@@ -620,10 +663,10 @@ export function deskAskOf(value: string): (Omit<LabAsk, "by" | "window" | "save"
   if (typeof body !== "object" || body === null || Array.isArray(body)) return `the desk's ask is {${DESK_FIELDS.join(", ")}}`;
   const b = body as Record<string, unknown>;
   for (const k of Object.keys(b)) if (!(DESK_FIELDS as readonly string[]).includes(k)) return `the desk is asked with ${DESK_FIELDS.join(", ")} — not "${k.slice(0, 30)}"`;
-  const { params, ...rest } = b;
+  const { params, rules, ...rest } = b;
   if (params !== undefined && (typeof params !== "object" || params === null || Array.isArray(params))) return "params is {name: number}";
   for (const [k, v] of Object.entries(params ?? {})) if (typeof v !== "number") return `params.${k.slice(0, 30)} is a number`;
-  const spec = deskSpec((params ?? {}) as Record<string, number>);
+  const spec = deskSpec((params ?? {}) as Record<string, number>, rules);
   if (typeof spec === "string") return spec;
   // the rest is read as a request's is, its words and its defaults
   const ask = askOf({ ...rest, strategy: "hold" });
@@ -761,7 +804,8 @@ export function labRead(home: string, id: string, o: { owner?: boolean } = {}): 
   const trial = ledger.rows.filter(isTrial).find((r) => r.run === id);
   // its exit sweeps, newest first, every rule's figures with them
   const screens = ledger.rows.filter((r): r is ScreenRow => isScreen(r) && r.run === id).slice(-SCREENS_READ).reverse();
-  return { ...kept, ...(trial ? { trial, ...judge(home, ledger.rows, trial) } : {}), ...(screens.length ? { screens } : {}), ledger: { rows: ledger.rows.length, intact: ledger.intact } };
+  const without = trial ? withoutRules(ledger.rows, trial) : undefined;
+  return { ...kept, ...(trial ? { trial, ...judge(home, ledger.rows, trial) } : {}), ...(screens.length ? { screens } : {}), ...(without ? { without } : {}), ledger: { rows: ledger.rows.length, intact: ledger.intact } };
 }
 /** a kept run's exit sweeps read with it, the latest */
 const SCREENS_READ = 3;
@@ -773,7 +817,7 @@ export async function labEvaluate(run: string, deps: LabDeps, by: LabWho): Promi
   const t = readTrials(deps.home).rows.filter(isTrial).find((r) => r.run === run);
   if (!t) return no("E_ACCOUNT_BAD_ACTION", { message: `no trial ran as ${run}` });
   if (t.window !== "train") return no("E_ACCOUNT_BAD_ACTION", { message: `${run} was itself a look at the holdout: look again from the training run it tried` });
-  const spec = t.strategy === "desk" ? deskSpec(t.params) : strategySpec(t.strategy, t.params);
+  const spec = t.strategy === "desk" ? deskSpec(t.params, t.rules) : strategySpec(t.strategy, t.params);
   if (typeof spec === "string") return no("E_ACCOUNT_BAD_ACTION", { message: spec });
   const refs = parseMarkets(t.markets.join(","));
   if (typeof refs === "string") return no("E_ACCOUNT_BAD_ACTION", { message: refs });
