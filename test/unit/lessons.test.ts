@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DebriefTrade } from "../../src/portfolio/account/debrief.ts";
-import { candidatesOf, effectOf, fundingPctDay, holdPlan, judge, LESSONS_KEPT, makeRoom, noChange, parseRoles, parseRule, ruleKey, ruleWords, sameLesson, usdShort, type Lesson, type LeadFacts, type LessonRule } from "../../src/portfolio/account/lessons.ts";
+import { candidatesOf, effectOf, fundingPctDay, holdPlan, judge, LESSONS_KEPT, makeRoom, noChange, parseRoles, parseRule, ruleKey, ruleWords, sameLesson, testOf, usdShort, type Lesson, type LeadFacts, type LessonRule } from "../../src/portfolio/account/lessons.ts";
 
 /** LESSONS (account/lessons.ts): the rules a lesson may be — read strictly, said in words, judged on a lead as Risk sees it and on the
  * trades the journal kept — what a rule would have done to the desk's trades, and the candidates the Debrief puts forward: a slice of the
@@ -181,5 +181,46 @@ describe("what a rule would have done, and what the Debrief puts forward", () =>
     // entered 02:00 New York (06:00 UTC) against 10:00 (14:00 UTC), a day apart each
     const night = [...Array.from({ length: 40 }, (_, i) => trade(i, wobble(i, -1), { hour: i * 24 + 6 })), ...Array.from({ length: 40 }, (_, i) => trade(100 + i, wobble(i, 0.2), { hour: i * 24 + 14 }))];
     expect(candidatesOf(night).find((x) => x.from === "hours")).toMatchObject({ slice: "00–04", rule: { kind: "hours", skip: ["00–04"] } });
+  });
+});
+
+describe("a lesson's test: the desk's trades after it was proposed, while it was not in force", () => {
+  const lesson = (o: Partial<Lesson> = {}): Lesson => ({ id: "LS-0001", at: at(100), from: "you", text: "Don't chase.", roles: ["search", "risk"], rule: { kind: "chase", maxPct: 8 }, state: "proposed", ...o });
+  // ten chased trades before the proposal made money: they are not its test. After it, forty chased trades lost, forty others made a little
+  const before = Array.from({ length: 10 }, (_, i) => trade(i, 1, { hour: i * 5, change: 12 }));
+  const chased = (mean: number) => Array.from({ length: 40 }, (_, i) => trade(100 + i, wobble(i, mean), { hour: 101 + i * 5, change: 10 }));
+  const others = Array.from({ length: 40 }, (_, i) => trade(200 + i, wobble(i, 0.1), { hour: 102 + i * 5, change: 2 }));
+
+  it("helps where the trades it would have stopped lost beyond chance, hurts where they made money beyond it — the trades before it left out", () => {
+    const t = testOf(lesson(), [...before, ...chased(-0.8), ...others])!;
+    expect(t).toMatchObject({ since: at(100), trades: 80, unjudged: 0, stopped: { n: 40, netUsd: -310, meanPct: -0.775 }, kept: { n: 40 }, verdict: "helps" });
+    expect(t.t).toBeLessThanOrEqual(-2);
+    expect(t.words).toMatch(/^Of the desk's 80 trades since 2026-10-05, it would have stopped 40 — −\$310\.00, −0\.775% a trade, t −\d+\.\d: they lost beyond chance, so the rule would have kept \$310\.00\.$/);
+    const h = testOf(lesson(), [...before, ...chased(0.9), ...others])!;
+    expect(h.verdict).toBe("hurts");
+    expect(h.words).toMatch(/they made money beyond chance, so the rule would have cost \$\d+\.\d\d\.$/);
+    expect(testOf(lesson(), [...chased(0.025), ...others])!.verdict).toBe("unproven");
+  });
+
+  it("leaves out the time it was in force — from its adoption, to its retirement if it was retired — and says too soon under thirty", () => {
+    const all = [...before, ...chased(-0.8), ...others];
+    // adopted at hour 150: only the trades entered from 100 to 150 are its test
+    const adopted = testOf(lesson({ state: "adopted", adoptedAt: at(150), decidedAt: at(150) }), all)!;
+    expect(adopted.trades).toBe(all.filter((x) => Date.parse(x.openedAt) >= Date.parse(at(100)) && Date.parse(x.openedAt) < Date.parse(at(150))).length);
+    expect(adopted.verdict).toBe("few");
+    expect(adopted.words).toMatch(/^It would have stopped \d+ of the desk's \d+ trades since 2026-10-05 while it was not in force: 30 are needed to tell — in force, it stops the leads it would be tested on: the lab tests it\.$/);
+    // adopted the moment it was proposed: nothing to test it on, and waiting adds nothing
+    expect(testOf(lesson({ state: "adopted", adoptedAt: at(100), decidedAt: at(100) }), all)!.words).toBe("No trade of the desk's since 2026-10-05 while it was not in force to test it on — in force, it stops the leads it would be tested on: the lab tests it.");
+    expect(testOf(lesson({ at: at(1000) }), all)!.words).toBe("No trade of the desk's since 2026-11-11 to test it on yet.");
+    // retired at hour 250: the trades from then on count again
+    const retired = testOf(lesson({ state: "retired", adoptedAt: at(150), decidedAt: at(250) }), all)!;
+    expect(retired.trades).toBe(all.filter((x) => Date.parse(x.openedAt) >= Date.parse(at(100)) && (Date.parse(x.openedAt) < Date.parse(at(150)) || Date.parse(x.openedAt) >= Date.parse(at(250)))).length);
+    // an older file's adopted lesson, with no adoptedAt: in force from its decision
+    expect(testOf(lesson({ state: "adopted", decidedAt: at(150) }), all)!.trades).toBe(adopted.trades);
+  });
+
+  it("a plan rule is the lab's to test; words alone have nothing to count", () => {
+    expect(testOf(lesson({ rule: { kind: "plan", maxHours: 4 } }), [...chased(-0.8)])).toMatchObject({ verdict: "lab", trades: 40, words: expect.stringMatching(/^A plan rule changes exits/) });
+    expect(testOf(lesson({ rule: undefined }), [...chased(-0.8)])).toBeUndefined();
   });
 });

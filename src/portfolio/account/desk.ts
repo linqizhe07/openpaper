@@ -64,6 +64,7 @@ import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import type { LedgerRowInput } from "../../agent/ledger.ts";
 import { isRefusal, type Refusal } from "../../core/errors.ts";
+import { canonical, sha256 } from "../../core/hash.ts";
 import { no } from "../refuse.ts";
 import type { TabId } from "../live/categories.ts";
 import type { Exploration, ExploreItem } from "../live/explore.ts";
@@ -239,6 +240,8 @@ export interface Lead {
   state: LeadState;
   /** Search's own confidence in it, 0 to 1, as its brain gave it (the number its LEAD line says) */
   confidence?: number | undefined;
+  /** the desk's version it was found under (DeskVersion); absent on a lead found before versions were kept */
+  version?: number | undefined;
   /** Risk's hard-check numbers (LeadChecks) */
   checks?: LeadChecks | undefined;
   /** why it was rejected or refused, in the words of whoever did */
@@ -275,6 +278,21 @@ export interface Lead {
   closeRefused?: string | undefined;
   /** when the room was last told the venue gave no mark for it (ISO): between cycles said again only once a cycle has passed */
   noMarkAt?: string | undefined;
+}
+
+/** A VERSION OF THE DESK: what its seats decide by — the objective, the brain, the seats and their charters, the autonomy, the lessons in
+ * force — as one hash, numbered from 1, with when and what changed. One is written where a signed change made that hash differ (stamp):
+ * a pause, a cycle or a lesson only proposed writes none. Each lead carries the version it was found under, and so does the trade the
+ * journal keeps of it, so the Debrief sets one version's trades beside another's */
+export interface DeskVersion {
+  v: number;
+  at: string;
+  /** the change that made it — hire, objective, brain, charter, seat, autonomy, lesson, resume — or "first": the desk as it stood when
+   * versions began (a desk hired before they were kept) */
+  change: string;
+  /** what changed, in the door's own words for the change */
+  words: string;
+  hash: string;
 }
 
 export type RoomKind = "cycle" | "lead" | "clearance" | "order" | "card" | "exit" | "warning" | "halt" | "report" | "review" | "note" | "refusal" | "you";
@@ -487,6 +505,8 @@ export interface DeskFile {
   /** what the desk learned (account/lessons.ts): proposed by the Head, the Debrief or the owner; adopted, rejected and retired by the
    * owner's signature alone — every one kept, in the order proposed (absent: none yet) */
   lessons?: Lesson[] | undefined;
+  /** the desk's versions, oldest first (DeskVersion): the first and the latest MAX_VERSIONS - 1 kept */
+  versions?: DeskVersion[] | undefined;
   /** the New York day the last evening report and weekly review were written for */
   reported?: string | undefined;
   reviewed?: string | undefined;
@@ -785,6 +805,7 @@ export const DESK_ID = "desk";
 export const MAX_LEADS = 400;
 export const MAX_EQUITY_POINTS = 2000;
 export const MAX_REPORTS = 60;
+export const MAX_VERSIONS = 200;
 export const ROOM_KEPT = 3000;
 export const ROOM_SHOWN = 160;
 /** the floor's read: the most room lines one answer carries, the equity points, the leads */
@@ -1069,6 +1090,8 @@ export interface DeskView {
   venue: { id: string; name: string; usd: number; paper: boolean; connected: boolean };
   /** what the desk learned (account/lessons.ts), the newest first: proposed, adopted, rejected, retired */
   lessons: Lesson[];
+  /** the desk's versions, the newest first */
+  versions: DeskVersion[];
 }
 
 export interface DeskCatalog {
@@ -1269,6 +1292,13 @@ export class Desk {
 
   async apply(action: Extract<Action, { type: "setDesk" | "agentDeskSay" }>, who: Who): Promise<Outcome> {
     if (action.type === "agentDeskSay") return this.say(action, who);
+    const out = await this.change(action);
+    // a signed change that went: the desk versioned where it made what the seats decide by differ (stamp)
+    if (!isRefusal(out) && this.file) this.stamp(action.change, out.kind === "account" ? out.summary : action.change);
+    return out;
+  }
+
+  private async change(action: Extract<Action, { type: "setDesk" }>): Promise<Outcome> {
     if (action.desk !== DESK_ID) return bad(`this account keeps one desk, "${DESK_ID}"`);
     let value: unknown;
     try {
@@ -1489,6 +1519,39 @@ export class Desk {
     return this.file ? [...(this.file.lessons ?? [])] : undefined;
   }
 
+  /** the desk's versions, oldest first; undefined with no desk */
+  versionsKept(): DeskVersion[] | undefined {
+    return this.file ? [...(this.file.versions ?? [])] : undefined;
+  }
+
+  // ---- the desk's versions (DeskVersion) ----
+
+  /** what the seats decide by, as one hash: the objective, the brain, the seats and their charters, the autonomy, the lessons in force */
+  private configHash(): string {
+    const f = this.file!;
+    return sha256(canonical({ objective: f.objective, brain: { provider: f.brain.provider, model: f.brain.model, effort: f.brain.effort }, seats: f.seats.map((s) => ({ role: s.role, kind: s.kind, address: s.address, charter: s.charter })), autonomy: f.autonomy?.paper === true, lessons: this.adopted().map((l) => ({ id: l.id, text: l.text, rule: l.rule ?? null, roles: l.roles })) })).slice(0, 12);
+  }
+
+  /** the version now: the last written — the first written now where there is none (a desk hired before versions were kept) */
+  private versionNow(): number {
+    const vs = (this.file!.versions ??= []);
+    if (!vs.length) vs.push({ v: 1, at: this.world.now(), change: "first", words: "the desk as it stood when versions began", hash: this.configHash() });
+    return vs[vs.length - 1]!.v;
+  }
+
+  /** a signed change that went: a new version where what the seats decide by now differs from the last version's — the first and the
+   * latest MAX_VERSIONS - 1 kept */
+  private stamp(change: string, words: string): void {
+    const f = this.file!;
+    const vs = (f.versions ??= []);
+    const hash = this.configHash();
+    const last = vs[vs.length - 1];
+    if (last?.hash === hash) return;
+    vs.push({ v: (last?.v ?? 0) + 1, at: this.world.now(), change, words: plainText(words, 160), hash });
+    if (vs.length > MAX_VERSIONS) vs.splice(1, vs.length - MAX_VERSIONS);
+    this.save();
+  }
+
   private nextLessonId(): string {
     const c = this.file!.counters;
     c.lesson = (c.lesson ?? 0) + 1;
@@ -1563,6 +1626,7 @@ export class Desk {
       if (this.adopted().length >= LESSONS_ADOPTED_MOST) return full();
       l.state = "adopted";
       l.decidedAt = now;
+      l.adoptedAt = now;
       this.save();
       this.room("you", "you", `You adopted lesson ${l.id}: ${said(l)}. ${l.rule ? (l.rule.kind === "plan" ? "Risk holds every plan it gives to it from the next lead." : "Risk holds the desk to it from the next lead, before its brain is asked.") : "Its words go to the seats; no rule binds the desk to it."} It goes to ${l.roles.map((r) => ROLE_SPECS[r].name).join(", ")}.`);
       return { ok: true, kind: "account", summary: `lesson ${l.id} adopted${l.rule ? `: ${ruleWords(l.rule)}` : ""}` };
@@ -1674,7 +1738,7 @@ export class Desk {
     const name = plainText(v.name, 40) || "The desk";
     const was = this.file;
     // what the desk learned is the owner's record, not one session's: a desk hired again keeps its lessons, the adopted ones in force
-    this.file = { v: 1, id: DESK_ID, name, createdAt: now, objective, brain, seats, leads: was ? recentAndOpen(was.leads, MAX_LEADS) : [], equity: [], reports: was?.reports.slice(-MAX_REPORTS) ?? [], spend: was?.spend ?? { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, failed: 0 }, counters: was?.counters ?? { lead: 0, seq: 0 }, ...(was?.lessons?.length ? { lessons: was.lessons } : {}) };
+    this.file = { v: 1, id: DESK_ID, name, createdAt: now, objective, brain, seats, leads: was ? recentAndOpen(was.leads, MAX_LEADS) : [], equity: [], reports: was?.reports.slice(-MAX_REPORTS) ?? [], spend: was?.spend ?? { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, failed: 0 }, counters: was?.counters ?? { lead: 0, seq: 0 }, ...(was?.lessons?.length ? { lessons: was.lessons } : {}), ...(was?.versions?.length ? { versions: was.versions } : {}) };
     this.file.session = this.newSession(venue.usd, now, objective.hours);
     if (said !== undefined) this.file.autonomy = { paper: said, at: now };
     this.reportsDoneBefore(now);
@@ -2223,7 +2287,7 @@ export class Desk {
       const id = `L-${String(++f.counters.lead).padStart(4, "0")}`;
       // the confidence as the LEAD line says it: 0 to 1, two places (the shape takes only a finite number)
       const confidence = Number(clamp(c.confidence, 0, 1).toFixed(2));
-      const lead: Lead = { id, at: now, updatedAt: now, venue: venue.id, symbol: c.symbol, name: row.i.name, kind: row.i.kind, side: c.side, thesis: plainText(c.thesis, 240), state: "scanned", confidence };
+      const lead: Lead = { id, at: now, updatedAt: now, venue: venue.id, symbol: c.symbol, name: row.i.name, kind: row.i.kind, side: c.side, thesis: plainText(c.thesis, 240), state: "scanned", confidence, version: this.versionNow() };
       f.leads.push(lead);
       found.push(lead);
       picked.push({ lead: id, symbol: c.symbol, side: c.side, confidence });
@@ -2947,6 +3011,7 @@ export class Desk {
       cards,
       venue,
       lessons: [...(f.lessons ?? [])].reverse(),
+      versions: [...(f.versions ?? [])].reverse(),
     };
   }
 
@@ -2969,7 +3034,7 @@ export class Desk {
   leadOf(order: string): TradeLead | undefined {
     const l = this.file?.leads.find((x) => x.order === order);
     if (!l) return undefined;
-    return { id: l.id, thesis: l.thesis, ...(l.confidence !== undefined ? { confidence: l.confidence } : {}), ...(l.cleared ? { cleared: l.cleared } : {}), ...(l.sizeUsd !== undefined ? { sizeUsd: l.sizeUsd } : {}), ...(l.tpPct !== undefined ? { tpPct: l.tpPct } : {}), ...(l.slPct !== undefined ? { slPct: l.slPct } : {}), ...(l.maxHours !== undefined ? { maxHours: l.maxHours } : {}), ...(l.exitWhy ? { exitWhy: l.exitWhy } : {}), ...(l.checks ? { checks: l.checks } : {}) };
+    return { id: l.id, thesis: l.thesis, ...(l.confidence !== undefined ? { confidence: l.confidence } : {}), ...(l.cleared ? { cleared: l.cleared } : {}), ...(l.sizeUsd !== undefined ? { sizeUsd: l.sizeUsd } : {}), ...(l.tpPct !== undefined ? { tpPct: l.tpPct } : {}), ...(l.slPct !== undefined ? { slPct: l.slPct } : {}), ...(l.maxHours !== undefined ? { maxHours: l.maxHours } : {}), ...(l.exitWhy ? { exitWhy: l.exitWhy } : {}), ...(l.checks ? { checks: l.checks } : {}), ...(l.version !== undefined ? { version: l.version } : {}) };
   }
 
   /** the role of the desk's seat this agent key holds, if it holds one */

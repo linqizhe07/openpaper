@@ -24,7 +24,9 @@
    What the owner signs (quoteDialog: the words first, then the fields signed): setBacktest evaluate <run id> · setBacktest holdout <day> ·
    setBacktest desk <the form's ask as JSON> — THE DESK ITSELF, its seats, Risk and the plan's exits, hired in an account of its own and
    played over the training data: a whole account built to trade in and a minute and more of stepping, so the owner's signature runs it,
-   never an unsigned request. Its run is a training run like any other, read back and opened as one.
+   never an unsigned request. Its run is a training run like any other, read back and opened as one. A LESSON TESTED IN THE LAB: the desk's
+   form holds the lessons' rules the run is held to (BT.deskRules — put there by the Debrief's "Test in the lab…", dropped one by one), a
+   run with them a strategy of its own in the ledger; its result sets it beside the same run without them, or offers to run that.
 
    THE PAGE: a header (what this is in a line; the holdout and its looks, Move… for the owner; the ledger's state) · the form (strategy, its
    numbers, markets, bars, the window — its end at the holdout's start at the latest —, money, fee, leverage, the cost model, the
@@ -36,7 +38,7 @@
 
 /* what the form runs: "run" (one strategy over the window), "walk" (a grid walked forward through the folds) or "desk" (the desk itself,
    by the owner's signature) */
-const BT = { list: null, listErr: "", view: null, running: false, soon: false, mode: "run", sweepHours: null, sweepOpen: "" };
+const BT = { list: null, listErr: "", view: null, running: false, soon: false, mode: "run", sweepHours: null, sweepOpen: "", deskRules: [] };
 const BT_MODES = ["run", "walk", "desk"];
 /* the owner's looks at the held-out data, as their signature was answered, kept in this browser by run id (the latest BT_LOOKS_MOST) */
 const BT_LOOKS_KEY = "openpaper-backtest-looks";
@@ -96,6 +98,8 @@ function btDraw(el, owner) {
     form.dataset.drawn = "1";
   }
   if (form) btModeSync(form, owner);
+  const held = form && form.querySelector("[data-bt-rules]");
+  if (held) paint(held, btRulesHtml(BT.deskRules));
   btPut(el, "result", btResultHtml(BT.view));
   btPut(el, "trials", btTrialsHtml(L, owner, btLooks()));
 }
@@ -114,6 +118,11 @@ function btWire(el) {
       return void btAgain();
     }
     if (t.dataset.btAct === "desk-exits") return void btDeskExits(el, BT.view, Number(t.dataset.tp), Number(t.dataset.sl), Number(t.dataset.hours));
+    if (t.dataset.btAct === "desk-without") return void btDeskWithout(el, BT.view);
+    if (t.dataset.btAct === "rule-drop") {
+      BT.deskRules = BT.deskRules.filter((_, i) => i !== Number(t.dataset.i));
+      return void btAgain();
+    }
     if (t.dataset.btAct === "mode") {
       BT.mode = BT_MODES.includes(t.dataset.mode) ? t.dataset.mode : "run";
       const form = el.querySelector("[data-bt-form]");
@@ -186,7 +195,7 @@ function btDeskHtml(desk) {
   if (!desk) return '<p class="dim small">This account does not run the desk from here: <span class="mono">npm run account:backtest -- --strategy desk</span> at your terminal.</p>';
   const most = Number(desk.mostSteps) || 0;
   const words = String(desk.words || "");
-  return `<p class="dim small bt-words">${esc(words.charAt(0).toUpperCase() + words.slice(1))}.</p>${btParamsHtml(desk, "d.")}<p class="dim small">Perpetuals only (<span class="mono">perp:BTC, perp:ETH</span>), in ${esc((desk.intervals || ["1h", "4h"]).join(" or "))} bars, at the paper account's own fee, beside buying and holding them. Your signature runs it: it builds a whole account to trade in, about a minute for a hundred and eighty days of hourly bars${most ? ` — ${esc(most.toLocaleString("en-US"))} steps at most here` : ""}. Longer runs: <span class="mono">npm run account:backtest -- --strategy desk</span> at your terminal.</p><p class="msg wait" data-bt-desk-owner hidden>This browser does not sign for the account: the desk runs by the owner's signature.</p>`;
+  return `<p class="dim small bt-words">${esc(words.charAt(0).toUpperCase() + words.slice(1))}.</p>${btParamsHtml(desk, "d.")}<div class="bt-rules" data-bt-rules></div><p class="dim small">Perpetuals only (<span class="mono">perp:BTC, perp:ETH</span>), in ${esc((desk.intervals || ["1h", "4h"]).join(" or "))} bars, at the paper account's own fee, beside buying and holding them. Your signature runs it: it builds a whole account to trade in, about a minute for a hundred and eighty days of hourly bars${most ? ` — ${esc(most.toLocaleString("en-US"))} steps at most here` : ""}. Longer runs: <span class="mono">npm run account:backtest -- --strategy desk</span> at your terminal.</p><p class="msg wait" data-bt-desk-owner hidden>This browser does not sign for the account: the desk runs by the owner's signature.</p>`;
 }
 
 /** the form, from the catalog: the strategy and its numbers, the markets, the bars, the window ending at the holdout's start at the latest,
@@ -310,8 +319,15 @@ function btDeskAskOf(f) {
   const params = {};
   for (const [k, v] of Object.entries(f)) if (k.startsWith("d.") && String(v).trim() !== "") params[k.slice(2)] = Number(v);
   const num = (k) => (String(f[k] ?? "").trim() === "" ? undefined : Number(f[k]));
-  const body = { markets: String(f.markets || "").trim(), interval: f.interval, from: f.from || undefined, to: f.to || undefined, cash: num("cash"), params, halfSpreadBps: num("halfSpreadBps"), participation: num("participation"), levelBps: num("levelBps") };
+  const rules = BT.deskRules.length ? BT.deskRules.map((r) => r.rule) : undefined;
+  const body = { markets: String(f.markets || "").trim(), interval: f.interval, from: f.from || undefined, to: f.to || undefined, cash: num("cash"), params, rules, halfSpreadBps: num("halfSpreadBps"), participation: num("participation"), levelBps: num("levelBps") };
   return Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined && v !== ""));
+}
+
+/* THE LESSONS THE DESK'S RUN IS HELD TO (account/lessons.ts): each by its id and in its words, to drop; none, and where they come from */
+function btRulesHtml(list) {
+  if (!list.length) return '<p class="dim small">Held to no lesson. To test one in the lab, press Test in the lab… beside it on the Debrief page: the desk runs these bars held to its rule, a strategy of its own in the ledger, and its result sets it beside the same run without it.</p>';
+  return `<p class="small bt-rules-h">Held to ${esc(plural(list.length, "lesson"))} — Risk judges ${list.length === 1 ? "it" : "them"} on every lead before the script is asked; a run with ${list.length === 1 ? "it" : "them"} is a strategy of its own in the ledger:</p><ul class="bt-rule-chips">${list.map((r, i) => `<li><span>${r.id ? `<b>${esc(r.id)}</b> · ` : ""}${esc(r.words || "")}</span><button type="button" class="link" data-bt-act="rule-drop" data-i="${i}" aria-label="${esc(`Drop ${r.id || "the lesson"}: ${r.words || ""}`)}">Drop</button></li>`).join("")}</ul>`;
 }
 
 /* the form's line under it: what is under way, or the account's refusal in its words */
@@ -426,6 +442,8 @@ function btViewOfKept(k) {
     trips: (r.trips || []).length,
     asked: k.markets || [],
     interval: k.interval,
+    // a desk run held to lessons, and the same run without them where the ledger has one (backtest/lab.ts withoutRules)
+    without: k.without,
   };
 }
 async function btOpen(id) {
@@ -649,7 +667,22 @@ function btResultHtml(v) {
   const head = `<div class="card-head"><div><h2 class="h2">${esc(s.name || s.id || "A backtest")}${v.window === "holdout" ? ' <span class="tag warn">Held-out data</span>' : ""}</h2><p class="dim small">${esc(s.paramWords || btParamWords(s.params))}${markets ? ` · ${esc(markets)}` : ""} · ${esc(btDay(v.from))} → ${esc(btDay(v.to))} UTC${v.feeBps !== undefined ? ` · fee ${esc(v.feeBps)} bps` : ""}${v.leverage ? ` · perpetuals at ${esc(v.leverage)}x` : ""}</p></div>${v.id ? `<span class="mono small dim">${esc(v.id)}</span>` : ""}</div>`;
   const notes = (v.notes || []).length ? `<details class="bt-notes-box"><summary>${esc(plural(v.notes.length, "note"))}</summary><ul class="bt-notes small dim">${v.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : "";
   const refused = v.refused ? `<p class="msg wait">${esc(plural(v.refused, "order"))} not filled: the notes say why.</p>` : "";
-  return `${head}${btChartHtml(v)}${btFiguresHtml(v)}${btJudgedHtml(v)}${refused}${notes}${btDebriefHtml(v)}${btBaselineHtml(v)}${btSweepHtml(v)}${btFillsHtml(v)}`;
+  return `${head}${btChartHtml(v)}${btFiguresHtml(v)}${btHeldHtml(v)}${btJudgedHtml(v)}${refused}${notes}${btDebriefHtml(v)}${btBaselineHtml(v)}${btSweepHtml(v)}${btFillsHtml(v)}`;
+}
+
+/* A DESK RUN HELD TO LESSONS: the rules it was held to, and the same run without them side by side — its return, Sharpe, drawdown and
+   fills, to open — or, where the ledger has none, the owner's button that puts this run in the desk's form without them */
+function btHeldHtml(v) {
+  const rules = (v.strategy && v.strategy.rules) || [];
+  if (!rules.length || !v.metrics) return "";
+  const w = v.without;
+  const m = v.metrics;
+  const words = rules.map((r) => (typeof dbRuleWords === "function" ? dbRuleWords(r) : r.kind)).join("; ");
+  const row = (label, x) => `<tr><th scope="row">${esc(label)}</th><td class="r">${chg(x.returnPct)}</td><td class="r">${esc(btFix(x.sharpe))}</td><td class="r">${esc(btPctText(-x.maxDrawdownPct))}</td><td class="r">${esc(x.fills)}</td></tr>`;
+  const pair = w
+    ? `<div class="t-wrap"><table class="t bt-pair"><thead><tr><th scope="col">The desk</th><th scope="col" class="r">Return</th><th scope="col" class="r">Sharpe</th><th scope="col" class="r">Drawdown</th><th scope="col" class="r">Fills</th></tr></thead><tbody>${row("Held to the lessons", { returnPct: m.returnPct, sharpe: m.sharpe, maxDrawdownPct: m.maxDrawdownPct, fills: v.fills })}${row("Without them", w)}</tbody></table></div>${w.kept ? `<div class="acts"><button type="button" class="link" data-bt-act="open" data-id="${esc(w.run)}">Open the run without them</button></div>` : ""}`
+    : `<p class="dim small">The same run without them is not in the ledger yet: run it, and the two stand side by side here.</p>${owns() && v.window !== "holdout" ? '<div class="acts"><button type="button" class="btn btn-sm" data-bt-act="desk-without">Run it without them…</button></div>' : ""}`;
+  return `<section class="bt-held" aria-label="The lessons this run was held to"><h3 class="h3">Held to ${esc(plural(rules.length, "lesson"))}</h3><p class="small">${esc(words)}</p>${pair}</section>`;
 }
 
 /* the run's round trips debriefed (ui/debrief.js debriefHtml): what the costs took, whether its losses could be turned round, how far each
@@ -781,11 +814,13 @@ async function btSweepSend(f) {
 }
 /* RUN THE DESK WITH THESE EXITS: the desk's form holds the same run again — its markets, bars, window, money, numbers and cost model — with
    the rule's take-profit, stop and time limit; the owner signs it there, and its run says what the rule makes */
-function btDeskExits(el, v, tp, sl, hours) {
+/* the desk's form holding a kept run again — its markets, bars, window, money, numbers, cost model and the lessons it was held to */
+function btDeskFill(el, v) {
   const form = el.querySelector("[data-bt-form]");
-  if (!form || !v || !v.strategy) return;
+  if (!form || !v || !v.strategy) return null;
   BT.mode = "desk";
   btModeSync(form, owns());
+  BT.deskRules = ((v.strategy && v.strategy.rules) || []).map((rule) => ({ rule, words: typeof dbRuleWords === "function" ? dbRuleWords(rule) : rule.kind }));
   const set = (name, value) => {
     const i = form.querySelector(`[name="${name}"]`);
     if (i && value !== undefined && value !== null && value !== "") i.value = String(value);
@@ -796,13 +831,34 @@ function btDeskExits(el, v, tp, sl, hours) {
   set("to", String(v.to || "").slice(0, 10));
   set("cash", v.cashUsd);
   for (const [k, x] of Object.entries(v.strategy.params || {})) set(`d.${k}`, x);
-  set("d.tpPct", tp);
-  set("d.slPct", sl);
-  set("d.maxHours", hours);
   const c = v.costs || {};
   set("halfSpreadBps", c.halfSpreadBps);
   set("participation", c.participation);
   set("levelBps", c.levelBps);
+  return form;
+}
+
+/* "Run it without them…": a desk run held to lessons put in the desk's form again with none, for the owner to sign — its pair */
+function btDeskWithout(el, v) {
+  const form = btDeskFill(el, v);
+  if (!form) return;
+  BT.deskRules = [];
+  btSay(form, "The desk's form holds this run again without its lessons: Run the desk… signs it, and the two stand side by side under its result.", "wait");
+  btAgain();
+  if (typeof form.scrollIntoView === "function") form.scrollIntoView({ block: "start", behavior: still() ? "auto" : "smooth" });
+}
+
+function btDeskExits(el, v, tp, sl, hours) {
+  const form = btDeskFill(el, v);
+  if (!form) return;
+  const set = (name, value) => {
+    const i = form.querySelector(`[name="${name}"]`);
+    if (i && value !== undefined && value !== null && value !== "") i.value = String(value);
+  };
+  set("d.tpPct", tp);
+  set("d.slPct", sl);
+  set("d.maxHours", hours);
+  btAgain();
   btSay(form, `The desk's form holds this run again with a take-profit at ${tp}%, a stop at ${sl}% and ${hours} h at most: Run the desk… signs it, and its run says what the rule makes.`, "wait");
   if (typeof form.scrollIntoView === "function") form.scrollIntoView({ block: "start", behavior: still() ? "auto" : "smooth" });
 }
@@ -850,7 +906,7 @@ function btTrialsHtml(L, owner, looks) {
     { label: "When", cls: "nw", cell: (t) => `${esc(nyDay(t.ts))} ${esc(nyTime(t.ts))}` },
     { label: "By", cell: (t) => `${esc(t.by)}${t.seat ? ` <span class="dim small">${esc(short(t.seat))}</span>` : ""}` },
     { label: "Data", cell: (t) => (t.window === "holdout" ? '<span class="tag warn">Held out</span>' : '<span class="tag">Training</span>') },
-    { label: "Strategy", cell: (t) => (t.kind === "screen" ? `<b>exit sweep</b> <span class="dim small" title="${esc(`${t.rules} take-profit, stop and time-limit rules over the ${t.trades} round trips of run ${t.run}, each counted as a strategy tried; the best, screened: ${t.best.tpPct}% · ${t.best.slPct}% · ${t.best.hours} h, ${btPct3(t.best.meanPct)} a trade`)}">${esc(plural(t.rules, "rule"))} · best ${esc(btPct3(t.best.meanPct))} a trade</span>` : `<b>${esc(t.strategy)}</b>${Object.keys(t.params || {}).length ? ` <span class="dim small" title="${esc(btParamWords(t.params))}">${esc(btParamsShort(t.params))}</span>` : ""}`) },
+    { label: "Strategy", cell: (t) => (t.kind === "screen" ? `<b>exit sweep</b> <span class="dim small" title="${esc(`${t.rules} take-profit, stop and time-limit rules over the ${t.trades} round trips of run ${t.run}, each counted as a strategy tried; the best, screened: ${t.best.tpPct}% · ${t.best.slPct}% · ${t.best.hours} h, ${btPct3(t.best.meanPct)} a trade`)}">${esc(plural(t.rules, "rule"))} · best ${esc(btPct3(t.best.meanPct))} a trade</span>` : `<b>${esc(t.strategy)}</b>${Array.isArray(t.rules) && t.rules.length ? ` <span class="tag" title="${esc(t.rules.map((r) => (typeof dbRuleWords === "function" ? dbRuleWords(r) : r.kind)).join("; "))}">held to ${esc(plural(t.rules.length, "lesson"))}</span>` : ""}${Object.keys(t.params || {}).length ? ` <span class="dim small" title="${esc(btParamWords(t.params))}">${esc(btParamsShort(t.params))}</span>` : ""}`) },
     { label: "Markets", cell: (t) => `${esc((t.markets || []).join(", "))} <span class="dim small">${esc(t.interval)}</span>` },
     { label: "Window", cls: "nw", cell: (t) => `${esc(String(t.from).slice(0, 10))} → ${esc(String(t.to).slice(0, 10))}` },
     { label: "Return", r: true, cell: (t) => (t.kind === "screen" ? "" : fig(t) ? chg(fig(t).returnPct) : '<span class="dim" title="What came of a look is the owner\'s: shown to the browser that signed for it">yours</span>') },

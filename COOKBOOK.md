@@ -639,6 +639,32 @@ agent 不能采用教训。想提一条，就在 Desk 的房间里说（`portfol
 setDesk {desk: "desk", change: "lesson", value: {op: "propose" | "adopt" | "reject" | "retire", id?, text?, rule?, roles?, why?}}
 ```
 
+**检验一条教训**，有两种方式，都用没参与挑选它的数据：
+
+- **前向检验（自动）**：教训提出之后，Desk 照常交易，规则不生效，所有线索都照做。每平一笔，都能算出这条规则当时会不会挡掉它。
+  - 被挡掉的那些交易要是平均亏钱、并且超出偶然（t ≤ −2），结论是 **Helps**：规则会省下这些钱。
+  - 要是平均赚钱、并且超出偶然，结论是 **Hurts**。
+  - 都不是，就是 **Not told apart yet**；被挡掉的不到 30 笔，就是 **Too few yet**。
+  - 同一批线索，做与不做，天然配对；只看提出之后的交易，天然有时间上的留出期。
+  - 规则生效期间（采用之后、退役之前）被它挡掉的线索不会成交，这段时间不算；驳回或退役之后又照常计入。
+  - 计划规则改的是出场，只看成交的交易说不清，结论是 **For the lab**。
+- **实验室（手动）**：教训旁边的 **Test in the lab…** 把这条规则放进 Backtest 页的 Desk 表单。你选好市场和时间窗，签名跑一次，Desk 就在同样的 K 线上带着这条规则跑。
+  - 带规则的那次在试验台账里是一个单独的策略，会算进 DSR 的试验次数。
+  - 结果下面并排放着同样设置、不带规则的那一次：收益、Sharpe、回撤、成交笔数。台账里还没有那一次时，点 **Run it without them…** 把同样的设置放回表单，再签名跑一次。
+  - 终端：`npm run account:backtest -- --strategy desk --rule '{"kind":"chase","maxPct":8}'`，`--rule` 可以给多次。
+
+**Desk 的版本**：每次签名改动真的改变了 Desk 做决定所依据的东西——目标、大脑、章程、席位、自主权、采用或退役一条教训——就记一个新版本（v1、v2…，带哈希、时间和改了什么）。暂停、恢复、只提出教训都不算。
+
+- 每条线索记下它是在哪个版本下找到的，黑匣子里对应的交易也带着这个版本号。
+- Debrief 多了一个切片 **Desk version**，教训区块下面列着各个版本、各自改了什么，以及每个版本下的交易做得怎样。
+- 在记版本之前雇的 Desk，从它的下一条线索开始算作 v1，写明「the desk as it stood when versions began」。
+
+```
+GET /api/account/debrief                  每条教训多了 test（前向检验），另有 versions（新的在前）和 debrief.slices.version
+GET /api/account/desk                     多了 versions
+setBacktest {change: "desk", value: {…, rules: [{kind, …}]}}   Desk 回测带着教训的规则跑；结果里的 without 是不带规则的同一次
+```
+
 ## 7 · 动钱
 
 Portfolio 的快捷操作 "Move"（不止一个账户能动钱时先问从哪个），或 Account 抽屉（Accounts 那一行的 "Details"）里的 "Move…"。"What" 里只有这个账户做得了的：Withdraw to another account of yours（提到你自己的地方）、Between its own ledgers（账本之间划转）、Swap stablecoins（稳定币互换；下单票的 Pay with 不做这件事，它在这里）、Send from this wallet（从钱包发）、Across chains（跨链，下面）。预览里是**账户替你向目的地要来的地址**、手续费上限、网络，点 "Sign and send"。币、网络、桥的目的链三个下拉来自账户公布的 `dollars` / `networks` / `bridgeChains`（账户认的每一种美元稳定币、它们所在的链、桥能到的链），不是页面写死的表；往一个 agent 钱包挪钱，网络默认是那个钱包有钱的那条链。Statement 里有这一笔，场所或链说到了才算到账。要知道往哪打钱，用 Portfolio 的 "Receive"（第 2b 条）。

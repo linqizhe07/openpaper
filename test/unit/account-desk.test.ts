@@ -1270,3 +1270,76 @@ describe("the desk's lessons (account/lessons.ts)", () => {
     expect(r.yourSeat.lessons).toEqual(r.lessons);
   });
 });
+
+describe("the desk's versions", () => {
+  const lesson = (value: Record<string, unknown>) => ({ type: "setDesk" as const, desk: "desk", change: "lesson", value: JSON.stringify(value) });
+  /** a brain whose Search names the markets the test says, one cycle after another */
+  const naming = (names: { now: string[] }) => scriptedBrain(({ role }) => {
+    if (role === "search") return { leads: names.now.map((symbol) => ({ symbol, side: "buy", thesis: `${symbol} is moving`, confidence: 0.7 })), note: "" };
+    if (role === "risk") return { verdict: "clear", why: "tight spread", sizeUsd: 40, tpPct: 2, slPct: 1, maxHours: 12 };
+    if (role === "exit") return { decisions: [] };
+    return { worked: "L-0001 was cleared.", change: "none" };
+  });
+
+  it("one each time a signed change alters what the seats decide by — the hire, the objective, a lesson adopted or retired — none for a pause, a resume or a lesson only proposed; each lead and its trade carry the version they were found under; a restart keeps them", async () => {
+    const names = { now: ["BTC/USDT"] };
+    const first = await boot({ brain: naming(names) });
+    const { desk, hire, own, home, advance } = first;
+    await hire({ maxOpen: 10 });
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    await desk.cycle("test");
+    let v = (await desk.view())!;
+    expect(v.versions.map((x) => [x.v, x.change])).toEqual([[1, "hire"]]);
+    expect(v.open[0]?.version).toBe(1);
+    expect(desk.leadOf(v.open[0]!.order!)?.version).toBe(1);
+    // a pause, a resume, a lesson only proposed: what the seats decide by is the same
+    await own({ type: "setDesk", desk: "desk", change: "pause", value: "" });
+    await own({ type: "setDesk", desk: "desk", change: "resume", value: "" });
+    await own(lesson({ op: "propose", text: "Don't chase.", rule: { kind: "chase", maxPct: 8 } }));
+    expect((await desk.view())!.versions).toHaveLength(1);
+    // the objective changed, the lesson adopted — a lead found then is the third version's — and retired
+    await own({ type: "setDesk", desk: "desk", change: "objective", value: JSON.stringify({ text: "Fewer, wider trades on majors", venue: "ex", maxRiskPct: 1, maxOpen: 10 }) });
+    await own(lesson({ op: "adopt", id: "LS-0001" }));
+    names.now = ["ETH/USDT"];
+    advance(20 * 60_000);
+    await desk.cycle("test");
+    await own(lesson({ op: "retire", id: "LS-0001" }));
+    v = (await desk.view())!;
+    expect(v.versions.map((x) => [x.v, x.change])).toEqual([[4, "lesson"], [3, "lesson"], [2, "objective"], [1, "hire"]]);
+    expect(v.versions[1]!.words).toBe("lesson LS-0001 adopted: no lead on a market that moved more than 8% over the day its way");
+    expect(v.open.find((l) => l.symbol === "ETH/USDT")?.version).toBe(3);
+    // retired, the desk decides by what it did at version 2: the same hash, a new number
+    expect(v.versions[0]!.hash).toBe(v.versions[2]!.hash);
+    expect(v.versions[0]!.hash).not.toBe(v.versions[1]!.hash);
+    const again = await boot({ home, at: 40 * 60_000, brain: naming(names) });
+    expect(again.desk.versionsKept()?.map((x) => x.v)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("a desk from before versions were kept is its version 1 from its first lead on, said so", async () => {
+    const first = await boot();
+    await first.hire();
+    const file = JSON.parse(readFileSync(deskPath(first.home), "utf8")) as Record<string, unknown>;
+    delete file.versions;
+    writeFileSync(deskPath(first.home), JSON.stringify(file));
+    const again = await boot({ home: first.home, at: 10 * 60_000 });
+    await again.own({ type: "setPolicy", change: "mode", value: "open" });
+    await again.desk.cycle("test");
+    const v = (await again.desk.view())!;
+    expect(v.versions).toEqual([{ v: 1, at: expect.any(String), change: "first", words: "the desk as it stood when versions began", hash: expect.stringMatching(/^[0-9a-f]{12}$/) }]);
+    expect(v.open[0]?.version).toBe(1);
+  });
+
+  it("the Debrief sets one version's trades beside another's, names the versions, and tests each lesson on the trades after it", async () => {
+    const { svc, own, hire, home } = await boot();
+    await hire();
+    const row = (i: number, version: number, net: number, change: number): JournalTrade => ({ symbol: "BTC/USDT", kind: "spot", side: "long", openedAt: new Date(START + i * HOUR).toISOString(), closedAt: new Date(START + i * HOUR + 30 * 60_000).toISOString(), hours: 0.5, openRef: `o${i}`, closeRef: `c${i}`, qty: 1, entryPrice: 100, exitPrice: 100 + net, entryUsd: 1000, grossUsd: net * 10 + 2, feesUsd: 2, fundingUsd: 0, netUsd: net * 10, returnPct: net, maePct: Math.min(0, net), mfePct: Math.max(0, net), hi: 0, lo: 0, fills: 2, end: net > 0 ? "take-profit" : "stop-loss", venue: "pap", venueName: "Paper", paper: true, by: { who: "desk", role: "sniper" }, closedBy: { who: "venue" }, lead: { id: `L-${i}`, thesis: "momentum", confidence: 0.7, version, checks: { spreadPct: 0.1, maxSizeUsd: 50, lossRoomUsd: 250, minNotionalUsd: null, changePct24h: change } } });
+    // the lesson proposed now: twenty trades after it, ten of them chased
+    await own(lesson({ op: "propose", text: "Don't chase.", rule: { kind: "chase", maxPct: 8 } }));
+    for (let i = 1; i <= 20; i++) appendTrade(home, row(i, i <= 10 ? 1 : 2, i % 2 ? -0.5 : 0.3, i % 2 ? 10 : 2), START);
+    const d = svc.debrief({});
+    if (isRefusal(d)) throw new Error(d.message);
+    expect(d.debrief.slices.version.map((x) => [x.label, x.n])).toEqual([["v1", 10], ["v2", 10]]);
+    expect(d.versions.map((x) => [x.v, x.change])).toEqual([[1, "hire"]]);
+    expect(d.lessons[0]!.test).toMatchObject({ trades: 20, stopped: { n: 10, netUsd: -50 }, verdict: "few", words: "It would have stopped 10 of the desk's 20 trades since 2026-10-12: 30 are needed to tell." });
+  });
+});

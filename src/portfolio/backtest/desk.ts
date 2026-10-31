@@ -22,6 +22,7 @@ import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { momentumScriptBrain } from "../account/brain-script.ts";
 import { readJournal, tripOfRow } from "../account/journal.ts";
 import { ROLE_SPECS, type RoleId } from "../account/desk.ts";
+import { ruleWords, type LessonRule } from "../account/lessons.ts";
 import type { Outcome } from "../account/exchange.ts";
 import { signDevice, simKey } from "../account/sign.ts";
 import { MAX_AGENT_DAYS } from "../account/state.ts";
@@ -53,6 +54,9 @@ export interface DeskRunAsk {
   cashUsd: number;
   costs: BacktestCosts;
   params: DeskParams;
+  /** the lessons' rules the desk is held to (account/lessons.ts): adopted in its account after the hire, by the seed key's signature, as the
+   * owner adopts them — Risk judges them on every lead, the same code as on the account */
+  rules?: LessonRule[] | undefined;
   /** the run's own directory: the fresh account's home */
   work: string;
   /** the most steps the run may take */
@@ -138,6 +142,8 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
         autonomy: { paper: true },
       }),
     });
+    // the lessons the run is held to, adopted as the owner adopts one: in force from the first lead
+    for (const rule of o.rules ?? []) await own("a lesson", { type: "setDesk", desk: "desk", change: "lesson", value: JSON.stringify({ op: "adopt", text: ruleWords(rule), rule }) });
   } catch (err) {
     return no("E_ACCOUNT_BAD_ACTION", { message: `the desk backtest's account could not be set up — ${String((err as Error)?.message ?? err).slice(0, 300)}` });
   }
@@ -223,10 +229,11 @@ export async function runDeskBacktest(o: DeskRunAsk): Promise<BacktestRun | Refu
     `the desk ran ${sessions} session${sessions === 1 ? "" : "s"} of ${sessionH} h at most, a cycle every ${everyMin} min: ${cycles.toLocaleString("en-US")} cycles, ${funnel.scanned} leads scanned, ${funnel.cleared} cleared and ${funnel.rejected} turned down by Risk, ${funnel.placed} placed, ${funnel.closed} closed${halts.size ? `; the day's loss line (${o.params.dayLossPct}%) halted new leads ${halts.size} time${halts.size === 1 ? "" : "s"}, each until the next day` : ""}${letAgain ? `; its seats were let in again ${letAgain} time${letAgain === 1 ? "" : "s"}, a key living ${MAX_AGENT_DAYS} days at most` : ""}`,
     `every exit is judged inside the bar that reached it, its stop before its take-profit where one bar reached both (the paper account's rule): with exits narrower than a bar's range, that is a loss the bar cannot rule out`,
     `the brain is the momentum script, not a model: the result is the desk's machinery on these prices, not anyone's judgement`,
+    ...(o.rules?.length ? [`held to ${o.rules.length === 1 ? "a lesson" : `${o.rules.length} lessons`} — ${o.rules.map(ruleWords).join("; ")} — adopted in its account before the first lead, so Risk judged every lead by ${o.rules.length === 1 ? "it" : "them"} before its brain was asked`] : []),
   ];
   const params: Record<string, number> = { ...o.params };
   return {
-    strategy: { id: "desk", name: DESK_NAME, words: DESK_WORDS, params, paramWords: deskParamWords(o.params) },
+    strategy: { id: "desk", name: DESK_NAME, words: DESK_WORDS, params, paramWords: `${deskParamWords(o.params)}${o.rules?.length ? ` · held to ${o.rules.map(ruleWords).join("; ")}` : ""}`, ...(o.rules?.length ? { rules: o.rules } : {}) },
     markets: o.markets.map((m) => ({ symbol: m.symbol, kind: m.kind, name: m.name, from: m.from, interval: m.interval, bars: m.bars.length, first: iso(m.bars[0]?.t ?? 0), last: iso((m.bars[m.bars.length - 1]?.t ?? 0) + INTERVAL_MS[m.interval]), fundingHours: m.funding?.length ?? 0 })),
     from: iso(steps[0]!),
     to: iso(end),

@@ -43,6 +43,8 @@ export interface TradeLead {
   maxHours?: number | undefined;
   exitWhy?: string | undefined;
   checks?: { spreadPct: number | null; maxSizeUsd: number; lossRoomUsd: number; minNotionalUsd: number | null; changePct24h?: number | null | undefined; fundingPctDay?: number | null | undefined; volumeUsd24h?: number | null | undefined } | undefined;
+  /** the desk's version the lead was found under (desk.ts DeskVersion) */
+  version?: number | undefined;
 }
 
 /** one trade as the journal keeps it */

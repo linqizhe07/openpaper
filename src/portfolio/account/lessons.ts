@@ -34,8 +34,11 @@
  * WHAT A RULE WOULD HAVE DONE (effectOf): the desk's past trades it would have stopped, and what they made, against those it would have let
  * through. Read off the very trades a lesson was most likely found in, that DESCRIBES; it does not test. The Debrief's candidates say how
  * many slices were looked at to find them: the worst of many looks bad by chance alone, which is why a slice is a candidate only where it
- * lost beyond chance against the rest (t ≤ −2) on FEW trades or more. A test is a run that did not choose the lesson: the lab's, or the
- * trades the desk closes after the lesson was proposed.
+ * lost beyond chance against the rest (t ≤ −2) on FEW trades or more.
+ *
+ * THE TEST (testOf) is what did not choose the lesson: the desk's trades entered after it was proposed, while it was not in force — the
+ * same leads, taken or not, so the two sides are paired by construction and held out by time. And the lab (backtest/lab.ts), where the
+ * desk runs the same bars with the lesson's rule and without it, every such run a strategy counted in the trials ledger.
  *
  * Nothing here reads a file, a clock or the network. */
 import { CONFIDENCE, confidenceOf, FEW, HELD, heldOf, HOURS, hoursBandOf, type DebriefTrade } from "./debrief.ts";
@@ -73,6 +76,8 @@ export interface Lesson {
   /** when the owner adopted, rejected or retired it, ISO; and why, in the owner's words */
   decidedAt?: string | undefined;
   why?: string | undefined;
+  /** when it was adopted, ISO, kept when it is retired: the time it was in force, which its test leaves out (testOf) */
+  adoptedAt?: string | undefined;
 }
 
 export const RULE_KINDS = ["chase", "funding", "volume", "hours", "side", "markets", "confidence", "plan"] as const;
@@ -337,10 +342,9 @@ const variance = (xs: readonly number[]): number => {
 };
 const partOf = (ts: readonly DebriefTrade[]): EffectPart => ({ n: ts.length, netUsd: r2(ts.reduce((s, t) => s + t.netUsd, 0)), meanPct: r4(mean(ts.map((t) => t.returnPct))), winRatePct: r2(ts.length ? (ts.filter((t) => t.netUsd > 0).length / ts.length) * 100 : 0) });
 
-/** WHAT A RULE WOULD HAVE DONE to these trades — the desk's among them (a trade a lead placed). A plan rule changes exits, which only a run
- * says: none */
-export function effectOf(rule: LessonRule, trades: readonly DebriefTrade[]): LessonEffect | undefined {
-  if (rule.kind === "plan") return undefined;
+/** the desk's trades among these (a trade a lead placed), parted by a rule: the ones it stops, the ones it lets through, and how many of
+ * those it could not judge */
+function split(rule: LessonRule, trades: readonly DebriefTrade[]): { stopped: DebriefTrade[]; kept: DebriefTrade[]; unjudged: number } {
   const stopped: DebriefTrade[] = [];
   const kept: DebriefTrade[] = [];
   let unjudged = 0;
@@ -354,7 +358,71 @@ export function effectOf(rule: LessonRule, trades: readonly DebriefTrade[]): Les
       if (j.unjudged) unjudged++;
     }
   }
+  return { stopped, kept, unjudged };
+}
+
+/** WHAT A RULE WOULD HAVE DONE to these trades — the desk's among them (a trade a lead placed). A plan rule changes exits, which only a run
+ * says: none */
+export function effectOf(rule: LessonRule, trades: readonly DebriefTrade[]): LessonEffect | undefined {
+  if (rule.kind === "plan") return undefined;
+  const { stopped, kept, unjudged } = split(rule, trades);
   return { trades: stopped.length + kept.length, unjudged, stopped: partOf(stopped), kept: partOf(kept), few: stopped.length < FEW };
+}
+
+/** THE TEST OF A LESSON: its rule on the desk's trades it could not have been found in — those entered after it was proposed — and only
+ * while it was not in force (an adopted rule stops its leads, so they leave no trade to count). The trades it would have stopped are
+ * judged against nothing at all: their mean net below zero beyond chance (t ≤ −2), and the rule would have kept what they lost; above it
+ * beyond chance, and it would have cost what they made. Paired by construction — the same leads, taken or not — and held out by time.
+ * Fewer than FEW stopped trades, and it is too soon to say. A plan rule changes exits, which the trades alone cannot say: the lab tests it */
+export interface LessonTest {
+  /** from when, ISO: the lesson's proposal */
+  since: string;
+  /** the desk's trades it was read on, and of those the ones whose number it needs was not kept (let through, as Risk would have) */
+  trades: number;
+  unjudged: number;
+  stopped: EffectPart;
+  kept: EffectPart;
+  /** the stopped trades' mean net over its standard error */
+  t: number;
+  verdict: "few" | "helps" | "hurts" | "unproven" | "lab";
+  words: string;
+}
+
+const money = (x: number): string => `${x < 0 ? "−" : ""}$${Math.abs(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+export function testOf(l: Lesson, trades: readonly DebriefTrade[]): LessonTest | undefined {
+  if (!l.rule) return undefined;
+  const since = Date.parse(l.at);
+  // in force from its adoption (an older file's adopted lesson: from its decision) to its retirement, if it was retired
+  const from = l.adoptedAt ?? (l.state === "adopted" ? l.decidedAt : undefined);
+  const until = l.state === "retired" && l.decidedAt ? Date.parse(l.decidedAt) : Infinity;
+  const open = (t: DebriefTrade) => Date.parse(t.openedAt);
+  const after = trades.filter((t) => t.lead && open(t) >= since && !(from !== undefined && open(t) >= Date.parse(from) && open(t) < until));
+  const day = l.at.slice(0, 10);
+  const none: EffectPart = { n: 0, netUsd: 0, meanPct: 0, winRatePct: 0 };
+  if (l.rule.kind === "plan") return { since: l.at, trades: after.length, unjudged: 0, stopped: none, kept: partOf(after), t: 0, verdict: "lab", words: `A plan rule changes exits, which the trades alone cannot say: test it in the lab, where the desk runs the same bars with it and without it.` };
+  const { stopped, kept, unjudged } = split(l.rule, after);
+  const xs = stopped.map((t) => t.returnPct);
+  const se = xs.length > 1 ? Math.sqrt(variance(xs) / xs.length) : 0;
+  const t = se > 0 ? mean(xs) / se : 0;
+  const s = partOf(stopped);
+  const n = stopped.length + kept.length;
+  const of = `of the desk's ${n} trade${n === 1 ? "" : "s"} since ${day}${from !== undefined ? " while it was not in force" : ""}`;
+  const verdict: LessonTest["verdict"] = s.n < FEW ? "few" : t <= -2 ? "helps" : t >= 2 ? "hurts" : "unproven";
+  const these = `it would have stopped ${s.n} — ${money(s.netUsd)}, ${signed(s.meanPct, 3)} a trade, t ${t < 0 ? "−" : ""}${Math.abs(t).toFixed(1)}`;
+  // in force now, it stops the very leads it would be tested on: waiting adds nothing, the lab tests it
+  const inForce = l.state === "adopted" ? " — in force, it stops the leads it would be tested on: the lab tests it" : "";
+  const words =
+    verdict === "few"
+      ? n === 0
+        ? `No trade of the desk's since ${day}${from !== undefined ? " while it was not in force" : ""} to test it on${inForce || " yet"}.`
+        : `It would have stopped ${s.n} ${of}: ${FEW} are needed to tell${inForce}.`
+      : verdict === "helps"
+        ? `Of the desk's ${n} trades since ${day}${from !== undefined ? " while it was not in force" : ""}, ${these}: they lost beyond chance, so the rule would have kept ${money(-s.netUsd)}.`
+        : verdict === "hurts"
+          ? `Of the desk's ${n} trades since ${day}${from !== undefined ? " while it was not in force" : ""}, ${these}: they made money beyond chance, so the rule would have cost ${money(s.netUsd)}.`
+          : `Of the desk's ${n} trades since ${day}${from !== undefined ? " while it was not in force" : ""}, ${these}: not yet told apart from chance.`;
+  return { since: l.at, trades: n, unjudged, stopped: s, kept: partOf(kept), t: r2(t), verdict, words };
 }
 
 /** a lesson the Debrief puts forward from the desk's own trades: a slice that lost, beyond chance, against the rest */

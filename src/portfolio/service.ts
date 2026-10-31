@@ -61,7 +61,7 @@ import { costBasis, ordersOf, type CostBasis, type LoggedOrder, type VenuePositi
 import type { AutonomyHook, LiveOrder } from "./account/live-orders.ts";
 import { appendTrade, readJournal, type JournalRow, type TradeHand } from "./account/journal.ts";
 import { debriefOf, type Debrief } from "./account/debrief.ts";
-import { candidatesOf, effectOf, ruleWords, sameLesson, type Lesson, type LessonCandidate, type LessonEffect } from "./account/lessons.ts";
+import { candidatesOf, effectOf, ruleWords, sameLesson, testOf, type Lesson, type LessonCandidate, type LessonEffect, type LessonTest } from "./account/lessons.ts";
 import type { BacktestRun } from "./backtest/engine.ts";
 import type { ClosedTrip } from "./live/trips.ts";
 import type { LiveEarn } from "./account/live-earn.ts";
@@ -103,7 +103,7 @@ import { locator, type Locator } from "./live/location.ts";
 import { isStable, realHttp, type PaperControls } from "./live/types.ts";
 import { isPlain } from "./account/state.ts";
 import type { AgentAction, Envelope, Hex, OwnerAction } from "./account/sign.ts";
-import { Desk, type Brain, type BrainStatus, type BrainTest, type DeskWorld } from "./account/desk.ts";
+import { Desk, type Brain, type BrainStatus, type BrainTest, type DeskVersion, type DeskWorld } from "./account/desk.ts";
 import { AccountStream } from "./account/stream.ts";
 import { BOOK_TOP, joinHubs, StreamHub, type HubTick, type HubVenue, type MarketHub } from "./live/stream-hub.ts";
 import { applyBrainKey, BrainKeyStage, envBlocksOf, envWinsOf, type BrainKeyDone } from "./account/brain-keys.ts";
@@ -1934,8 +1934,9 @@ export class PortfolioService {
    * `days` days' — with what there is to choose from (each venue that has trades, by its name, with how many) and the latest trades,
    * newest first. And the desk's LESSONS (account/lessons.ts): the candidates the desk's trades among these put forward, each with the
    * lesson already kept that says the same, if one is; the lessons the desk keeps, newest first, each rule with what it would have done to
-   * these trades; whether a desk is hired, which a lesson is signed to */
-  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean; candidates: Array<LessonCandidate & { words: string; kept?: { id: string; state: Lesson["state"] } | undefined }>; lessons: Array<Lesson & { words?: string | undefined; effect?: LessonEffect | undefined }>; deskTrades: number; desk: boolean } | Refusal {
+   * these trades and its test on those entered after it was proposed while it was not in force; whether a desk is hired, which a lesson is
+   * signed to; the desk's versions, newest first, which the Debrief's version slice names */
+  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean; candidates: Array<LessonCandidate & { words: string; kept?: { id: string; state: Lesson["state"] } | undefined }>; lessons: Array<Lesson & { words?: string | undefined; effect?: LessonEffect | undefined; test?: LessonTest | undefined }>; deskTrades: number; desk: boolean; versions: DeskVersion[] } | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     const j = readJournal(this.opts.home);
     const since = o.days ? Date.parse(this.now()) - o.days * 86_400_000 : undefined;
@@ -1955,9 +1956,10 @@ export class PortfolioService {
     });
     const lessons = [...kept].reverse().map((l) => {
       const effect = l.rule ? effectOf(l.rule, rows) : undefined;
-      return { ...l, ...(l.rule ? { words: ruleWords(l.rule) } : {}), ...(effect ? { effect } : {}) };
+      const test = testOf(l, rows);
+      return { ...l, ...(l.rule ? { words: ruleWords(l.rule) } : {}), ...(effect ? { effect } : {}), ...(test ? { test } : {}) };
     });
-    return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact, candidates, lessons, deskTrades: rows.filter((r) => r.lead).length, desk: this.desk?.hired() ?? false };
+    return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact, candidates, lessons, deskTrades: rows.filter((r) => r.lead).length, desk: this.desk?.hired() ?? false, versions: [...(this.desk?.versionsKept() ?? [])].reverse() };
   }
 
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
@@ -2041,7 +2043,9 @@ export class PortfolioService {
       const secs = Math.round((steps * DESK_STEP_MS * ask.refs.length) / 1000);
       const took = secs < 2 ? "a second or two" : secs < 120 ? `some ${secs} seconds` : `some ${Math.round(secs / 60)} minutes`;
       const day = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
-      return { words: `Run the desk (${deskParamWords(ask.spec.params)}) on ${ask.refs.map(marketText).join(", ")} in ${ask.interval} bars from ${day(from)} to ${day(to)}, with $${ask.cashUsd.toLocaleString("en-US")} on paper beside buying and holding them: about ${steps.toLocaleString("en-US")} steps, ${took}. A training run, counted in the trials like any other.` };
+      // held to lessons (account/lessons.ts): said in the words signed, a strategy of its own in the ledger
+      const held = ask.spec.rules?.length ? `, held to ${ask.spec.rules.length === 1 ? "a lesson" : `${ask.spec.rules.length} lessons`} — ${ask.spec.rules.map(ruleWords).join("; ")} —` : "";
+      return { words: `Run the desk (${deskParamWords(ask.spec.params)})${held} on ${ask.refs.map(marketText).join(", ")} in ${ask.interval} bars from ${day(from)} to ${day(to)}, with $${ask.cashUsd.toLocaleString("en-US")} on paper beside buying and holding them: about ${steps.toLocaleString("en-US")} steps, ${took}. A training run, counted in the trials like any other${held ? ", the lessons making it a strategy of its own" : ""}.` };
     }
     return no("E_ACCOUNT_BAD_ACTION", { message: LAB_CHANGES(a.change) });
   }

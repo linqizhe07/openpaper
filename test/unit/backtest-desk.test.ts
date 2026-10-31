@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import { parseBacktestArgs, type BacktestOptions } from "../../src/portfolio/account-backtest.ts";
 import { DESK_PARAMS, deskParams } from "../../src/portfolio/backtest/desk-params.ts";
-import { askOf, deskAskOf, deskSpec, labEvaluate, labRun, readTrials, runFile, setHoldout, type LabAsk, type LabDeps, type LabOutcome } from "../../src/portfolio/backtest/lab.ts";
+import { askOf, deskAskOf, deskSpec, labEvaluate, labRead, labRun, readTrials, runFile, setHoldout, type LabAsk, type LabDeps, type LabOutcome } from "../../src/portfolio/backtest/lab.ts";
 import { DEFAULT_COSTS } from "../../src/portfolio/backtest/source.ts";
 import { standinHistory } from "../standin/history.ts";
 
@@ -58,10 +58,10 @@ describe("the desk's numbers", () => {
     expect(deskAskOf("{}")).toEqual({ spec: { id: "desk", params: { sizeUsd: 1000, tpPct: 2, slPct: 1, maxHours: 24, riskPct: 10, maxOpen: 3, dayLossPct: 5 } }, refs: [{ cls: "perp", base: "BTC" }], interval: "1h", cashUsd: 10_000, feeBps: 10, costs: DEFAULT_COSTS });
     expect(deskAskOf(JSON.stringify({ markets: "perp:BTC,perp:ETH", interval: "4h", from: "2026-05-01", to: "2026-07-01", cash: 25_000, params: { tpPct: 3 }, participation: 0.1 }))).toMatchObject({ spec: { id: "desk", params: { tpPct: 3, slPct: 1 } }, refs: [{ cls: "perp", base: "BTC" }, { cls: "perp", base: "ETH" }], interval: "4h", from: Date.parse("2026-05-01T00:00:00Z"), to: Date.parse("2026-07-01T00:00:00Z"), cashUsd: 25_000, costs: { participation: 0.1 } });
     const no = (o: unknown) => deskAskOf(typeof o === "string" ? o : JSON.stringify(o));
-    expect(no("not json")).toBe("the desk's ask is JSON: {markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps}");
-    expect(no([1])).toBe("the desk's ask is {markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps}");
-    expect(no({ strategy: "sma" })).toBe('the desk is asked with markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps — not "strategy"');
-    expect(no({ feeBps: 0 })).toBe('the desk is asked with markets, interval, from, to, cash, params, halfSpreadBps, participation, levelBps — not "feeBps"');
+    expect(no("not json")).toBe("the desk's ask is JSON: {markets, interval, from, to, cash, params, rules, halfSpreadBps, participation, levelBps}");
+    expect(no([1])).toBe("the desk's ask is {markets, interval, from, to, cash, params, rules, halfSpreadBps, participation, levelBps}");
+    expect(no({ strategy: "sma" })).toBe('the desk is asked with markets, interval, from, to, cash, params, rules, halfSpreadBps, participation, levelBps — not "strategy"');
+    expect(no({ feeBps: 0 })).toBe('the desk is asked with markets, interval, from, to, cash, params, rules, halfSpreadBps, participation, levelBps — not "feeBps"');
     expect(no({ params: [1] })).toBe("params is {name: number}");
     expect(no({ params: { tpPct: "3" } })).toBe("params.tpPct is a number");
     expect(no({ params: { slPct: 90 } })).toBe("the desk's slPct is 0.1 to 50 (the stop, % from the entry), not 90");
@@ -159,5 +159,42 @@ describe("the desk over the bars, through the lab", () => {
     expect(look).toMatchObject({ window: "holdout", looks: 1, trial: { strategy: "desk", window: "holdout", by: "owner", params: train.trial.params } });
     expect(look.run.from).toBe("2026-10-20T00:00:00.000Z");
     expect(readTrials(deps.home).rows.filter((x) => x.kind === "trial").map((x) => (x as { strategy: string }).strategy)).toEqual(["desk", "desk"]);
+  });
+});
+
+describe("a lesson tested in the lab", () => {
+  it("the desk held to a lesson's rule — adopted in its own account before the first lead, so Risk turns down what it stops — is a strategy of its own in the ledger, set beside the same run without it", async () => {
+    const deps = lab();
+    const from = Date.parse("2026-07-20T00:00:00Z");
+    const base = ok(await labRun(ask({ from }), deps));
+    const symbol = base.run.trips?.[0]?.symbol;
+    expect(symbol).toBeTruthy();
+    const spec = deskSpec({}, [{ kind: "markets", skip: [symbol!] }]);
+    if (typeof spec === "string") throw new Error(spec);
+    const held = ok(await labRun(ask({ from, spec }), deps));
+    expect(held.run.strategy).toMatchObject({ id: "desk", rules: [{ kind: "markets", skip: [symbol] }], paramWords: `sizeUsd 1000 · tpPct 2 · slPct 1 · maxHours 24 · riskPct 10 · maxOpen 3 · dayLossPct 5 · held to never ${symbol}` });
+    expect(held.run.notes).toContain(`held to a lesson — never ${symbol} — adopted in its account before the first lead, so Risk judged every lead by it before its brain was asked`);
+    expect(held.run.trips?.some((t) => t.symbol === symbol)).toBe(false);
+    // a strategy of its own: its key is not the run's without it, and the ledger counts two
+    expect(held.trial.rules).toEqual([{ kind: "markets", skip: [symbol] }]);
+    expect(held.trial.key).not.toBe(base.trial.key);
+    expect(held.deflated?.trials).toBe(2);
+    expect(base.without).toBeUndefined();
+    expect(held.without).toEqual({ run: base.id, returnPct: base.run.metrics.returnPct, sharpe: base.run.metrics.sharpe, maxDrawdownPct: base.run.metrics.maxDrawdownPct, fills: base.run.metrics.fills, kept: true });
+    // read back as kept, with its pair
+    expect(labRead(deps.home, held.id)).toMatchObject({ without: { run: base.id } });
+  });
+
+  it("the rules read strictly from the owner's signed ask and the command — a list of rules, each once, twelve at most — and only for the desk", () => {
+    expect(deskAskOf(JSON.stringify({ rules: [{ kind: "chase", maxPct: 8 }, { kind: "chase", maxPct: 8 }, { kind: "hours", skip: ["00-04"] }] }))).toMatchObject({ spec: { id: "desk", rules: [{ kind: "chase", maxPct: 8 }, { kind: "hours", skip: ["00–04"] }] } });
+    expect(deskAskOf(JSON.stringify({ rules: [] }))).toMatchObject({ spec: { id: "desk", params: { sizeUsd: 1000 } } });
+    expect((deskAskOf(JSON.stringify({ rules: [] })) as { spec: object }).spec).not.toHaveProperty("rules");
+    expect(deskAskOf(JSON.stringify({ rules: { kind: "chase" } }))).toMatch(/^rules is a list of lessons' rules/);
+    expect(deskAskOf(JSON.stringify({ rules: [{ kind: "chase", maxPct: 500 }] }))).toBe("a chase rule's maxPct is 0.5 to 100, not 500");
+    expect(deskAskOf(JSON.stringify({ rules: Array.from({ length: 13 }, (_, i) => ({ kind: "confidence", min: 0.1 + i / 100 })) }))).toBe("a desk is held to 12 lessons at most");
+    const o = parseBacktestArgs(["--strategy", "desk", "--rule", '{"kind":"chase","maxPct":8}', "--rule", '{"kind":"side","only":"buy"}'], { OPENPAPER_HOME: "/h" }, NOW) as BacktestOptions;
+    expect(o.spec).toMatchObject({ id: "desk", rules: [{ kind: "chase", maxPct: 8 }, { kind: "side", only: "buy" }] });
+    expect((parseBacktestArgs(["--strategy", "sma", "--rule", '{"kind":"chase","maxPct":8}'], {}, NOW) as { error: string }).error).toBe("--rule goes with --strategy desk: a lesson's rule holds the desk's Risk");
+    expect((parseBacktestArgs(["--strategy", "desk", "--rule", "chase 8"], {}, NOW) as { error: string }).error).toMatch(/^--rule is a rule as JSON/);
   });
 });

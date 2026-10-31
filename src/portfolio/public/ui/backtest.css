@@ -70,3 +70,15 @@ label.chk1.bt-rolling { white-space: normal; align-self: end; }
 .bt-sweep-form .btn { align-self: flex-start; }
 .bt-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 @container (max-width: 560px) { .bt-grid3 { grid-template-columns: minmax(0, 1fr); } }
+
+/* A LESSON TESTED IN THE LAB (ui/backtest.js): the lessons the desk's run is held to, each a pill to drop, in the desk's part of the form;
+   under a kept run held to lessons, the same run without them side by side */
+.bt-rules { margin-top: 8px; }
+.bt-rules-h { margin: 0 0 6px; }
+.bt-rule-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.bt-rule-chips li { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 3px 6px 3px 10px; max-width: 100%; }
+.bt-rule-chips li span { overflow-wrap: anywhere; }
+.bt-held { margin-top: 16px; }
+.bt-held .h3 { font-size: 13px; font-weight: 700; color: var(--dim); margin: 0 0 6px; }
+.bt-held p { margin: 4px 0 8px; }
+.bt-pair th[scope="row"] { font-weight: 600; text-align: left; white-space: nowrap; }

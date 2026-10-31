@@ -20,6 +20,8 @@
  *   npm run account:backtest -- --strategy tsmom --markets perp:BTC,perp:ETH --interval 1h --from 2026-02-01 --to 2026-07-31 --cash 10000
  *   --strategy   hold · sma · tsmom · carry (default tsmom), or desk: the account's own desk over the bars (backtest/desk.ts: perp: markets,
  *                1h or 4h, its numbers sizeUsd · tpPct · slPct · maxHours · riskPct · maxOpen · dayLossPct)
+ *   --rule JSON  with --strategy desk, again for each: a lesson's rule the desk is held to (account/lessons.ts), '{"kind":"chase","maxPct":8}'
+ *                — a run with rules is a strategy of its own, said beside the same run without them where the ledger has one
  *   --markets    perp:COIN, spot:COIN, stock:TICKER, comma-separated (perp:BTC)
  *   --interval   1h · 4h · 1d for the coins and perpetuals (1h; a share is read in daily bars)    --param name=value  a strategy's number, again for each
  *   --from --to  the window, YYYY-MM-DD (the 180 days before --to; --to: the holdout's start)    --cash  the paper money (10000)
@@ -40,6 +42,7 @@ import { fileURLToPath } from "node:url";
 import { isRefusal, type Refusal } from "../core/errors.ts";
 import { parseMarkets, realHistorySources, type HistorySources, type MarketRef } from "./backtest/data.ts";
 import { DESK_PARAMS } from "./backtest/desk-params.ts";
+import { ruleWords, type LessonRule } from "./account/lessons.ts";
 import { labWalkForward, type WalkOutcome } from "./backtest/walk.ts";
 import { deskSpec, labList, labRun, labScreen, screenAskOf, setHoldout, type DeskSpec, type Holdout, type LabOutcome, type ScreenAsk, type ScreenOutcome } from "./backtest/lab.ts";
 import type { Metrics } from "./backtest/metrics.ts";
@@ -126,6 +129,8 @@ export function backtestWords(out: BacktestOutcome): string {
   lines.push("");
   lines.push(...judgedLines(out), "");
   if (out.baseline) lines.push(`Random entries  ${out.baseline.words}`, "");
+  // a desk run held to lessons, beside the same run without them where the ledger has one
+  if (r.strategy.rules?.length) lines.push(out.without ? `Without the lessons  ${pct(out.without.returnPct)} · Sharpe ${num(out.without.sharpe)} · DD ${pct(-out.without.maxDrawdownPct)} · ${out.without.fills} fills (run ${out.without.run}) — with them ${pct(r.metrics.returnPct)} · Sharpe ${num(r.metrics.sharpe)}` : "Without the lessons  not run yet: the same run without --rule is its pair", "");
   if (r.refused.length) lines.push(`Not filled: ${r.refused.length} order${r.refused.length === 1 ? "" : "s"} — the first at ${day(r.refused[0]!.at)}: ${r.refused[0]!.why}`);
   for (const n of [...out.notes, ...r.notes]) lines.push(`· ${n}`);
   lines.push(`· a Sharpe's ± is one standard error (Lo 2002): ${r.metrics.steps.toLocaleString("en-US")} steps of ${r.metrics.perYear.toFixed(0)} a year · ${r.wallMs.toLocaleString("en-US")} ms`);
@@ -169,6 +174,12 @@ export function walkWords(w: WalkOutcome, markets: string, interval: string): st
   return lines.join("\n");
 }
 
+/** a desk run's lessons, in words, where the row names them */
+const held = (t: object): string[] => {
+  const rules = (t as { rules?: unknown }).rules;
+  return Array.isArray(rules) && rules.length ? [`held to ${(rules as LessonRule[]).map(ruleWords).join("; ")}`] : [];
+};
+
 /** an exit sweep in words (--screen): what was screened, what it found and how its best is judged, the best ten rules, the row it added */
 export function screenWords(out: ScreenOutcome): string {
   const s = out.sweep;
@@ -196,7 +207,7 @@ export function trialsWords(list: ReturnType<typeof labList>): string {
   const l = list.ledger;
   lines.push(`Ledger: ${l.rows} rows, ${l.intact ? "the chain intact" : `the chain BROKEN at row ${l.brokenAt}: ${l.why}`} · ${l.trials} run${l.trials === 1 ? "" : "s"}, ${l.distinct} distinct strateg${l.distinct === 1 ? "y" : "ies"} tried before the holdout`);
   for (const t of list.runs) {
-    const params = Object.entries(t.params).map(([k, v]) => `${k} ${v}`).join(" · ");
+    const params = [...Object.entries(t.params).map(([k, v]) => `${k} ${v}`), ...held(t)].join(" · ");
     const head = `  ${String(t.seq).padStart(4)}  ${day(t.ts)}  ${t.by.padEnd(8)} ${t.window.padEnd(7)} ${(t.kind === "screen" ? "sweep" : t.strategy).padEnd(5)} ${t.markets.join(",")} ${t.interval}  ${t.from.slice(0, 10)} → ${t.to.slice(0, 10)}`;
     if (t.kind === "screen") lines.push(`${head}  ${t.rules} exit rules over run ${t.run}'s ${t.trades} round trips: the best, TP ${t.best.tpPct}% · SL ${t.best.slPct}% · ${t.best.hours} h, ${pct(t.best.meanPct)} a trade, Sharpe ${num(t.best.sharpe)}, deflated ${t.dsr.toFixed(2)}`);
     else lines.push("figures" in t ? `${head}  (what came of it is the owner's)${params ? `  (${params})` : ""}` : `${head}  ${pct(t.returnPct).padStart(8)}  Sharpe ${num(t.sharpe).padStart(5)}  DD ${pct(-t.maxDrawdownPct)}  ${t.fills} fills${params ? `  (${params})` : ""}${t.kept ? `  ${t.run}` : ""}`);
@@ -207,6 +218,7 @@ export function trialsWords(list: ReturnType<typeof labList>): string {
 // ---- the command ----
 
 const USAGE = `usage: npm run account:backtest -- [--strategy ${STRATEGY_IDS.join("|")}|desk] [--markets perp:BTC,spot:ETH,stock:AAPL] [--interval ${BACKTEST_INTERVALS.join("|")}] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--cash 10000] [--fee-bps 10] [--leverage N] [--param name=value]… [--half-spread-bps 1] [--participation 0.05] [--level-bps 2] [--holdout] [--no-benchmark] [--json] [--no-save] [--cache DIR] [--home DIR] [--quiet]
+       npm run account:backtest -- --strategy desk --rule '{"kind":"chase","maxPct":8}'… [the run's options]
        npm run account:backtest -- --strategy sma --grid fast=10,20,40 --grid slow=50,100,200 --folds 4 [--rolling] [the run's options]
        npm run account:backtest -- --screen RUN [--tp-pct 0.5,1,2] [--sl-pct 0.5,1,2] [--hours 4,24,72] [--json] [--cache DIR] [--home DIR] [--quiet]
        npm run account:backtest -- --trials [--json] [--home DIR]
@@ -230,7 +242,8 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
   const flags = new Map<string, string | true>();
   const params: Record<string, string> = {};
   const switches = new Set(["--no-benchmark", "--json", "--no-save", "--quiet", "--holdout", "--trials", "--rolling", "--help", "-h"]);
-  const known = new Set(["--strategy", "--markets", "--interval", "--from", "--to", "--cash", "--fee-bps", "--leverage", "--param", "--grid", "--folds", "--half-spread-bps", "--participation", "--level-bps", "--cache", "--home", "--set-holdout", "--screen", "--tp-pct", "--sl-pct", "--hours", ...switches]);
+  const known = new Set(["--strategy", "--markets", "--interval", "--from", "--to", "--cash", "--fee-bps", "--leverage", "--param", "--grid", "--folds", "--half-spread-bps", "--participation", "--level-bps", "--cache", "--home", "--set-holdout", "--screen", "--tp-pct", "--sl-pct", "--hours", "--rule", ...switches]);
+  const rules: unknown[] = [];
   const grid: Record<string, number[]> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -247,6 +260,14 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
       const m = /^([A-Za-z]+)=(.+)$/.exec(value);
       if (!m) return { error: `--param is name=value, not "${value.slice(0, 30)}"` };
       params[m[1]!] = m[2]!;
+      continue;
+    }
+    if (name === "--rule") {
+      try {
+        rules.push(JSON.parse(value));
+      } catch {
+        return { error: `--rule is a rule as JSON, '{"kind":"chase","maxPct":8}', not "${value.slice(0, 30)}"` };
+      }
       continue;
     }
     if (name === "--grid") {
@@ -304,7 +325,8 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
   const id = str("--strategy", "tsmom");
   // a walk-forward's numbers checked with each grid's first value in place (the walk checks every combination before it runs)
   const firstOfGrid = Object.fromEntries(Object.entries(grid).map(([k, v]) => [k, v[0]!]));
-  const spec = id === "desk" ? deskSpec(params) : strategySpec(id, { ...params, ...firstOfGrid });
+  if (rules.length && id !== "desk") return { error: "--rule goes with --strategy desk: a lesson's rule holds the desk's Risk" };
+  const spec = id === "desk" ? deskSpec(params, rules.length ? rules : undefined) : strategySpec(id, { ...params, ...firstOfGrid });
   if (typeof spec === "string") return { error: spec };
   const refs = parseMarkets(str("--markets", "perp:BTC"));
   if (typeof refs === "string") return { error: refs };

@@ -262,6 +262,9 @@ describe("the owner's signed setBacktest", () => {
     const ask = { markets: "perp:BTC", interval: "4h", from: "2026-07-20", cash: 25_000, params: { tpPct: 3 } };
     const prepared = (await svc.account!.prepare({ type: "setBacktest", change: "desk", value: JSON.stringify(ask) })) as Prepared;
     expect(prepared.quote?.words).toBe("Run the desk (sizeUsd 1000 · tpPct 3 · slPct 1 · maxHours 24 · riskPct 10 · maxOpen 3 · dayLossPct 5) on perp:BTC in 4h bars from 2026-07-20 to 2026-07-31, with $25,000 on paper beside buying and holding them: about 66 steps, a second or two. A training run, counted in the trials like any other.");
+    // held to a lesson: said in the words signed
+    const lessoned = (await svc.account!.prepare({ type: "setBacktest", change: "desk", value: JSON.stringify({ ...ask, rules: [{ kind: "chase", maxPct: 8 }] }) })) as Prepared;
+    expect(lessoned.quote?.words).toBe("Run the desk (sizeUsd 1000 · tpPct 3 · slPct 1 · maxHours 24 · riskPct 10 · maxOpen 3 · dayLossPct 5), held to a lesson — no lead on a market that moved more than 8% over the day its way — on perp:BTC in 4h bars from 2026-07-20 to 2026-07-31, with $25,000 on paper beside buying and holding them: about 66 steps, a second or two. A training run, counted in the trials like any other, the lessons making it a strategy of its own.");
     const ran = (await own({ type: "setBacktest", change: "desk", value: JSON.stringify(ask) })) as { ok: true; kind: "result"; result: { id: string } };
     expect(ran).toMatchObject({ ok: true, kind: "result", result: { window: "train", strategy: { id: "desk" }, from: "2026-07-20T00:00:00.000Z", to: "2026-07-31T00:00:00.000Z", feeBps: 10, cashUsd: 25_000, benchmark: { strategy: "hold" }, kept: true } });
     expect(readTrials(home).rows.at(-1)).toMatchObject({ kind: "trial", by: "owner", window: "train", strategy: "desk", params: { tpPct: 3 }, feeBps: 10, cashUsd: 25_000 });

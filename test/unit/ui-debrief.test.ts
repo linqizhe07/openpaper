@@ -162,7 +162,7 @@ describe("the desk's lessons (dbLessonsHtml)", () => {
     expect(html).toContain('<li class="db-ls proposed"><div class="db-ls-head"><b>LS-0005</b> <span class="tag warn">Waiting for you</span> <span class="dim small">from the evening report of 2026-10-29 · to Search, Risk, Exit, the Head</span></div>');
     expect(html).toContain('data-db-ls="reject" data-id="LS-0005"');
     expect(html).toContain("Words only: no rule binds the desk to it.");
-    expect(html).toContain("Here it would have stopped 12 trades of the desk&#39;s 80: -$40.10, −0.310% a trade, 25% won; the 68 it let through made $12.00, +0.020% a trade. 3 trades it could not judge: the number it needs was not kept with them.");
+    expect(html).toContain("On every trade here, the ones it was likely found in among them: it would have stopped 12 trades of the desk&#39;s 80: -$40.10, −0.310% a trade, 25% won; the 68 it let through made $12.00, +0.020% a trade. 3 trades it could not judge: the number it needs was not kept with them.");
     expect(html).toContain('data-db-ls="retire" data-id="LS-0004"');
     expect(html).toContain("A plan rule changes exits: what it would have made is a run's to say");
     expect(html).toContain("<summary>Rejected and retired · 1</summary>");
@@ -218,5 +218,42 @@ describe("the desk's lessons (dbLessonsHtml)", () => {
       { type: "setDesk", change: "lesson", op: "adopt", id: "LS-0005" },
       { type: "setDesk", change: "lesson", op: "retire", id: "LS-0004" },
     ]);
+  });
+});
+
+describe("a lesson's test, the lab and the desk's versions (ui/debrief.js)", () => {
+  const RULE = { kind: "markets", skip: ["DOGE/USDT"] };
+  const R = {
+    desk: true,
+    deskTrades: 80,
+    candidates: [],
+    lessons: [{ id: "LS-0004", at: "2026-10-29T01:10:00Z", from: "debrief", text: "Leave DOGE/USDT alone.", roles: ["search", "risk"], rule: RULE, words: "never DOGE/USDT", state: "proposed", test: { since: "2026-10-29T01:10:00Z", trades: 52, unjudged: 2, stopped: { n: 31, netUsd: -45.2, meanPct: -0.29, winRatePct: 20 }, kept: { n: 21, netUsd: 12, meanPct: 0.05, winRatePct: 55 }, t: -2.6, verdict: "helps", words: "Of the desk's 52 trades since 2026-10-29, it would have stopped 31 — −$45.20, −0.290% a trade, t −2.6: they lost beyond chance, so the rule would have kept $45.20." } }],
+    versions: [{ v: 2, at: "2026-10-30T14:00:00Z", change: "lesson", words: "lesson LS-0003 adopted: no lead entered 00–04 New York", hash: "bbbbbbbbbbbb" }, { v: 1, at: "2026-10-28T14:00:00Z", change: "hire", words: "desk hired: 5 seats at Paper", hash: "aaaaaaaaaaaa" }],
+    debrief: { slices: { version: [{ label: "v1", n: 40, wins: 18, winRatePct: 45, netUsd: -20, meanPct: -0.05, few: false }, { label: "v2", n: 12, wins: 7, winRatePct: 58, netUsd: 9, meanPct: 0.075, few: true }] } },
+  };
+
+  it("says each lesson's test with its verdict, offers Test in the lab… to the owner where it has a rule, and lists the desk's versions with what each one's trades made", () => {
+    const p = page();
+    p.set("R", R);
+    const html = p.run<string>("dbLessonsHtml(R)");
+    expect(html).toContain('<p class="small db-ls-test"><span class="tag up">Helps</span> Of the desk&#39;s 52 trades since 2026-10-29, it would have stopped 31 — −$45.20, −0.290% a trade, t −2.6: they lost beyond chance, so the rule would have kept $45.20. <span class="dim">2 trades it could not judge.</span></p>');
+    expect(html).toContain('data-db-ls="lab" data-id="LS-0004">Test in the lab…</button>');
+    expect(html).toContain("<h3>The desk's versions</h3>");
+    expect(html).toContain("<td><b>v2</b></td>");
+    expect(html).toContain("lesson LS-0003 adopted: no lead entered 00–04 New York");
+    expect(html).toContain('12 <span class="tag" title="Fewer than 30 trades: a sketch, not a finding">few</span>');
+    p.run('Owner.role = "viewer"');
+    expect(p.run<string>("dbLessonsHtml(R)")).not.toContain('data-db-ls="lab"');
+  });
+
+  it("Test in the lab… puts the lesson's rule alone in the Backtest page's desk form, in desk mode, and goes there", async () => {
+    const p = page();
+    p.set("R", R);
+    p.run("DB.read = R; WENT = []; go = (tab) => WENT.push(tab); toast = () => {}");
+    p.run('BT.deskRules = [{ rule: { kind: "side", only: "buy" }, words: "longs only" }]');
+    await p.run<Promise<void>>('dbLessonAct("lab", { id: "LS-0004" })');
+    expect(p.run("BT.mode")).toBe("desk");
+    expect(p.run("BT.deskRules")).toEqual([{ id: "LS-0004", rule: RULE, words: "never DOGE/USDT" }]);
+    expect(p.run("WENT")).toEqual(["backtest"]);
   });
 });
