@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 52,
+      "title": "Lessons: what the desk's trades teach, binding only by the owner's signature",
+      "mergedAt": "2026-10-31T15:42:27Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/52",
+      "branch": "feat/desk-lessons"
+    },
+    {
       "number": 51,
       "title": "The screen: a run's entries beside random ones, a desk run's exits swept fast, every rule counted",
       "mergedAt": "2026-10-31T13:19:09Z",
