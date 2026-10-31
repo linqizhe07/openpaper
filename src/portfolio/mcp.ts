@@ -24,8 +24,9 @@
  * charter, the objective, the funnel, the room), portfolio_desk_say speaks in its room with this seat's key. BACKTESTS (backtest/lab.ts):
  * portfolio_backtest runs a strategy over recorded bars through a paper account — a training run before the holdout, counted in the
  * account's trials ledger with this seat named; the held-out data is the owner's to run on — portfolio_backtest_walk walks a grid forward
- * through the folds of the training window, every try counted, and portfolio_backtests reads the ledger and a kept run; the desk itself
- * runs over the bars by the owner's signature only (its runs are read like any). A layered simulation (tests: the account layer over simulated venues) also has
+ * through the folds of the training window, every try counted, portfolio_backtest_screen sweeps a kept desk run's exits fast over its bars
+ * (every rule counted), and portfolio_backtests reads the ledger and a kept run; the desk itself runs over the bars by the owner's
+ * signature only (its runs are read like any). A layered simulation (tests: the account layer over simulated venues) also has
  * portfolio_transfer, which signs a move between the simulated venues at the door.
  * On the simulated statement (--classic), and on a layered simulation: portfolio_read · portfolio_markets · portfolio_quote ·
  * portfolio_openness · portfolio_execute · portfolio_order — the fixture's venues, catalogue and router. They are registered only when the
@@ -1034,9 +1035,33 @@ server.registerTool(
 );
 
 server.registerTool(
+  "portfolio_backtest_screen",
+  {
+    description: "AN EXIT SWEEP over a kept desk run's entries: every rule of a grid — take-profit × stop × time limit — tried on the run's own round trips over its bars, fast, by the paper account's rules for a bar (entered at the bar's open at the ask or the bid; the stop taken before the take-profit within a bar; the time limit closed at the next open; the fee both ways; a perpetual's funding bar by bar), at the run's fee and spread. A SCREEN, NOT A RUN: it leaves out the book's deeper levels and liquidation, and what a rule would have made is a run of the desk with it (the owner's signature), since the desk's next leads come in as its last ones close. The answer: `best` and `top` (each rule's `meanPct` a trade, `winRatePct`, and `sharpe` a year at the run's own sizes), `own` (the run's own exits and their `rank` among the rules), `deflated` (`dsr`: the probability the best rule's Sharpe is real, counting these rules and every strategy tried before the holdout; `sr0`: the Sharpe a year the best of that many would show by chance alone), `chance` (the sweep tried again on random entries — as many, on the same markets and sides — `tries` times: `p`, how often a try's best did as well; `sameRulePct`, what the best rule made on them — near its own figure, the window's prices made it, not the entries) and `words`. EVERY RULE IS COUNTED: the sweep is a row of the trials ledger with this seat named, and each rule a strategy tried that deflates every run after it. Training runs only (a look at the held-out data is never swept), with 30 round trips at least. A kept run's entries beside random ones with its own exits are in portfolio_backtests {id} (`baseline`). The account runs one backtest at a time (a busy answer says so). Not a read: a row in the ledger.",
+    inputSchema: {
+      run: z.string().regex(/^\d{8}T\d{6}-[0-9a-f]{10}$/).describe("the kept desk run's id (portfolio_backtests lists the runs)"),
+      tpPct: z.array(z.number().min(0.1).max(50)).min(1).max(20).optional().describe("the take-profits to try, % from the entry (default 0.25, 0.5, 1, 1.5, 2, 3, 5, 8)"),
+      slPct: z.array(z.number().min(0.1).max(50)).min(1).max(20).optional().describe("the stops to try, % from the entry (default 0.25, 0.5, 1, 1.5, 2, 3, 5, 8)"),
+      hours: z.array(z.number().min(1).max(720)).min(1).max(20).optional().describe("the time limits to try, hours (default 1, 4, 12, 24, 72, 168)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
+  async (args) => {
+    if (!(await layer())) return text({ ok: false, error: "this service runs without the account layer (--classic)" }, true);
+    const r = await call("POST", "/api/account/backtest/screen", { ...args, seat: seatKey().address });
+    const b = r.body as Record<string, unknown> & { refusal?: { code: string; message: string; detail?: unknown }; error?: string };
+    if (b.refusal) return text({ ok: false, code: b.refusal.code, message: b.refusal.message, ...(b.refusal.detail !== undefined ? { detail: b.refusal.detail } : {}) }, true);
+    if (r.status >= 400) return text({ ok: false, error: b.error ?? `HTTP ${r.status}` }, true);
+    // every rule's figures stay in the ledger's row: the best ten and the words are the answer
+    const { means: _means, sharpes: _sharpes, ...answer } = b;
+    return text(answer);
+  },
+);
+
+server.registerTool(
   "portfolio_backtests",
   {
-    description: "THE BACKTESTS KEPT ON THE ACCOUNT, and what can be asked. Without `id`: `catalog` (the strategies with each number's default, min, max and words; the bar sizes; the kinds of market; the defaults), the holdout (`start`: the first held-out day — runs end before it; `setBy`: the default, or the owner), the trials ledger (`rows`; `intact`: its hash chain holds, else `brokenAt` and `why`; `trials` run, `distinct` strategies tried before the holdout, `looks` the owner took at the held-out data) and the latest runs, newest first, each with what was tried, by whom (`by`: request, terminal or owner; `seat` as a request named it), its window and its figures — a look at the held-out data says that it was taken and of what, never what came of it (`figures: \"the owner's\"`). With `id`: that run in full — its `run` (every fill with its price and fee, the equity curve, the funding, the orders not filled, the notes), its `benchmark`, its `trial`, and how it is judged against the ledger now (`deflated`, `overfit`: more strategies tried since lower it). A read.",
+    description: "THE BACKTESTS KEPT ON THE ACCOUNT, and what can be asked. Without `id`: `catalog` (the strategies with each number's default, min, max and words; the bar sizes; the kinds of market; the defaults), the holdout (`start`: the first held-out day — runs end before it; `setBy`: the default, or the owner), the trials ledger (`rows`; `intact`: its hash chain holds, else `brokenAt` and `why`; `trials` run, `distinct` strategies tried before the holdout — every rule an exit sweep screened among them —, `looks` the owner took at the held-out data, `screens` the exit sweeps) and the latest runs and sweeps (`kind`: trial or screen), newest first, each with what was tried, by whom (`by`: request, terminal or owner; `seat` as a request named it), its window and its figures — a look at the held-out data says that it was taken and of what, never what came of it (`figures: \"the owner's\"`). With `id`: that run in full — its `run` (every fill with its price and fee, the equity curve, the funding, the orders not filled, the notes, its round trips), its `benchmark`, its `baseline` (its entries beside random ones on the same markets and sides with the same exits: its `rank` among the tries, `p`, `verdict` better · worse · chance · few, and `gapPct`, how far the fast screen was from the paper account on its own trades), its latest exit sweeps (`screens`), its `trial`, and how it is judged against the ledger now (`deflated`, `overfit`: more strategies tried since lower it). A read.",
     inputSchema: {
       id: z.string().max(40).optional().describe("a run's id, as portfolio_backtest answered it or the list names it"),
       limit: z.number().int().min(1).max(500).optional().describe("the most runs listed (default 50)"),

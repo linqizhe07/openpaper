@@ -14,10 +14,12 @@
  *     strategy, its numbers, the markets, the window, the costs), who asked, and its figures; hash-chained like the account's own ledger
  *     (agent/ledger.ts: each row's hash covers the one before it), so a row taken out or changed is seen. A run's Sharpe is DEFLATED by
  *     every distinct strategy tried before the holdout (backtest/stats.ts dsr): the more tried, the higher the bar. Runs on the same markets
- *     and bars are judged together too, for how likely picking the best of them was picking the luckiest (pbo).
+ *     and bars are judged together too, for how likely picking the best of them was picking the luckiest (pbo). An exit sweep over a desk
+ *     run's entries (labScreen, backtest/screen.ts) is a row too, with every rule it screened — each one a strategy tried, never run.
  *
  * A run itself is the engine's (backtest/engine.ts) over the history kept in the home (backtest/data.ts), with the same markets bought and
- * held beside it, and it is kept in <home>/backtest/runs/<id>.json. Who asked is said, not proven: an unsigned request names the seat it
+ * held beside it, and it is kept in <home>/backtest/runs/<id>.json — with its round trips beside random entries on the same markets, sides
+ * and exits (backtest/screen.ts baselineOf), where it closed any. Who asked is said, not proven: an unsigned request names the seat it
  * says it is (the service's routes take no signature to run a backtest, and an unsigned run never reaches the holdout); the owner's look at
  * the holdout is theirs by signature, and so is a run of the desk itself (deskAskOf), which builds a whole account to trade in. */
 import { createHash } from "node:crypto";
@@ -26,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { canonical, sha256 } from "../../core/hash.ts";
+import { FEW } from "../account/debrief.ts";
 import { appendJsonl } from "../../core/jsonl.ts";
 import { PAPER_FEE_BPS } from "../live/paper.ts";
 import { INTERVAL_MS, type CandleInterval } from "../live/trade.ts";
@@ -33,10 +36,11 @@ import { no } from "../refuse.ts";
 import { loadHistory, marketText, parseMarkets, type HistorySources, type MarketRef } from "./data.ts";
 import { runBacktest, type BacktestRun } from "./engine.ts";
 import { stepReturns } from "./metrics.ts";
-import { DEFAULT_COSTS, type BacktestCosts } from "./source.ts";
+import { DEFAULT_COSTS, type BacktestCosts, type BacktestMarket } from "./source.ts";
 import { makeStrategy, STRATEGIES, strategySpec, type StrategySpec } from "./strategies.ts";
-import { DESK_NAME, deskParams, type DeskParams } from "./desk-params.ts";
-import { dsr, moments, pbo, psr } from "./stats.ts";
+import { DESK_NAME, DESK_PARAMS, deskParams, type DeskParams } from "./desk-params.ts";
+import { baselineOf, screenCosts, SWEEP_GRID, SWEEP_WORK_MOST, sweepOf, tapeOf, tradesOf, type Baseline, type Sweep, type SweepGrid, type SweepRule } from "./screen.ts";
+import { dsr, expectedMaxSharpe, moments, pbo, psr } from "./stats.ts";
 
 const DAY_MS = 86_400_000;
 /** the held-out days when nothing has said otherwise: the 90 before the first time anything asks */
@@ -101,9 +105,45 @@ export interface HoldoutEntry {
   start: string;
   was?: string | undefined;
 }
-export type LabEntry = TrialEntry | HoldoutEntry;
+/** an exit sweep over a kept desk run's entries (labScreen): every rule of its grid a strategy tried and never run, its net a trade and its
+ * Sharpe a year kept in the grid's order */
+export interface ScreenEntry {
+  kind: "screen";
+  by: LabWho;
+  seat?: string | undefined;
+  /** the kept run whose entries were screened */
+  run: string;
+  window: "train";
+  /** what was screened, hashed: the run's own key, the grid and the costs — the same sweep, the same key */
+  key: string;
+  strategy: string;
+  params: Record<string, number>;
+  markets: string[];
+  interval: CandleInterval;
+  from: string;
+  to: string;
+  cashUsd: number;
+  feeBps: number;
+  costs: BacktestCosts;
+  trades: number;
+  grid: SweepGrid;
+  rules: number;
+  means: number[];
+  sharpes: number[];
+  best: SweepRule;
+  own?: (SweepRule & { rank: number }) | undefined;
+  /** the best rule's deflated Sharpe, the Sharpe a year the best of that many would show by chance, the strategies counted */
+  dsr: number;
+  sr0: number;
+  trials: number;
+  chance: Sweep["chance"];
+  /** what the sweep found, in words (backtest/screen.ts) */
+  words: string;
+}
+export type LabEntry = TrialEntry | HoldoutEntry | ScreenEntry;
 export type LabRow = LabEntry & { v: 1; seq: number; ts: string; prev: string; hash: string };
 export type TrialRow = TrialEntry & { v: 1; seq: number; ts: string; prev: string; hash: string };
+export type ScreenRow = ScreenEntry & { v: 1; seq: number; ts: string; prev: string; hash: string };
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 const dayOf = (ms: number): string => iso(ms).slice(0, 10);
@@ -173,12 +213,19 @@ export function appendTrial<E extends LabEntry>(home: string, entry: E, now: num
 }
 
 const isTrial = (r: LabRow): r is TrialRow => r.kind === "trial";
+const isScreen = (r: LabRow): r is ScreenRow => r.kind === "screen";
 
 /** the distinct strategies tried before the holdout: the latest run of each key */
 export function trainingTrials(rows: readonly LabRow[]): TrialRow[] {
   const byKey = new Map<string, TrialRow>();
   for (const r of rows) if (isTrial(r) && r.window === "train") byKey.set(r.key, r);
   return [...byKey.values()];
+}
+/** the strategies screened before the holdout and never run: every rule of every distinct exit sweep */
+export function screenedRules(rows: readonly LabRow[]): number {
+  const byKey = new Map<string, number>();
+  for (const r of rows) if (isScreen(r)) byKey.set(r.key, r.rules);
+  return [...byKey.values()].reduce((s, n) => s + n, 0);
 }
 
 // ---- the holdout ----
@@ -216,7 +263,7 @@ export function setHoldout(home: string, start: string, by: LabWho, now: number)
   if (isRefusal(was)) return was;
   if (day === was.start) return no("E_ACCOUNT_BAD_ACTION", { message: `the holdout already starts on ${day}` });
   const ledger = readTrials(home);
-  const tried = ledger.rows.filter(isTrial).filter((r) => r.window === "train" && Date.parse(r.to) > ms);
+  const tried = ledger.rows.filter((r): r is TrialRow | ScreenRow => (isTrial(r) || isScreen(r)) && r.window === "train" && Date.parse(r.to) > ms);
   if (tried.length) {
     const last = tried.reduce((a, b) => (Date.parse(b.to) > Date.parse(a.to) ? b : a));
     return no("E_ACCOUNT_BAD_ACTION", { message: `the days after ${day} were already tried on (trial ${last.seq} ran to ${last.to.slice(0, 10)}): a holdout starts after every training run's end, ${last.to.slice(0, 10)} or later` });
@@ -238,14 +285,23 @@ export interface Deflated {
 }
 
 /** a training run's Sharpe deflated by the distinct strategies tried before the holdout (this one among them): every trial's Sharpe a year
- * read at this run's steps a year */
+ * read at this run's steps a year. The rules an exit sweep screened count too, each a strategy tried — varying as chance alone makes a zero
+ * Sharpe vary over this run's steps, or as the runs' Sharpes do where they vary more: a rule's own Sharpe is mostly what its costs take
+ * (backtest/screen.ts), which is no luck */
 export function deflate(rows: readonly LabRow[], t: TrialEntry): Deflated | undefined {
   if (!(t.steps > 1) || !(t.perYear > 0)) return undefined;
   const root = Math.sqrt(t.perYear);
   const tried = trainingTrials(rows);
   const sharpes = (tried.some((x) => x.key === t.key) ? tried : [...tried, t]).map((x) => x.sharpe / root);
-  const d = dsr({ sr: t.sr, n: t.steps, skew: t.skew, kurt: t.kurt, trialSharpes: sharpes });
-  return { dsr: d.dsr, sr0: d.sr0 * root, trials: d.trials };
+  const rules = screenedRules(rows);
+  if (!rules) {
+    const d = dsr({ sr: t.sr, n: t.steps, skew: t.skew, kurt: t.kurt, trialSharpes: sharpes });
+    return { dsr: d.dsr, sr0: d.sr0 * root, trials: d.trials };
+  }
+  const variance = Math.max(sharpes.length > 1 ? moments(sharpes).sd ** 2 : 0, 1 / (t.steps - 1));
+  const trials = sharpes.length + rules;
+  const sr0 = expectedMaxSharpe(trials, variance);
+  return { dsr: psr(t.sr, sr0, t.steps, t.skew, t.kurt), sr0: sr0 * root, trials };
 }
 
 export interface Overfit {
@@ -334,6 +390,8 @@ export interface LabOutcome {
   benchmark?: BacktestRun | undefined;
   /** what was said before the run: the window, a source's words */
   notes: string[];
+  /** its round trips beside random entries on the same markets, sides and exits (backtest/screen.ts), where it closed any */
+  baseline?: Baseline | undefined;
   saved?: string | undefined;
   window: "train" | "holdout";
   holdout: Holdout;
@@ -413,6 +471,8 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
     }
     const at = deps.clock();
     const id = runId({ ...ask, from: start, to }, at);
+    // its round trips beside random entries, drawn from what the run was (its id but the time it ran): the same run, the same tries
+    const baseline = run.trips?.length ? baselineOfRun(run, loaded.markets, start, to, id.slice(16)) : undefined;
     const m = run.metrics;
     const shape = moments(stepReturns(run.equity));
     const trialOf: Omit<TrialEntry, "key"> = {
@@ -445,16 +505,22 @@ export async function labRun(ask: LabAsk, deps: LabDeps): Promise<LabOutcome | R
     let saved: string | undefined;
     if (ask.save) {
       saved = runFile(deps.home, id);
-      writeWhole(saved, JSON.stringify({ version: 1, id, at: iso(at), by: ask.by, ...(ask.seat ? { seat: ask.seat } : {}), window: ask.window, holdout: holdout.start, markets: ask.refs.map(marketText), interval: ask.interval, notes, run, ...(benchmark ? { benchmark } : {}) }));
+      writeWhole(saved, JSON.stringify({ version: 1, id, at: iso(at), by: ask.by, ...(ask.seat ? { seat: ask.seat } : {}), window: ask.window, holdout: holdout.start, markets: ask.refs.map(marketText), interval: ask.interval, notes, run, ...(benchmark ? { benchmark } : {}), ...(baseline ? { baseline } : {}) }));
     }
     const trial = appendTrial(deps.home, { ...trialOf, key: keyOf(trialOf) } as TrialEntry, at) as TrialRow;
     if (ask.save) pruneRuns(deps.home);
     const ledger = readTrials(deps.home);
     const judged = judge(deps.home, ledger.rows, trial);
-    return { id, run, ...(benchmark ? { benchmark } : {}), notes, ...(saved ? { saved } : {}), window: ask.window, holdout, trial, ...judged, ledger: { rows: ledger.rows.length, intact: ledger.intact, ...(ledger.intact ? {} : { brokenAt: ledger.brokenAt, why: ledger.why }) } };
+    return { id, run, ...(benchmark ? { benchmark } : {}), notes, ...(baseline ? { baseline } : {}), ...(saved ? { saved } : {}), window: ask.window, holdout, trial, ...judged, ledger: { rows: ledger.rows.length, intact: ledger.intact, ...(ledger.intact ? {} : { brokenAt: ledger.brokenAt, why: ledger.why }) } };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
+}
+
+/** a run's round trips beside random entries (backtest/screen.ts baselineOf): over its markets' bars in its window, at its fee and spread */
+function baselineOfRun(run: BacktestRun, markets: readonly BacktestMarket[], from: number, to: number, seed: string): Baseline | undefined {
+  const tapes = markets.map((m) => tapeOf(m, from, to));
+  return baselineOf({ tapes, trades: tradesOf(run.trips ?? [], tapes), costs: screenCosts(run.feeBps, run.costs.halfSpreadBps), seed });
 }
 
 /** a trial judged against the ledger as it stands: a training run deflated by the trials and judged with its kin for overfitting; a look at
@@ -625,6 +691,7 @@ export function outcomeSummary(out: LabOutcome, o: { curve?: boolean } = {}): Re
     ...(out.deflated ? { deflated: out.deflated } : {}),
     ...(out.psr !== undefined ? { psr: Number.isNaN(out.psr) ? null : out.psr, looks: out.looks } : {}),
     ...(out.overfit ? { overfit: out.overfit } : {}),
+    ...(out.baseline ? { baseline: out.baseline } : {}),
     trial: out.trial.seq,
     ledger: out.ledger,
     kept: out.saved !== undefined,
@@ -634,20 +701,26 @@ export function outcomeSummary(out: LabOutcome, o: { curve?: boolean } = {}): Re
 
 // ---- what is kept ----
 
-/** the ledger and the holdout as they stand — the holdout's default written down if nothing has asked before — and the latest runs (the
- * ledger's rows: what was tried, by whom, with its figures), newest first */
-export function labList(home: string, now: number, limit = 50, o: { owner?: boolean } = {}): { holdout: Holdout | Refusal; ledger: { rows: number; intact: boolean; brokenAt?: number | undefined; why?: string | undefined; trials: number; distinct: number; looks: number }; runs: Array<TrialRow | LookRow> } {
+/** the ledger and the holdout as they stand — the holdout's default written down if nothing has asked before — and the latest runs and
+ * exit sweeps (the ledger's rows: what was tried, by whom, with its figures; a sweep's every rule left in its row, read with its run),
+ * newest first. The distinct strategies tried count every rule screened */
+export function labList(home: string, now: number, limit = 50, o: { owner?: boolean } = {}): { holdout: Holdout | Refusal; ledger: { rows: number; intact: boolean; brokenAt?: number | undefined; why?: string | undefined; trials: number; distinct: number; looks: number; screens: number }; runs: Array<TrialRow | LookRow | ScreenLine> } {
   const ledger = readTrials(home);
   const trials = ledger.rows.filter(isTrial);
   return {
     holdout: readHoldout(home, now),
-    ledger: { rows: ledger.rows.length, intact: ledger.intact, ...(ledger.intact ? {} : { brokenAt: ledger.brokenAt, why: ledger.why }), trials: trials.length, distinct: trainingTrials(ledger.rows).length, looks: trials.filter((t) => t.window === "holdout").length },
-    runs: trials
+    ledger: { rows: ledger.rows.length, intact: ledger.intact, ...(ledger.intact ? {} : { brokenAt: ledger.brokenAt, why: ledger.why }), trials: trials.length, distinct: trainingTrials(ledger.rows).length + screenedRules(ledger.rows), looks: trials.filter((t) => t.window === "holdout").length, screens: ledger.rows.filter(isScreen).length },
+    runs: ledger.rows
+      .filter((r): r is TrialRow | ScreenRow => isTrial(r) || isScreen(r))
       .slice(-Math.max(1, Math.min(500, limit)))
       .reverse()
-      .map((t) => (o.owner || t.window !== "holdout" ? t : lookOf(t))),
+      .map((t) => (isScreen(t) ? lineOf(t) : o.owner || t.window !== "holdout" ? t : lookOf(t))),
   };
 }
+
+/** an exit sweep as the ledger's list shows it: its every rule's figures left in its row */
+export type ScreenLine = Omit<ScreenRow, "means" | "sharpes">;
+const lineOf = ({ means: _means, sharpes: _sharpes, ...line }: ScreenRow): ScreenLine => line;
 
 /** a look at the held-out data as anyone but the owner reads it: that it was taken, by whom, of what — never what came of it */
 export type LookRow = Pick<TrialRow, "v" | "seq" | "ts" | "kind" | "by" | "run" | "window" | "strategy" | "params" | "markets" | "interval" | "from" | "to"> & { figures: "the owner's" };
@@ -686,8 +759,12 @@ export function labRead(home: string, id: string, o: { owner?: boolean } = {}): 
   }
   const ledger = readTrials(home);
   const trial = ledger.rows.filter(isTrial).find((r) => r.run === id);
-  return { ...kept, ...(trial ? { trial, ...judge(home, ledger.rows, trial) } : {}), ledger: { rows: ledger.rows.length, intact: ledger.intact } };
+  // its exit sweeps, newest first, every rule's figures with them
+  const screens = ledger.rows.filter((r): r is ScreenRow => isScreen(r) && r.run === id).slice(-SCREENS_READ).reverse();
+  return { ...kept, ...(trial ? { trial, ...judge(home, ledger.rows, trial) } : {}), ...(screens.length ? { screens } : {}), ledger: { rows: ledger.rows.length, intact: ledger.intact } };
 }
+/** a kept run's exit sweeps read with it, the latest */
+const SCREENS_READ = 3;
 
 /** THE OWNER'S LOOK AT THE HOLDOUT: a training run tried again exactly — the strategy, its numbers, the markets, the bars, the money, the fee
  * and the costs — on the held-out data, from the holdout's start to now. `run` is the training run's id */
@@ -701,4 +778,152 @@ export async function labEvaluate(run: string, deps: LabDeps, by: LabWho): Promi
   const refs = parseMarkets(t.markets.join(","));
   if (typeof refs === "string") return no("E_ACCOUNT_BAD_ACTION", { message: refs });
   return labRun({ spec, refs, interval: t.interval, window: "holdout", cashUsd: t.cashUsd, feeBps: t.feeBps, ...(t.leverage !== undefined ? { leverage: t.leverage } : {}), costs: t.costs, benchmark: true, save: true, by }, deps);
+}
+
+// ---- an exit sweep ----
+
+/** what an exit sweep is asked: the kept desk run whose entries are screened, the rules (each list's values; none named, SWEEP_GRID's), who
+ * asks */
+export interface ScreenAsk {
+  run: string;
+  grid: SweepGrid;
+  by: LabWho;
+  seat?: string | undefined;
+}
+export interface ScreenOutcome {
+  sweep: Sweep;
+  row: ScreenRow;
+  notes: string[];
+  ledger: { rows: number; intact: boolean; brokenAt?: number | undefined; why?: string | undefined };
+}
+/** the most rules a sweep tries, and the most values a list of its grid holds */
+export const SWEEP_RULES_MOST = 4_000;
+export const SWEEP_VALUES_MOST = 20;
+
+/** AN EXIT SWEEP over a kept desk run's entries (backtest/screen.ts sweepOf): every rule of the grid screened over the run's own bars at its
+ * fee and spread, the best judged for luck twice — deflated by these rules and every strategy tried before the holdout, and the sweep tried
+ * again on random entries — and written in the ledger with every rule's figures, each rule counted from then on as a strategy tried. On
+ * training data only: exits picked on a look at the held-out data would hold nothing out. A screen, not a run: what a rule would have made
+ * is a run of the desk with it, since the desk's next leads come in as its last ones close */
+export async function labScreen(ask: ScreenAsk, deps: LabDeps): Promise<ScreenOutcome | Refusal> {
+  if (!RUN_ID.test(ask.run)) return no("E_ACCOUNT_BAD_ACTION", { message: "a run's id is like 20261029T120000-0123456789" });
+  const holdout = readHoldout(deps.home, deps.clock());
+  if (isRefusal(holdout)) return holdout;
+  const before = readTrials(deps.home);
+  const t = before.rows.filter(isTrial).find((r) => r.run === ask.run);
+  if (!t) return no("E_ACCOUNT_BAD_ACTION", { message: `no trial ran as ${ask.run}` });
+  if (t.window !== "train") return no("E_ACCOUNT_OWNER_ONLY", { message: `${ask.run} is a look at the held-out data: exits picked on it would hold nothing out — sweep the training run it tried` });
+  if (t.strategy !== "desk") return no("E_ACCOUNT_BAD_ACTION", { message: `an exit sweep tries a desk run's leads with other take-profits, stops and time limits: ${t.strategy} closes its trades by its own signal` });
+  const f = runFile(deps.home, ask.run);
+  if (!existsSync(f)) return no("E_ACCOUNT_BAD_ACTION", { message: `run ${ask.run} is not kept: a sweep reads a kept run's round trips` });
+  let run: BacktestRun | undefined;
+  try {
+    run = (JSON.parse(readFileSync(f, "utf8")) as { run?: BacktestRun }).run;
+  } catch {
+    return no("E_ACCOUNT_BAD_ACTION", { message: `run ${ask.run} does not read` });
+  }
+  const trips = run?.trips ?? [];
+  if (trips.length < FEW) return no("E_ACCOUNT_BAD_ACTION", { message: `an exit sweep needs ${FEW} round trips at least: run ${ask.run} closed ${trips.length}` });
+  const rules = ask.grid.tpPct.length * ask.grid.slPct.length * ask.grid.hours.length;
+  if (rules > SWEEP_RULES_MOST) return no("E_ACCOUNT_BAD_ACTION", { message: `${rules.toLocaleString("en-US")} rules: a sweep tries ${SWEEP_RULES_MOST.toLocaleString("en-US")} at most` });
+  if (rules * trips.length > SWEEP_WORK_MOST) return no("E_ACCOUNT_BAD_ACTION", { message: `${rules.toLocaleString("en-US")} rules over ${trips.length.toLocaleString("en-US")} round trips is ${(rules * trips.length).toLocaleString("en-US")} trades to screen, ${SWEEP_WORK_MOST.toLocaleString("en-US")} at most: fewer values` });
+  const refs = parseMarkets(t.markets.join(","));
+  if (typeof refs === "string") return no("E_ACCOUNT_BAD_ACTION", { message: refs });
+  const from = Date.parse(t.from);
+  const to = Date.parse(t.to);
+  const loaded = await loadHistory({ refs, interval: t.interval, from, to, cache: deps.cache, sources: deps.sources, clock: deps.clock, say: deps.say });
+  if (isRefusal(loaded)) return loaded;
+  const tapes = loaded.markets.map((m) => tapeOf(m, from, to));
+  const trades = tradesOf(trips, tapes);
+  if (trades.length < FEW) return no("E_ACCOUNT_BAD_ACTION", { message: `the bars hold ${trades.length} of run ${ask.run}'s round trips: an exit sweep needs ${FEW} at least` });
+  // the same run, rules and costs, the same sweep: its rules counted once however often it is screened
+  const key = sha256(canonical({ of: t.key, grid: ask.grid, feeBps: t.feeBps, costs: t.costs })).slice(0, 16);
+  const others = trainingTrials(before.rows).length + screenedRules(before.rows.filter((r) => !(isScreen(r) && r.key === key)));
+  const sweep = sweepOf({ tapes, trades, grid: ask.grid, costs: screenCosts(t.feeBps, t.costs.halfSpreadBps), from, to, cashUsd: t.cashUsd, seed: key, others });
+  if (!sweep) return no("E_ACCOUNT_BAD_ACTION", { message: `run ${ask.run} has no round trip on its bars to sweep` });
+  const notes = [...loaded.notes];
+  if (trades.length < trips.length) notes.push(`${trips.length - trades.length} of the run's round trips are not on its bars and were left out`);
+  const entry: ScreenEntry = {
+    kind: "screen",
+    by: ask.by,
+    ...(ask.seat ? { seat: ask.seat } : {}),
+    run: ask.run,
+    window: "train",
+    key,
+    strategy: t.strategy,
+    params: t.params,
+    markets: t.markets,
+    interval: t.interval,
+    from: t.from,
+    to: t.to,
+    cashUsd: t.cashUsd,
+    feeBps: t.feeBps,
+    costs: t.costs,
+    trades: sweep.trades,
+    grid: sweep.grid,
+    rules: sweep.rules,
+    means: sweep.means,
+    sharpes: sweep.sharpes,
+    best: sweep.best,
+    ...(sweep.own ? { own: sweep.own } : {}),
+    dsr: sweep.deflated.dsr,
+    sr0: sweep.deflated.sr0,
+    trials: sweep.deflated.trials,
+    chance: sweep.chance,
+    words: sweep.words,
+  };
+  const row = appendTrial(deps.home, entry, deps.clock()) as ScreenRow;
+  const ledger = readTrials(deps.home);
+  return { sweep, row, notes, ledger: { rows: ledger.rows.length, intact: ledger.intact, ...(ledger.intact ? {} : { brokenAt: ledger.brokenAt, why: ledger.why }) } };
+}
+
+const SCREEN_FIELDS = ["run", "tpPct", "slPct", "hours", "seat"] as const;
+
+/** WHAT AN EXIT SWEEP IS ASKED (POST /api/account/backtest/screen, portfolio_backtest_screen), read strictly: the kept desk run, and each
+ * list of the grid within the desk's own bounds for that number (desk-params.ts) — a list left out, the default grid's (SWEEP_GRID). `seat`
+ * names who asks — said, not proven */
+export function screenAskOf(body: Record<string, unknown>): Omit<ScreenAsk, "by"> | string {
+  for (const k of Object.keys(body)) if (!(SCREEN_FIELDS as readonly string[]).includes(k)) return `an exit sweep is asked with ${SCREEN_FIELDS.join(", ")} — not "${k.slice(0, 30)}"`;
+  if (typeof body.run !== "string" || !RUN_ID.test(body.run.trim())) return "run is a kept desk run's id, like 20261029T120000-0123456789";
+  const list = (k: keyof SweepGrid, bounds: { min: number; max: number }): number[] | string => {
+    const v = body[k];
+    if (v === undefined) return [...SWEEP_GRID[k]];
+    if (!Array.isArray(v) || !v.length || v.length > SWEEP_VALUES_MOST || !v.every((x) => typeof x === "number" && Number.isFinite(x) && x >= bounds.min && x <= bounds.max)) return `${k} is a list of 1 to ${SWEEP_VALUES_MOST} numbers, each ${bounds.min} to ${bounds.max}`;
+    return [...new Set(v as number[])].sort((a, b) => a - b);
+  };
+  const tpPct = list("tpPct", DESK_PARAMS.tpPct);
+  const slPct = list("slPct", DESK_PARAMS.slPct);
+  const hours = list("hours", DESK_PARAMS.maxHours);
+  for (const x of [tpPct, slPct, hours]) if (typeof x === "string") return x;
+  const seat = body.seat;
+  if (seat !== undefined && !(typeof seat === "string" && /^[\w.:@-]{1,80}$/.test(seat))) return "seat names who asks: up to 80 letters, digits and . : @ _ -";
+  return { run: body.run.trim(), grid: { tpPct: tpPct as number[], slPct: slPct as number[], hours: hours as number[] }, ...(typeof seat === "string" ? { seat } : {}) };
+}
+
+/** a sweep as an answer: what was screened, its best rules, how its best is judged, its words — and with `grid`, every rule's net a trade and
+ * Sharpe a year in the grid's order (the page draws them; an agent's reply leaves them in the ledger's row) */
+export function screenSummary(out: ScreenOutcome, o: { grid?: boolean } = {}): Record<string, unknown> {
+  const s = out.sweep;
+  const r = out.row;
+  return {
+    run: r.run,
+    strategy: r.strategy,
+    markets: r.markets,
+    interval: r.interval,
+    from: r.from,
+    to: r.to,
+    trades: s.trades,
+    rules: s.rules,
+    grid: s.grid,
+    ...(o.grid ? { means: s.means, sharpes: s.sharpes } : {}),
+    best: s.best,
+    top: s.top,
+    ...(s.own ? { own: s.own } : {}),
+    deflated: s.deflated,
+    chance: s.chance,
+    words: s.words,
+    trial: r.seq,
+    ledger: out.ledger,
+    notes: out.notes,
+  };
 }

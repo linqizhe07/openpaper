@@ -17,7 +17,10 @@
      POST /api/account/backtest             a run: the form's fields as the account reads them (a refusal said in its words), the page
                                             named as who asked
      POST /api/account/backtest/walk        a walk-forward: the form's grid walked through the folds of the training window
-     GET  /api/account/backtest?id=         a kept training run in full: its curve, the buy-and-hold's, its fills
+     GET  /api/account/backtest?id=         a kept training run in full: its curve, the buy-and-hold's, its fills, its entries beside random
+                                            ones, its latest exit sweeps
+     POST /api/account/backtest/screen      an exit sweep over a kept desk run's entries: the rules typed under its result, every one a row's
+                                            worth of trying in the ledger
    What the owner signs (quoteDialog: the words first, then the fields signed): setBacktest evaluate <run id> · setBacktest holdout <day> ·
    setBacktest desk <the form's ask as JSON> — THE DESK ITSELF, its seats, Risk and the plan's exits, hired in an account of its own and
    played over the training data: a whole account built to trade in and a minute and more of stepping, so the owner's signature runs it,
@@ -27,12 +30,13 @@
    numbers, markets, bars, the window — its end at the holdout's start at the latest —, money, fee, leverage, the cost model, the
    buy-and-hold beside it), drawn once from the catalog and never again while it is typed in · the result (what ran; the equity of the
    strategy and of the buy-and-hold on one chart, the strategy's drawdown under it; the figures side by side; how it is judged; the notes;
-   its round trips debriefed (ui/debrief.js); the fills) · the trials (the ledger's latest runs, newest first: Open, and the owner's Look at the holdout…). Nothing is made up: every
-   figure is the account's. */
+   its round trips debriefed (ui/debrief.js); its entries beside random ones; a desk run's exit sweeps — the rules as a map, the best ones to
+   run as the desk itself — and the form that sweeps it again; the fills) · the trials (the ledger's latest runs and sweeps, newest first:
+   Open, and the owner's Look at the holdout…). Nothing is made up: every figure is the account's. */
 
 /* what the form runs: "run" (one strategy over the window), "walk" (a grid walked forward through the folds) or "desk" (the desk itself,
    by the owner's signature) */
-const BT = { list: null, listErr: "", view: null, running: false, soon: false, mode: "run" };
+const BT = { list: null, listErr: "", view: null, running: false, soon: false, mode: "run", sweepHours: null, sweepOpen: "" };
 const BT_MODES = ["run", "walk", "desk"];
 /* the owner's looks at the held-out data, as their signature was answered, kept in this browser by run id (the latest BT_LOOKS_MOST) */
 const BT_LOOKS_KEY = "openpaper-backtest-looks";
@@ -105,6 +109,11 @@ function btWire(el) {
     if (t.dataset.btAct === "seen") return void btSeen(id);
     if (t.dataset.btAct === "look") return void btLook(id);
     if (t.dataset.btAct === "holdout") return void btMoveHoldout();
+    if (t.dataset.btAct === "sweep-hours") {
+      BT.sweepHours = Number(t.dataset.hours);
+      return void btAgain();
+    }
+    if (t.dataset.btAct === "desk-exits") return void btDeskExits(el, BT.view, Number(t.dataset.tp), Number(t.dataset.sl), Number(t.dataset.hours));
     if (t.dataset.btAct === "mode") {
       BT.mode = BT_MODES.includes(t.dataset.mode) ? t.dataset.mode : "run";
       const form = el.querySelector("[data-bt-form]");
@@ -115,7 +124,21 @@ function btWire(el) {
     const sel = e.target.closest && e.target.closest('select[name="strategy"]');
     if (sel && el.contains(sel) && BT.list && BT.list.catalog) btStrategy(sel.form, BT.list.catalog, sel.value);
   });
+  // the sweep's count said as its lists are typed; a sweep's details kept open across a redraw
+  el.addEventListener("input", (e) => {
+    const f = e.target.closest && e.target.closest("form[data-bt-sweep]");
+    if (f) btSweepCount(f);
+  });
+  el.addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (d && d.classList && d.classList.contains("bt-sweep")) BT.sweepOpen = d.open ? d.dataset.id || "" : "";
+  }, true);
   el.addEventListener("submit", (e) => {
+    const sweep = e.target.closest && e.target.closest("form[data-bt-sweep]");
+    if (sweep) {
+      e.preventDefault();
+      return void btSweepSend(sweep);
+    }
     const f = e.target.closest && e.target.closest("form[data-bt-form]");
     if (!f) return;
     e.preventDefault();
@@ -397,6 +420,12 @@ function btViewOfKept(k) {
     notes: [...(k.notes || []), ...(r.notes || [])],
     // its round trips debriefed by the account (account/debrief.ts), where the run kept them
     debrief: k.debrief,
+    // its entries beside random ones, and its exit sweeps, the latest first (backtest/screen.ts); what the desk's form needs to run it again
+    baseline: k.baseline,
+    screens: k.screens || [],
+    trips: (r.trips || []).length,
+    asked: k.markets || [],
+    interval: k.interval,
   };
 }
 async function btOpen(id) {
@@ -620,7 +649,7 @@ function btResultHtml(v) {
   const head = `<div class="card-head"><div><h2 class="h2">${esc(s.name || s.id || "A backtest")}${v.window === "holdout" ? ' <span class="tag warn">Held-out data</span>' : ""}</h2><p class="dim small">${esc(s.paramWords || btParamWords(s.params))}${markets ? ` · ${esc(markets)}` : ""} · ${esc(btDay(v.from))} → ${esc(btDay(v.to))} UTC${v.feeBps !== undefined ? ` · fee ${esc(v.feeBps)} bps` : ""}${v.leverage ? ` · perpetuals at ${esc(v.leverage)}x` : ""}</p></div>${v.id ? `<span class="mono small dim">${esc(v.id)}</span>` : ""}</div>`;
   const notes = (v.notes || []).length ? `<details class="bt-notes-box"><summary>${esc(plural(v.notes.length, "note"))}</summary><ul class="bt-notes small dim">${v.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : "";
   const refused = v.refused ? `<p class="msg wait">${esc(plural(v.refused, "order"))} not filled: the notes say why.</p>` : "";
-  return `${head}${btChartHtml(v)}${btFiguresHtml(v)}${btJudgedHtml(v)}${refused}${notes}${btDebriefHtml(v)}${btFillsHtml(v)}`;
+  return `${head}${btChartHtml(v)}${btFiguresHtml(v)}${btJudgedHtml(v)}${refused}${notes}${btDebriefHtml(v)}${btBaselineHtml(v)}${btSweepHtml(v)}${btFillsHtml(v)}`;
 }
 
 /* the run's round trips debriefed (ui/debrief.js debriefHtml): what the costs took, whether its losses could be turned round, how far each
@@ -630,6 +659,152 @@ function btDebriefHtml(v) {
   if (!d || !d.trades || typeof debriefHtml !== "function") return "";
   const said = { costs: "the loss is the costs", invertible: "a loss worth testing the other way", "not-enough": "a loss too small to turn round", edge: "an edge after costs", unproven: "not yet told apart from luck", few: "too few to say" }[d.inversion && d.inversion.verdict] || "";
   return `<details class="bt-debrief"><summary>Debrief · ${esc(plural(d.trades, "round trip"))}${said ? ` · ${esc(said)}` : ""}</summary>${debriefHtml(d)}</details>`;
+}
+
+// ---- random entries and exit rules (backtest/screen.ts) ----
+
+const BT_VERDICT = { better: "better than chance", worse: "worse than chance", chance: "no better than chance", few: "too few to say" };
+/* a net a trade, to three places */
+const btPct3 = (n) => (Number.isFinite(Number(n)) ? `${Number(n) > 0 ? "+" : Number(n) < 0 ? "−" : ""}${Math.abs(Number(n)).toFixed(3)}%` : "—");
+
+/* THE RUN'S ENTRIES BESIDE RANDOM ONES: where they rank among a thousand tries on the same markets, sides and exits, in words; the tries as
+   bars by their net a trade, the run's own marked — and how far the fast screen was from the paper account on its trades (the words say) */
+function btBaselineHtml(v) {
+  const b = v.baseline;
+  if (!b || !b.trades) return "";
+  return `<details class="bt-screen"><summary>Random entries · ${esc(BT_VERDICT[b.verdict] || "")}${b.verdict === "few" ? "" : ` · better than ${esc(Math.round(b.rank * 100))}% of ${esc(Number(b.monkeys).toLocaleString("en-US"))} tries`}</summary><p>${esc(b.words)}</p>${btDistHtml(b)}</details>`;
+}
+/* the tries in their bins as bars, the run's own entries a line across them */
+function btDistHtml(b) {
+  const bins = (b.bins && b.bins.counts) || [];
+  if (!bins.length) return "";
+  const W = 400;
+  const H = 56;
+  const most = Math.max(1, ...bins);
+  const w = W / bins.length;
+  const bars = bins.map((n, i) => `<rect class="try" x="${(i * w + 0.5).toFixed(1)}" y="${(H - (n / most) * H).toFixed(1)}" width="${Math.max(0.5, w - 1).toFixed(1)}" height="${((n / most) * H).toFixed(1)}"></rect>`).join("");
+  const span = b.bins.widthPct * bins.length;
+  const x = span > 0 ? Math.max(1, Math.min(W - 1, ((b.ownPct - b.bins.fromPct) / span) * W)) : W / 2;
+  const label = `${b.monkeys} tries of random entries by their net a trade, from ${btPct3(b.bins.fromPct)} to ${btPct3(b.bins.fromPct + span)}; this run's entries ${btPct3(b.ownPct)}`;
+  return `<div class="bt-dist"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${bars}<line class="own" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="0" y2="${H}"></line></svg><div class="bt-axis"><span>${esc(btPct3(b.bins.fromPct))}</span><span><span class="sw own"></span>this run ${esc(btPct3(b.ownPct))} a trade</span><span>${esc(btPct3(b.bins.fromPct + span))}</span></div></div>`;
+}
+
+/* A DESK RUN'S EXIT RULES: its latest sweep — what it found in words; the rules as a map of take-profit × stop at one time limit (the
+   others a switch away), each cell its net a trade, tinted by its Sharpe a year, the run's own exits outlined; the best five, each to run as
+   the desk itself by the owner's signature — and the form that sweeps it again. Every rule is a strategy tried: the ledger counts it */
+function btSweepHtml(v) {
+  if (!v.id || !v.strategy || v.strategy.id !== "desk" || v.window === "holdout") return "";
+  const s = (v.screens || [])[0];
+  const sum = s ? `Exit rules · the best of ${plural(s.rules, "rule")}: take-profit ${s.best.tpPct}%, stop ${s.best.slPct}%, ${s.best.hours} h — ${btPct3(s.best.meanPct)} a trade` : "Exit rules · other take-profits, stops and time limits on these entries";
+  return `<details class="bt-screen bt-sweep" data-id="${esc(v.id)}"${BT.sweepOpen === v.id ? " open" : ""}><summary>${esc(sum)}</summary>${s ? btSweepFoundHtml(s) : ""}${btSweepFormHtml(v, s)}</details>`;
+}
+/* a sweep's rule at index k of its grid: the time limits slowest, then the stops, then the take-profits */
+function btRuleAt(s, k) {
+  const g = s.grid;
+  const tp = g.tpPct.length;
+  const sl = g.slPct.length;
+  return { tpPct: g.tpPct[k % tp], slPct: g.slPct[Math.floor(k / tp) % sl], hours: g.hours[Math.floor(k / (tp * sl))], meanPct: s.means[k], sharpe: s.sharpes[k] };
+}
+function btSweepFoundHtml(s) {
+  const g = s.grid;
+  const hours = g.hours.includes(BT.sweepHours) ? BT.sweepHours : s.best.hours;
+  const h = g.hours.indexOf(hours);
+  const tp = g.tpPct.length;
+  const sl = g.slPct.length;
+  const most = Math.max(1e-9, ...s.sharpes.map((x) => Math.abs(x)));
+  const own = s.own;
+  const cell = (k) => {
+    const r = btRuleAt(s, k);
+    const tint = Math.round(8 + 52 * Math.min(1, Math.abs(r.sharpe) / most));
+    const cls = [own && own.tpPct === r.tpPct && own.slPct === r.slPct && own.hours === r.hours ? "own" : "", r.tpPct === s.best.tpPct && r.slPct === s.best.slPct && r.hours === s.best.hours ? "best" : ""].filter(Boolean).join(" ");
+    return `<td${cls ? ` class="${cls}"` : ""} style="background: color-mix(in srgb, var(${r.sharpe >= 0 ? "--up" : "--down"}) ${tint}%, transparent)" title="${esc(`take-profit ${r.tpPct}%, stop ${r.slPct}%, ${r.hours} h: ${btPct3(r.meanPct)} a trade, a Sharpe of ${btFix(r.sharpe)} a year`)}">${esc(btFix(r.meanPct))}</td>`;
+  };
+  const rows = g.slPct.map((x, i) => `<tr><th scope="row">${esc(x)}%</th>${g.tpPct.map((_, j) => cell((h * sl + i) * tp + j)).join("")}</tr>`).join("");
+  const map = `<div class="bt-heat-wrap"><table class="bt-heat"><caption class="dim small">Net a trade (%) by stop (rows) and take-profit (columns), ${esc(hours)} h at most; tinted by Sharpe a year${own ? ", the run's own exits outlined" : ""}</caption><thead><tr><th scope="col"><span class="sr">Stop</span></th>${g.tpPct.map((x) => `<th scope="col">${esc(x)}%</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  const switcher = g.hours.length > 1 ? `<div class="seg bt-hours" role="group" aria-label="Time limit">${g.hours.map((x) => `<button type="button" data-bt-act="sweep-hours" data-hours="${esc(x)}" aria-pressed="${x === hours}">${esc(x)} h</button>`).join("")}</div>` : "";
+  const top = s.sharpes
+    .map((x, k) => [x, k])
+    .sort((a, b) => b[0] - a[0] || a[1] - b[1])
+    .slice(0, 5)
+    .map(([, k]) => btRuleAt(s, k));
+  const owner = owns();
+  const cols = [
+    { label: "Take-profit", r: true, cell: (r) => `${esc(r.tpPct)}%` },
+    { label: "Stop", r: true, cell: (r) => `${esc(r.slPct)}%` },
+    { label: "Hours", r: true, cell: (r) => esc(r.hours) },
+    { label: "Net a trade", r: true, cell: (r) => `<span class="${r.meanPct > 0 ? "up" : r.meanPct < 0 ? "down" : ""}">${esc(btPct3(r.meanPct))}</span>` },
+    { label: "Sharpe", r: true, cell: (r) => esc(btFix(r.sharpe)) },
+    { label: "", sr: "Actions", cell: (r) => (owner ? `<button type="button" class="btn btn-sm" data-bt-act="desk-exits" data-tp="${esc(r.tpPct)}" data-sl="${esc(r.slPct)}" data-hours="${esc(r.hours)}">Run the desk with these…</button>` : "") },
+  ];
+  const judged = `<p class="dim small">Deflated Sharpe ${esc(Math.round(s.dsr * 100))}% · counting ${esc(plural(s.trials, "strategy", "strategies"))} tried · on random entries a try's best did as well ${esc(Math.round(s.chance.p * (s.chance.tries + 1) - 1))} times in ${esc(s.chance.tries)} · row ${esc(s.seq)} of the ledger, ${esc(nyDay(s.ts))}</p>`;
+  return `<p>${esc(s.words || "")}</p>${judged}${switcher}${map}${table(cols, top, { cls: "bt-top-t" })}`;
+}
+/* the form that sweeps the run's entries: three lists, the latest sweep's (or the account's default grid), and what it will count */
+function btSweepFormHtml(v, s) {
+  const g = (s && s.grid) || { tpPct: [0.25, 0.5, 1, 1.5, 2, 3, 5, 8], slPct: [0.25, 0.5, 1, 1.5, 2, 3, 5, 8], hours: [1, 4, 12, 24, 72, 168] };
+  const few = v.trips < 30;
+  const field = (name, label, values, hint) => `<label class="fld">${esc(label)}<input name="${name}" value="${esc(values.join(", "))}" autocomplete="off" spellcheck="false" inputmode="decimal"><span class="bt-hint">${esc(hint)}</span></label>`;
+  return `<form class="bt-sweep-form" data-bt-sweep data-id="${esc(v.id)}" data-trips="${esc(v.trips)}" novalidate><div class="bt-grid3">${field("tpPct", "Take-profits (%)", g.tpPct, "0.1 to 50, comma-separated")}${field("slPct", "Stops (%)", g.slPct, "0.1 to 50")}${field("hours", "Time limits (h)", g.hours, "1 to 720")}</div><p class="dim small" data-bt-sweep-count>${esc(btSweepWords(g.tpPct.length * g.slPct.length * g.hours.length, v.trips))}</p><div class="msg" data-bt-sweep-msg role="status"></div><button type="submit" class="btn"${few ? " disabled" : ""}>${few ? `${esc(plural(v.trips, "round trip"))}: 30 at least to sweep` : "Screen the rules"}</button></form>`;
+}
+const btSweepWords = (rules, trips) => `${plural(rules, "rule")} over ${plural(trips, "round trip")}, screened in a second or so from the bars. Every rule is counted in the ledger as a strategy tried — every run after it is deflated by them — and none is a result until the desk runs with it.`;
+const btSweepLists = (f) => Object.fromEntries(["tpPct", "slPct", "hours"].map((k) => [k, String((f.querySelector(`[name="${k}"]`) || {}).value || "").split(",").map((x) => x.trim()).filter(Boolean).map(Number)]));
+function btSweepCount(f) {
+  const l = btSweepLists(f);
+  const n = f.querySelector("[data-bt-sweep-count]");
+  if (n) setText(n, btSweepWords(l.tpPct.length * l.slPct.length * l.hours.length, Number(f.dataset.trips) || 0));
+}
+/* the sweep asked of the account; the run read again, its sweeps with it */
+async function btSweepSend(f) {
+  if (BT.running) return;
+  const id = f.dataset.id;
+  const say = (text, state = "") => {
+    const m = f.querySelector("[data-bt-sweep-msg]");
+    if (!m) return;
+    m.className = `msg${text && state ? ` ${state}` : ""}`;
+    setText(m, text || "");
+  };
+  BT.running = true;
+  say("Screening: every rule over the run's own trades, then again over random entries.", "wait");
+  try {
+    const r = await postJson("/api/account/backtest/screen", { run: id, ...btSweepLists(f), seat: "page" });
+    if (r.status !== 200 || !r.body || r.body.ok === false) return void say(refusalOf(r.body) || "The account did not answer. Try again.", "no");
+    BT.sweepOpen = id;
+    BT.sweepHours = r.body.best && r.body.best.hours;
+    const kept = await api(`/api/account/backtest?id=${encodeURIComponent(id)}`);
+    if (kept && kept.ok && BT.view && BT.view.id === id) BT.view = btViewOfKept(kept);
+    toast(`${plural(r.body.rules, "rule")} screened, each counted in the ledger: the best ${btPct3(r.body.best && r.body.best.meanPct)} a trade`, "ok");
+  } finally {
+    BT.running = false;
+    btRead(true);
+    btAgain();
+  }
+}
+/* RUN THE DESK WITH THESE EXITS: the desk's form holds the same run again — its markets, bars, window, money, numbers and cost model — with
+   the rule's take-profit, stop and time limit; the owner signs it there, and its run says what the rule makes */
+function btDeskExits(el, v, tp, sl, hours) {
+  const form = el.querySelector("[data-bt-form]");
+  if (!form || !v || !v.strategy) return;
+  BT.mode = "desk";
+  btModeSync(form, owns());
+  const set = (name, value) => {
+    const i = form.querySelector(`[name="${name}"]`);
+    if (i && value !== undefined && value !== null && value !== "") i.value = String(value);
+  };
+  set("markets", (v.asked || []).join(","));
+  set("interval", v.interval);
+  set("from", String(v.from || "").slice(0, 10));
+  set("to", String(v.to || "").slice(0, 10));
+  set("cash", v.cashUsd);
+  for (const [k, x] of Object.entries(v.strategy.params || {})) set(`d.${k}`, x);
+  set("d.tpPct", tp);
+  set("d.slPct", sl);
+  set("d.maxHours", hours);
+  const c = v.costs || {};
+  set("halfSpreadBps", c.halfSpreadBps);
+  set("participation", c.participation);
+  set("levelBps", c.levelBps);
+  btSay(form, `The desk's form holds this run again with a take-profit at ${tp}%, a stop at ${sl}% and ${hours} h at most: Run the desk… signs it, and its run says what the rule makes.`, "wait");
+  if (typeof form.scrollIntoView === "function") form.scrollIntoView({ block: "start", behavior: still() ? "auto" : "smooth" });
 }
 
 /** A WALK as the result shows it: what was walked, the folds chained as one curve, what the chain earned out of sample and what share of
@@ -666,7 +841,7 @@ function btWalkHtml(v) {
 /** THE TRIALS: the ledger's latest runs, newest first — what was tried, by whom, on which data, its figures; Open for a kept training run,
  * Look at the holdout… for the owner. A look at the held-out data shows its figures only where this browser signed for it */
 function btTrialsHtml(L, owner, looks) {
-  const head = `<div class="card-head"><h2 class="h2" id="bt-trials-h">Trials</h2>${L && L.ledger ? `<div class="tools dim small">${esc(plural(L.ledger.trials, "run"))} · ${esc(plural(L.ledger.distinct, "distinct strategy", "distinct strategies"))} tried before the holdout · ${esc(plural(L.ledger.looks, "look"))} at it</div>` : ""}</div>`;
+  const head = `<div class="card-head"><h2 class="h2" id="bt-trials-h">Trials</h2>${L && L.ledger ? `<div class="tools dim small">${esc(plural(L.ledger.trials, "run"))}${L.ledger.screens ? ` · ${esc(plural(L.ledger.screens, "exit sweep"))}` : ""} · ${esc(plural(L.ledger.distinct, "distinct strategy", "distinct strategies"))} tried before the holdout · ${esc(plural(L.ledger.looks, "look"))} at it</div>` : ""}</div>`;
   if (!L) return `${head}<div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span></div>`;
   const seen = looks || {};
   const fig = (t) => (t.figures ? seen[t.run] && seen[t.run].metrics : t);
@@ -675,17 +850,18 @@ function btTrialsHtml(L, owner, looks) {
     { label: "When", cls: "nw", cell: (t) => `${esc(nyDay(t.ts))} ${esc(nyTime(t.ts))}` },
     { label: "By", cell: (t) => `${esc(t.by)}${t.seat ? ` <span class="dim small">${esc(short(t.seat))}</span>` : ""}` },
     { label: "Data", cell: (t) => (t.window === "holdout" ? '<span class="tag warn">Held out</span>' : '<span class="tag">Training</span>') },
-    { label: "Strategy", cell: (t) => `<b>${esc(t.strategy)}</b>${Object.keys(t.params || {}).length ? ` <span class="dim small" title="${esc(btParamWords(t.params))}">${esc(btParamsShort(t.params))}</span>` : ""}` },
+    { label: "Strategy", cell: (t) => (t.kind === "screen" ? `<b>exit sweep</b> <span class="dim small" title="${esc(`${t.rules} take-profit, stop and time-limit rules over the ${t.trades} round trips of run ${t.run}, each counted as a strategy tried; the best, screened: ${t.best.tpPct}% · ${t.best.slPct}% · ${t.best.hours} h, ${btPct3(t.best.meanPct)} a trade`)}">${esc(plural(t.rules, "rule"))} · best ${esc(btPct3(t.best.meanPct))} a trade</span>` : `<b>${esc(t.strategy)}</b>${Object.keys(t.params || {}).length ? ` <span class="dim small" title="${esc(btParamWords(t.params))}">${esc(btParamsShort(t.params))}</span>` : ""}`) },
     { label: "Markets", cell: (t) => `${esc((t.markets || []).join(", "))} <span class="dim small">${esc(t.interval)}</span>` },
     { label: "Window", cls: "nw", cell: (t) => `${esc(String(t.from).slice(0, 10))} → ${esc(String(t.to).slice(0, 10))}` },
-    { label: "Return", r: true, cell: (t) => (fig(t) ? chg(fig(t).returnPct) : '<span class="dim" title="What came of a look is the owner\'s: shown to the browser that signed for it">yours</span>') },
-    { label: "Sharpe", r: true, cell: (t) => (fig(t) ? esc(btFix(fig(t).sharpe)) : "") },
-    { label: "Max DD", r: true, cell: (t) => (fig(t) ? esc(btPctText(-fig(t).maxDrawdownPct)) : "") },
+    { label: "Return", r: true, cell: (t) => (t.kind === "screen" ? "" : fig(t) ? chg(fig(t).returnPct) : '<span class="dim" title="What came of a look is the owner\'s: shown to the browser that signed for it">yours</span>') },
+    { label: "Sharpe", r: true, cell: (t) => (t.kind === "screen" ? `<span title="the best rule's Sharpe a year, screened">${esc(btFix(t.best.sharpe))}</span>` : fig(t) ? esc(btFix(fig(t).sharpe)) : "") },
+    { label: "Max DD", r: true, cell: (t) => (t.kind === "screen" ? "" : fig(t) ? esc(btPctText(-fig(t).maxDrawdownPct)) : "") },
     {
       label: "",
       sr: "Actions",
       cell: (t) => {
         const b = [];
+        if (t.kind === "screen") return `<div class="acts"><button type="button" class="btn btn-sm" data-bt-act="open" data-id="${esc(t.run)}" title="Open the run it swept: its sweeps are under its result">Open</button></div>`;
         if (t.window === "train" && t.kept) b.push(`<button type="button" class="btn btn-sm" data-bt-act="open" data-id="${esc(t.run)}">Open</button>`);
         if (t.window === "holdout" && seen[t.run]) b.push(`<button type="button" class="btn btn-sm" data-bt-act="seen" data-id="${esc(t.run)}">Open</button>`);
         if (t.window === "train" && owner) b.push(`<button type="button" class="btn btn-sm btn-ghost" data-bt-act="look" data-id="${esc(t.run)}">Look at the holdout…</button>`);

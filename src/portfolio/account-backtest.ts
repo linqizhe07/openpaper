@@ -29,7 +29,10 @@
  *                (backtest/walk.ts): the grid's combinations tried on each fold's past, the best run on the fold, the folds chained
  *   --holdout    run on the held-out data instead, from the holdout's start to --to (now): the owner's own look, counted
  *   --set-holdout YYYY-MM-DD   hold out the data from that day on (never back over days already tried on)
- *   --trials     the ledger: the holdout, the runs tried, newest first
+ *   --screen RUN an EXIT SWEEP over a kept desk run's entries (backtest/screen.ts): every rule of --tp-pct a,b,c × --sl-pct a,b,c × --hours
+ *                a,b,c (each list the default grid's where left out) screened over its bars, the best judged for luck — every rule counted in
+ *                the ledger as a strategy tried
+ *   --trials     the ledger: the holdout, the runs and sweeps tried, newest first
  *   --json       the run as JSON         --no-save  keep no run (it is counted still)   --cache DIR  the bars' cache (<home>/history)
  *   --home DIR   the home                --quiet    no progress lines */
 import { join } from "node:path";
@@ -38,7 +41,7 @@ import { isRefusal, type Refusal } from "../core/errors.ts";
 import { parseMarkets, realHistorySources, type HistorySources, type MarketRef } from "./backtest/data.ts";
 import { DESK_PARAMS } from "./backtest/desk-params.ts";
 import { labWalkForward, type WalkOutcome } from "./backtest/walk.ts";
-import { deskSpec, labList, labRun, setHoldout, type DeskSpec, type Holdout, type LabOutcome } from "./backtest/lab.ts";
+import { deskSpec, labList, labRun, labScreen, screenAskOf, setHoldout, type DeskSpec, type Holdout, type LabOutcome, type ScreenAsk, type ScreenOutcome } from "./backtest/lab.ts";
 import type { Metrics } from "./backtest/metrics.ts";
 import { DEFAULT_COSTS, type BacktestCosts } from "./backtest/source.ts";
 import { STRATEGIES, STRATEGY_IDS, strategySpec, type StrategySpec } from "./backtest/strategies.ts";
@@ -122,6 +125,7 @@ export function backtestWords(out: BacktestOutcome): string {
   lines.push(...metricRows(r.metrics, out.benchmark?.metrics));
   lines.push("");
   lines.push(...judgedLines(out), "");
+  if (out.baseline) lines.push(`Random entries  ${out.baseline.words}`, "");
   if (r.refused.length) lines.push(`Not filled: ${r.refused.length} order${r.refused.length === 1 ? "" : "s"} — the first at ${day(r.refused[0]!.at)}: ${r.refused[0]!.why}`);
   for (const n of [...out.notes, ...r.notes]) lines.push(`· ${n}`);
   lines.push(`· a Sharpe's ± is one standard error (Lo 2002): ${r.metrics.steps.toLocaleString("en-US")} steps of ${r.metrics.perYear.toFixed(0)} a year · ${r.wallMs.toLocaleString("en-US")} ms`);
@@ -165,6 +169,25 @@ export function walkWords(w: WalkOutcome, markets: string, interval: string): st
   return lines.join("\n");
 }
 
+/** an exit sweep in words (--screen): what was screened, what it found and how its best is judged, the best ten rules, the row it added */
+export function screenWords(out: ScreenOutcome): string {
+  const s = out.sweep;
+  const r = out.row;
+  const lines: string[] = [];
+  lines.push(`Exit sweep of run ${r.run} · ${r.strategy} · ${s.rules} rules over ${s.trades} round trips · ${r.markets.join(",")} ${r.interval} · ${day(r.from)} → ${day(r.to)} UTC`);
+  lines.push(`  ${s.words}`, "");
+  lines.push(`  ${"TP %".padStart(6)} ${"SL %".padStart(6)} ${"hours".padStart(6)} ${"a trade".padStart(9)} ${"won".padStart(7)} ${"Sharpe".padStart(7)}`);
+  const line = (x: { tpPct: number; slPct: number; hours: number; meanPct: number; winRatePct: number; sharpe: number }, tag = ""): string => `  ${String(x.tpPct).padStart(6)} ${String(x.slPct).padStart(6)} ${String(x.hours).padStart(6)} ${`${x.meanPct >= 0 ? "+" : "−"}${Math.abs(x.meanPct).toFixed(3)}%`.padStart(9)} ${`${x.winRatePct.toFixed(1)}%`.padStart(7)} ${num(x.sharpe).padStart(7)}${tag}`;
+  for (const x of s.top) lines.push(line(x));
+  if (s.own) lines.push(line(s.own, `  the run's own exits, ${s.own.rank} of ${s.rules}`));
+  lines.push("");
+  lines.push(`Deflated     ${s.deflated.dsr.toFixed(2)}: the probability the best rule's Sharpe is real, counting the ${s.deflated.trials} strategies tried (the best of that many would show ${num(s.deflated.sr0)} a year by chance alone)`);
+  lines.push(`Random       on random entries the best rule of a try did as well in ${Math.round((s.chance.p * (s.chance.tries + 1) - 1))} of ${s.chance.tries} tries (the middle try's best: Sharpe ${num(s.chance.medianSharpe)}); this rule made ${pct(s.chance.sameRulePct)} a trade on them`);
+  lines.push(`Trials       row ${r.seq} of the ledger, its ${s.rules} rules counted as strategies tried · ${out.ledger.rows} rows, ${out.ledger.intact ? "the chain intact" : `the chain BROKEN at row ${out.ledger.brokenAt}: ${out.ledger.why}`}`);
+  for (const n of out.notes) lines.push(`· ${n}`);
+  return lines.join("\n");
+}
+
 /** the ledger in words (--trials): the holdout, how many runs and strategies, and the latest runs, newest first */
 export function trialsWords(list: ReturnType<typeof labList>): string {
   const lines: string[] = [];
@@ -174,8 +197,9 @@ export function trialsWords(list: ReturnType<typeof labList>): string {
   lines.push(`Ledger: ${l.rows} rows, ${l.intact ? "the chain intact" : `the chain BROKEN at row ${l.brokenAt}: ${l.why}`} · ${l.trials} run${l.trials === 1 ? "" : "s"}, ${l.distinct} distinct strateg${l.distinct === 1 ? "y" : "ies"} tried before the holdout`);
   for (const t of list.runs) {
     const params = Object.entries(t.params).map(([k, v]) => `${k} ${v}`).join(" · ");
-    const head = `  ${String(t.seq).padStart(4)}  ${day(t.ts)}  ${t.by.padEnd(8)} ${t.window.padEnd(7)} ${t.strategy.padEnd(5)} ${t.markets.join(",")} ${t.interval}  ${t.from.slice(0, 10)} → ${t.to.slice(0, 10)}`;
-    lines.push("figures" in t ? `${head}  (what came of it is the owner's)${params ? `  (${params})` : ""}` : `${head}  ${pct(t.returnPct).padStart(8)}  Sharpe ${num(t.sharpe).padStart(5)}  DD ${pct(-t.maxDrawdownPct)}  ${t.fills} fills${params ? `  (${params})` : ""}${t.kept ? `  ${t.run}` : ""}`);
+    const head = `  ${String(t.seq).padStart(4)}  ${day(t.ts)}  ${t.by.padEnd(8)} ${t.window.padEnd(7)} ${(t.kind === "screen" ? "sweep" : t.strategy).padEnd(5)} ${t.markets.join(",")} ${t.interval}  ${t.from.slice(0, 10)} → ${t.to.slice(0, 10)}`;
+    if (t.kind === "screen") lines.push(`${head}  ${t.rules} exit rules over run ${t.run}'s ${t.trades} round trips: the best, TP ${t.best.tpPct}% · SL ${t.best.slPct}% · ${t.best.hours} h, ${pct(t.best.meanPct)} a trade, Sharpe ${num(t.best.sharpe)}, deflated ${t.dsr.toFixed(2)}`);
+    else lines.push("figures" in t ? `${head}  (what came of it is the owner's)${params ? `  (${params})` : ""}` : `${head}  ${pct(t.returnPct).padStart(8)}  Sharpe ${num(t.sharpe).padStart(5)}  DD ${pct(-t.maxDrawdownPct)}  ${t.fills} fills${params ? `  (${params})` : ""}${t.kept ? `  ${t.run}` : ""}`);
   }
   return lines.join("\n");
 }
@@ -184,6 +208,7 @@ export function trialsWords(list: ReturnType<typeof labList>): string {
 
 const USAGE = `usage: npm run account:backtest -- [--strategy ${STRATEGY_IDS.join("|")}|desk] [--markets perp:BTC,spot:ETH,stock:AAPL] [--interval ${BACKTEST_INTERVALS.join("|")}] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--cash 10000] [--fee-bps 10] [--leverage N] [--param name=value]… [--half-spread-bps 1] [--participation 0.05] [--level-bps 2] [--holdout] [--no-benchmark] [--json] [--no-save] [--cache DIR] [--home DIR] [--quiet]
        npm run account:backtest -- --strategy sma --grid fast=10,20,40 --grid slow=50,100,200 --folds 4 [--rolling] [the run's options]
+       npm run account:backtest -- --screen RUN [--tp-pct 0.5,1,2] [--sl-pct 0.5,1,2] [--hours 4,24,72] [--json] [--cache DIR] [--home DIR] [--quiet]
        npm run account:backtest -- --trials [--json] [--home DIR]
        npm run account:backtest -- --set-holdout YYYY-MM-DD [--home DIR]
 A strategy backtested on recorded bars through the paper account itself, beside buying and holding the same markets. Every run is counted
@@ -192,11 +217,20 @@ ${STRATEGY_IDS.map((id) => `  ${id.padEnd(6)} ${STRATEGIES[id].name}: ${STRATEGI
   desk   The desk: the account's own desk over the bars, hired at a paper account with the momentum script for a brain (perp: markets, 1h or 4h)
          ${Object.entries(DESK_PARAMS).map(([k, p]) => `${k}=${p.default} (${p.min}–${p.max})`).join(" · ")}`;
 
-export function parseBacktestArgs(argv: readonly string[], env: Record<string, string | undefined> = process.env, now = Date.now()): BacktestOptions | { error: string } | { help: true } | { trials: true; home: string; json: boolean } | { setHoldout: string; home: string } {
+/** an exit sweep at the owner's terminal: the kept desk run and the grid, where the ledger and the bars are, how it is said */
+export interface ScreenOptions {
+  screen: Omit<ScreenAsk, "by">;
+  home: string;
+  cache: string;
+  json: boolean;
+  say?: ((line: string) => void) | undefined;
+}
+
+export function parseBacktestArgs(argv: readonly string[], env: Record<string, string | undefined> = process.env, now = Date.now()): BacktestOptions | ScreenOptions | { error: string } | { help: true } | { trials: true; home: string; json: boolean } | { setHoldout: string; home: string } {
   const flags = new Map<string, string | true>();
   const params: Record<string, string> = {};
   const switches = new Set(["--no-benchmark", "--json", "--no-save", "--quiet", "--holdout", "--trials", "--rolling", "--help", "-h"]);
-  const known = new Set(["--strategy", "--markets", "--interval", "--from", "--to", "--cash", "--fee-bps", "--leverage", "--param", "--grid", "--folds", "--half-spread-bps", "--participation", "--level-bps", "--cache", "--home", "--set-holdout", ...switches]);
+  const known = new Set(["--strategy", "--markets", "--interval", "--from", "--to", "--cash", "--fee-bps", "--leverage", "--param", "--grid", "--folds", "--half-spread-bps", "--participation", "--level-bps", "--cache", "--home", "--set-holdout", "--screen", "--tp-pct", "--sl-pct", "--hours", ...switches]);
   const grid: Record<string, number[]> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -246,6 +280,20 @@ export function parseBacktestArgs(argv: readonly string[], env: Record<string, s
   if (flags.has("--set-holdout")) {
     const wrong = alone("--set-holdout", ["--home"]);
     return wrong ? { error: wrong } : { setHoldout: str("--set-holdout", ""), home: str("--home", defaultHome(env)) };
+  }
+  if (flags.has("--screen")) {
+    const wrong = alone("--screen", ["--tp-pct", "--sl-pct", "--hours", "--json", "--cache", "--home", "--quiet"]);
+    if (wrong) return { error: wrong };
+    // each list as the account reads one (backtest/lab.ts screenAskOf): numbers, comma-separated
+    const lists: Record<string, unknown> = {};
+    for (const [flag, k] of [["--tp-pct", "tpPct"], ["--sl-pct", "slPct"], ["--hours", "hours"]] as const) {
+      const v = flags.get(flag);
+      if (typeof v === "string") lists[k] = v.split(",").map((x) => (x.trim() === "" ? Number.NaN : Number(x)));
+    }
+    const ask = screenAskOf({ run: str("--screen", ""), ...lists });
+    if (typeof ask === "string") return { error: ask.replace(/^tpPct/, "--tp-pct").replace(/^slPct/, "--sl-pct").replace(/^hours/, "--hours") };
+    const home = str("--home", defaultHome(env));
+    return { screen: ask, home, cache: str("--cache", join(home, "history")), json: flags.has("--json"), ...(flags.has("--quiet") ? {} : { say: (line: string) => console.error(line) }) };
   }
   const numberOf = (name: string, fallback: number | undefined): number | undefined | string => {
     const v = flags.get(name);
@@ -328,6 +376,15 @@ if (isMain) {
   if ("trials" in parsed) {
     const list = labList(parsed.home, Date.now(), 50, { owner: true });
     console.log(parsed.json ? JSON.stringify(list, null, 1) : trialsWords(list));
+    process.exit(0);
+  }
+  if ("screen" in parsed) {
+    const out = await labScreen({ ...parsed.screen, by: "terminal" }, { home: parsed.home, cache: parsed.cache, sources: realHistorySources(), clock: Date.now, say: parsed.say });
+    if (isRefusal(out)) {
+      console.error(`${out.code}: ${out.message}`);
+      process.exit(1);
+    }
+    console.log(parsed.json ? JSON.stringify(out, null, 1) : screenWords(out));
     process.exit(0);
   }
   if ("setHoldout" in parsed) {

@@ -78,7 +78,7 @@ describe("a backtest an unsigned request asks for", () => {
     expect(typeof r.fills).toBe("number");
     expect(readTrials(home).rows[1]).toMatchObject({ kind: "trial", by: "request", seat: "0xSeat", strategy: "sma", run: r.id });
     const list = ok(svc.backtests());
-    expect(list.ledger).toEqual({ rows: 2, intact: true, trials: 1, distinct: 1, looks: 0 });
+    expect(list.ledger).toEqual({ rows: 2, intact: true, trials: 1, distinct: 1, looks: 0, screens: 0 });
     expect(list.runs.map((x) => x.run)).toEqual([r.id]);
     const kept = ok(svc.backtestKept(r.id)) as { run: { fills: unknown[]; equity: unknown[] }; by: string; seat: string };
     expect(kept).toMatchObject({ by: "request", seat: "0xSeat" });
@@ -186,6 +186,43 @@ describe("a walk-forward an unsigned request asks for", () => {
       const big = await post({ strategy: "sma", grid: { fast: [5, 6, 7, 8, 9, 10], slow: [30, 40, 50, 60] }, folds: 10, markets: "perp:BTC,perp:ETH", interval: "1h", from: "2025-08-01" });
       expect(big.status).toBe(409);
       expect(big.body).toMatchObject({ ok: false, refusal: { code: "E_ACCOUNT_LIMIT" } });
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("an exit sweep an unsigned request asks for", () => {
+  it("sweeps a kept desk run's exits — a row with the seat named, every rule's figures in the page's answer — one backtest at a time; over the route 200, 400 a body that is no object; the kept run read with its baseline and its sweeps", async () => {
+    const { svc, home } = await boot();
+    // the desk runs at the owner's terminal: its training run is written there, into the same home
+    const sources: HistorySources = { perp: standIn("hl", "BTC-PERP"), spot: standIn("cb", "BTC/USD"), stock: standIn("us", "AAPL") };
+    const train = await labRun({ spec: deskSpec() as DeskSpec, refs: [{ cls: "perp", base: "BTC" }], interval: "4h", from: Date.parse("2026-04-01T00:00:00Z"), window: "train", cashUsd: 10_000, feeBps: 10, costs: DEFAULT_COSTS, benchmark: false, save: true, by: "terminal" }, { home, cache: join(home, "history"), sources, clock: () => START });
+    if (isRefusal(train)) throw new Error(train.message);
+    const trips = train.run.trips!.length;
+    expect(trips).toBeGreaterThanOrEqual(30);
+    const body = { run: train.id, tpPct: [1, 2], slPct: [1], hours: [12, 24], seat: "0xSweeper" };
+    const s = ok(await svc.backtestScreen(body)) as Record<string, unknown>;
+    expect(s).toMatchObject({ run: train.id, strategy: "desk", rules: 4, trades: trips, best: { slPct: 1 }, deflated: { trials: 5 } });
+    expect(s.means).toBeUndefined();
+    expect(readTrials(home).rows.at(-1)).toMatchObject({ kind: "screen", by: "request", seat: "0xSweeper", run: train.id, rules: 4 });
+    expect(((await svc.backtestScreen({ run: "x" })) as Refusal).message).toBe("run is a kept desk run's id, like 20261029T120000-0123456789");
+    // one at a time, with the backtests
+    const running = svc.backtestRun(SMA);
+    expect(((await svc.backtestScreen(body)) as Refusal).detail).toEqual({ busy: true });
+    await running;
+    const srv = await startPortfolioServer({ port: 0, service: svc, snapshotMs: 0 });
+    try {
+      const call = async (method: "GET" | "POST", path: string, b?: unknown) => {
+        const r = await fetch(`${srv.url}${path}`, { method, headers: { "content-type": "application/json" }, ...(b !== undefined ? { body: JSON.stringify(b) } : {}) });
+        return { status: r.status, body: (await r.json()) as Record<string, unknown> };
+      };
+      const one = await call("POST", "/api/account/backtest/screen", body);
+      expect(one).toMatchObject({ status: 200, body: { ok: true, rules: 4, means: expect.any(Array), sharpes: expect.any(Array) } });
+      expect(await call("POST", "/api/account/backtest/screen", [1])).toEqual({ status: 400, body: { ok: false, error: "need {run, tpPct, slPct, hours}" } });
+      const kept = await call("GET", `/api/account/backtest?id=${train.id}`);
+      expect(kept.body).toMatchObject({ ok: true, baseline: { trades: trips, monkeys: 1_000 }, screens: [{ kind: "screen", rules: 4 }, { kind: "screen", rules: 4 }] });
+      expect((await call("GET", "/api/account/backtests?limit=5")).body).toMatchObject({ ok: true, ledger: { screens: 2, distinct: 2 + 4 } });
     } finally {
       await srv.close();
     }

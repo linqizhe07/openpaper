@@ -232,7 +232,7 @@ describe("the trials", () => {
     const b = ok(await labRun(ask({ spec: spec("tsmom", { lookbackDays: 10, volDays: 10 }) }), deps));
     const list = labList(home, NOW);
     expect(list.holdout).toMatchObject({ start: "2026-07-31" });
-    expect(list.ledger).toEqual({ rows: 3, intact: true, trials: 2, distinct: 2, looks: 0 });
+    expect(list.ledger).toEqual({ rows: 3, intact: true, trials: 2, distinct: 2, looks: 0, screens: 0 });
     expect(list.runs.map((r) => r.run)).toEqual([b.id, a.id]);
     const read = labRead(home, a.id) as { id: string; run: { metrics: unknown }; trial: { run: string } };
     expect(read.id).toBe(a.id);

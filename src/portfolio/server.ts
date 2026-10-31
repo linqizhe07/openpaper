@@ -154,13 +154,21 @@
  *                                                        trials ledger with the seat named, the out-of-sample runs kept. Unsigned, training
  *                                                        data only; one backtest at a time (429 while one runs), at most BACKTEST_WALK_WORK
  *                                                        steps across its markets over all its runs (refused before anything runs)
+ *   POST /api/account/backtest/screen {run, tpPct, slPct, hours, seat}   AN EXIT SWEEP (backtest/screen.ts): a kept desk run's round trips
+ *                                                        closed by every rule of take-profits × stops × time limits (a list left out, the
+ *                                                        default grid's), screened over the run's bars by the paper account's rules for a
+ *                                                        bar — each rule's net a trade, how often it won, its Sharpe a year at the run's
+ *                                                        sizes; the best deflated by every strategy tried and tried again on random
+ *                                                        entries. A row of the trials ledger with the seat named, every rule counted as a
+ *                                                        strategy tried. Unsigned, training runs only; one backtest at a time (429)
  *   GET  /api/account/backtests?limit=                   the lab as it stands: the holdout, the ledger (its rows, its chain intact or where
- *                                                        it broke, runs, distinct strategies, looks at the holdout), the latest runs (a
- *                                                        look at the holdout without its figures: the owner's), and the catalog — the
- *                                                        strategies with each number's default, bounds and words, the bar sizes, the
- *                                                        markets, the defaults
- *   GET  /api/account/backtest?id=                       one kept run in full — its trades, its curve, its notes — with its trial and how
- *                                                        it is judged against the ledger now
+ *                                                        it broke, runs, distinct strategies — every rule a sweep screened among them —,
+ *                                                        looks at the holdout, sweeps), the latest runs and sweeps (a look at the holdout
+ *                                                        without its figures: the owner's), and the catalog — the strategies with each
+ *                                                        number's default, bounds and words, the bar sizes, the markets, the defaults
+ *   GET  /api/account/backtest?id=                       one kept run in full — its trades, its curve, its notes, its round trips beside
+ *                                                        random entries on the same markets, sides and exits — with its trial, how it is
+ *                                                        judged against the ledger now, and its latest exit sweeps
  *   GET  /api/account/journal?limit=&venue=              THE BLACK BOX (account/journal.ts): the latest round trips the paper accounts
  *                                                        closed, oldest first — each its entry and exit, net, fees, funding, MAE and MFE,
  *                                                        how it ended, who opened and closed it, the desk's lead where one placed it —
@@ -899,6 +907,14 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const body = req.body as unknown;
     if (!body || typeof body !== "object" || Array.isArray(body)) return void bad(res, "need {strategy, grid, folds, rolling, params, markets, interval, from, to, …}");
     const r = await svc.backtestWalk(body as Record<string, unknown>);
+    if (isRefusal(r) && (r.detail as { busy?: unknown } | undefined)?.busy === true) return void res.status(429).json({ ok: false, refusal: r });
+    answerOf(res, r);
+  }));
+  app.post("/api/account/backtest/screen", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const body = req.body as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return void bad(res, "need {run, tpPct, slPct, hours}");
+    const r = await svc.backtestScreen(body as Record<string, unknown>, { grid: true });
     if (isRefusal(r) && (r.detail as { busy?: unknown } | undefined)?.busy === true) return void res.status(429).json({ ok: false, refusal: r });
     answerOf(res, r);
   }));
