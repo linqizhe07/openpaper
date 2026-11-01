@@ -665,6 +665,52 @@ GET /api/account/desk                     多了 versions
 setBacktest {change: "desk", value: {…, rules: [{kind, …}]}}   Desk 回测带着教训的规则跑；结果里的 without 是不带规则的同一次
 ```
 
+## 6h · 你自己的交易：下单前写计划，平静时给自己定约束
+
+Trade 屏的下单票上，纸上账户多了一块 **Plan**（在止盈止损下面）。写一句为什么做这一单，这一单就带着计划：
+
+- **Why**：一句话，为什么做。写了才算有计划。
+- **Setup**：给这类机会起的名字（breakout、pullback……，也可以自己写）。Debrief 会按它分开看。
+- **How sure**：50% 到 90%。
+- **Wrong at (stop)**、**Right at (target)**：到哪个价说明你错了，到哪个价说明你对了。不填的话，勾了 Take profit / Stop loss 就用那两个价。
+- **Risk to the stop ($)**：打到止损时准备亏多少，就是 1R。**Size by risk** 按它算出下单的金额：1R 除以止损离入场的距离。
+
+计划下面有一行字：止损离入场多远，1R 对应多大的仓位；有目标时，再写出按这个目标和止损、扣掉来回两次手续费，这一单要赢多少比例才保本，也就是（止损 + 两次手续费）÷（目标 + 止损）。
+
+按下签名时，先签计划（`setPlan`），再签订单；计划被拒就不下单。账户把计划留十分钟，只给同一个纸上账户、同一个市场、同一个方向的下一笔开仓，被拒的单不会用掉它。黑匣子把计划记在那一笔往返上，下单之后服务重启过也不丢。Debrief 页多了一块 **Your plans**：
+
+- 有计划和没计划的交易并排：笔数、胜率、每笔净值、净值。
+- 有计划的按 R 算：写了 1R 的用净值除以 1R，没写的用收益除以止损的距离。
+- 有几笔亏得比止损允许的还多（超过 1R 的 1.05 倍）：止损没守住、价格跳空穿过去，或者仓位比计划的 1R 大。
+- 有几笔赢单没到目标就自己平掉了。
+- 按 Setup 分开看；你说的把握度和实际的胜率对不对得上。
+
+**给自己定的约束**在 Debrief 页的 **Your own limits**，点 Set your own limits…。平静的时候签好，不平静的时候由门来执行：
+
+| 约束 | 意思 |
+|---|---|
+| 当日亏损线 `dayLossUsd` | 今天（纽约时间）平掉的纸上交易合计亏到这个数，到纽约午夜之前不能开新仓 |
+| 连亏冷静期 `streak {losses, coolMin}` | 连着亏了 losses 笔之后，从最后一笔平仓起 coolMin 分钟内不能开新仓 |
+| 每天最多几笔 `maxEntries` | 纽约时间一天里开新仓的上限；挂单在成交之前撤掉的不算 |
+| 先写计划 `planFirst` | 没有计划的开仓一律拒绝 |
+
+- 约束只管纸上账户的**新开仓**（开仓或加仓），**从不挡平仓**：reduce-only、卖掉持有的、和持仓反向又不超过它的单都照常走。真钱的账户不归它管，那边有自己的单笔上限。
+- 会随时间过去的三条，在准备订单时、签名之前就说；先写计划要到签名时才看得出有没有。拒绝码是 `E_ACCOUNT_LIMIT`，带着原因和到什么时候。
+- **收紧马上生效，放松要等。** 调高一个数、去掉一条、全部去掉、缩短等待，都算放松，要等现在生效的约束里写的小时数（`liftHours`，0 到 168，默认 24）之后才生效，在那之前旧的照旧。页面写明到纽约几点生效；再签一次，会替换还在等的那个。
+- 服务重启之后都还在：约束和还在等的放松按账本里的签名重放，等待从当初签名的时间算起；今天已经开了几笔也照算。
+
+agent 和 API：
+
+```
+portfolio_debrief                       debrief.plans（你的计划）和 self（你的约束：now、pending、held、entriesToday）
+GET /api/account                        多了 self
+GET /api/account/debrief                同上
+setPlan {venue, symbol, side, value}    下一笔开仓的计划，value 是 JSON：why、setup、confidence、stop、target、riskUsd
+setPolicy {change: "self", value}       你的约束，value 是 JSON：dayLossUsd、streak、maxEntries、planFirst、liftHours；空字符串是全部去掉
+```
+
+计划和约束都只有你能签，agent 只能读。
+
 ## 7 · 动钱
 
 Portfolio 的快捷操作 "Move"（不止一个账户能动钱时先问从哪个），或 Account 抽屉（Accounts 那一行的 "Details"）里的 "Move…"。"What" 里只有这个账户做得了的：Withdraw to another account of yours（提到你自己的地方）、Between its own ledgers（账本之间划转）、Swap stablecoins（稳定币互换；下单票的 Pay with 不做这件事，它在这里）、Send from this wallet（从钱包发）、Across chains（跨链，下面）。预览里是**账户替你向目的地要来的地址**、手续费上限、网络，点 "Sign and send"。币、网络、桥的目的链三个下拉来自账户公布的 `dollars` / `networks` / `bridgeChains`（账户认的每一种美元稳定币、它们所在的链、桥能到的链），不是页面写死的表；往一个 agent 钱包挪钱，网络默认是那个钱包有钱的那条链。Statement 里有这一笔，场所或链说到了才算到账。要知道往哪打钱，用 Portfolio 的 "Receive"（第 2b 条）。
@@ -952,7 +998,7 @@ Agent 的管理（放谁进来、给多少额度、它们在做什么、它们�
 | `setIntent` | `id, agent, venue, symbol, side, usd, text, validUntil` | `id` 空是新的；`agent` 是地址或 `*`；`validUntil` 0 是收回。什么都不授予 |
 | `answerAsk` | `ask, decision` | `decision` 只能是 `"decline"`。答应一个请求就是去做它要的那件事（上面这些动作），做完请求自己关掉 |
 | `approveCard` | `card, action, decision` | `action` 是那张卡的 `hash`，`decision` 是 `approve` 或 `reject`；放行时所有检查重跑 |
-| `setPolicy` | `change, value` | `mode` / `open`（切到 Beast）、`session` / `30d`（重开或续会话）、`maxLeverage` / 倍数、`restore` / 场所（对 agent 重新打开）、`reach` / `场所:能力,能力`（对 agent 开放这家的哪些动作）、`say` / 一句话（送给页面的关键词脚本 agent——`--classic` 对账单上的那个；Account 页面上没有它的对话框）；`advance`、`reset` 只在模拟上。收紧（切回 Guard、对 agent 关掉一个场所）不用签：`POST /api/mode {mode: "guard"}`、`POST /api/revoke {account}` |
+| `setPolicy` | `change, value` | `mode` / `open`（切到 Beast）、`session` / `30d`（重开或续会话）、`maxLeverage` / 倍数、`restore` / 场所（对 agent 重新打开）、`reach` / `场所:能力,能力`（对 agent 开放这家的哪些动作）、`say` / 一句话（送给页面的关键词脚本 agent——`--classic` 对账单上的那个；Account 页面上没有它的对话框）、`self` / JSON（你给自己纸上交易定的约束，第 6h 条；空字符串是全部去掉，放松要等）；`advance`、`reset` 只在模拟上。收紧（切回 Guard、对 agent 关掉一个场所）不用签：`POST /api/mode {mode: "guard"}`、`POST /api/revoke {account}` |
 | `convertToMultiSigUser` | `signers` | Devices：让一个待批的浏览器也能签（页面上只有这个；要两个都签的流程没做） |
 | `setMemory` | `scope, id, topic, text` | 记忆（第 8c 条）：`scope` 是一个 agent 的地址；`id` 空是新的一条，写一条的 id 是改它（改了就是你说的），把一条等你答的原样签一遍就是记下它（还是它学的）；`topic` 是 style · rules · venues。字不进账本 |
 | `forgetMemory` | `scope, what` | `scope` 是一个 agent 的地址；`what` 是一条的 id，或 `all`（删掉它的文件，没有回收站）|
@@ -960,6 +1006,7 @@ Agent 的管理（放谁进来、给多少额度、它们在做什么、它们�
 | `resetPaper` | `venue, usd` | 账户自己的纸上账户（`live:paper`）重新开始：`usd` 是新的起始纸钱（空是 $10,000）。旧账本整本存成旁边的 `book-<时刻>.json`（0600，不删），同一个 id、同一个名字的新账本接着用，单号接着往下编；那里还有你的单开着、或 Desk 在那里有开着的 lead 时拒。没接着的、家目录里的账本也能重置（下次接上就是新账本）——接一个家目录里已有账本的 id 时，连接表单会先说清楚"会接着用旧账本"，并给一个"重新开始"的勾。签后十分钟内有效，什么真钱都不动 |
 | `topUpPaper` | `venue, usd` | 给接着的纸上账户加纸钱：记进账本的 `deposits`，曲线在那一刻往上走一步，"since it started" 把它当投入、不当收益；纸上现金最多 $100,000,000。签后十分钟内有效 |
 | `setBrainKey` | `provider, baseUrl, model, keyHash, salt` | 一个脑子的钥匙（第 3d 条）：签的是指纹 `keyHash = SHA-256(salt ‖ 钥匙)`，不是钥匙；钥匙跟着签名送 `POST /api/account/brain-key {envelope, apiKey}`（`Owner.submitTo`），不走 `/api/exchange`。签后十分钟内有效；`keyHash` 和 `salt` 都空是拿掉钥匙（"Remove the key"，走 `/api/exchange`）——只有本机的 Ollama、vLLM 旁边写着 base URL 或模型时，是不带钥匙存下它们（只送 `{envelope}` 到钥匙的路由，回 `{keyless: true}`）。账本只记指纹；`model` 像钥匙、`baseUrl` 的主机或路径里有像钥匙的东西，在 prepare 和门上就拒（不重复它），钥匙本身（或它 8 个字符以上的一段）出现在这两格里在钥匙的路由上就拒 |
+| `setPlan` | `venue, symbol, side, value` | 下一笔开仓的计划（第 6h 条）：`value` 是 JSON（`why` 必填，`setup`、`confidence`、`stop`、`target`、`riskUsd` 可选），只在纸上账户；账户留十分钟，给同一个市场、同一个方向的下一笔开仓，跟着那一单进黑匣子 |
 
 **在浏览器里怎么签**（`public/owner.js`）
 

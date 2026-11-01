@@ -257,3 +257,97 @@ describe("a lesson's test, the lab and the desk's versions (ui/debrief.js)", () 
     expect(p.run("WENT")).toEqual(["backtest"]);
   });
 });
+
+describe("your plans and your own limits (account/debrief.ts plans, ui/debrief.js)", () => {
+  /** a trade of the owner's own: with a plan signed for it where given, without the bracket where it had none */
+  const mine = (i: number, gross: number, o: { end?: DebriefTrade["end"]; plan?: Record<string, unknown>; bracket?: false } = {}): DebriefTrade => {
+    const { takeProfit: _tp, stopLoss: _sl, lead: _l, ...t } = trade(i, gross, o.end ? { end: o.end } : {});
+    return { ...t, ...(o.bracket === false ? {} : { takeProfit: 100.4, stopLoss: 99.6 }), by: { who: "owner" }, ...(o.plan ? { plan: { at: at(i * 3), why: `trade ${i}`, ...o.plan } as DebriefTrade["plan"] } : {}) };
+  };
+  const OWN = [
+    mine(0, 0.4, { end: "take-profit", plan: { setup: "breakout", confidence: 0.8, stop: 99.6, target: 100.4, riskUsd: 4 } }),
+    mine(1, -0.4, { end: "stop-loss", plan: { setup: "breakout", confidence: 0.6, stop: 99.6, riskUsd: 4 } }),
+    // gapped through its stop: 0.8% lost against 0.4% risked
+    mine(2, -0.8, { end: "stop-loss", plan: { setup: "pullback", confidence: 0.65, stop: 99.6, riskUsd: 4 } }),
+    // no bracket and no 1R: its R from the plan's own stop, 1% away; closed by hand at a gain short of its target
+    mine(3, 0.5, { bracket: false, plan: { confidence: 0.5, stop: 99, target: 102 } }),
+    mine(4, -0.4),
+    // the desk's are not the owner's
+    ...MACHINE.slice(0, 3),
+  ];
+
+  it("debriefOf: the owner's trades with a plan beside those without; in R by the plan's 1R or its stop, the stops not kept, the winners closed before their target, the setups, how sure they said — and nothing where no trade is the owner's", () => {
+    const d = debriefOf(OWN);
+    expect(d.plans).toMatchObject({ planned: { label: "with a plan", n: 4, wins: 2, winRatePct: 50, meanPct: -0.275 }, unplanned: { n: 1, meanPct: -0.6 }, r: { trades: 4, meanR: -0.8, pastStop: 1 }, early: 1 });
+    expect(d.plans!.setups.map((x) => [x.label, x.n]).sort()).toEqual([["breakout", 2], ["pullback", 1]]);
+    expect(d.plans!.calibration).toEqual([{ label: "under 0.6", n: 1, saidPct: 50, wonPct: 100 }, { label: "0.6–0.7", n: 2, saidPct: 62.5, wonPct: 0 }, { label: "0.8 and over", n: 1, saidPct: 80, wonPct: 100 }]);
+    expect(d.notes).toContain("Your trades with a plan made −0.275% a trade (4); without one, −0.600% (1).");
+    expect(d.notes).toContain("1 of your planned trades lost more than their stop allowed: the stop was not kept, the price gapped through it, or the size was more than the plan's 1R.");
+    expect(d.notes).toContain("You closed 1 winner before its target.");
+    expect(debriefOf(MACHINE).plans).toBeUndefined();
+  });
+
+  it("the Debrief's Your plans: the two rows, R and the stops, the setups, how sure — and, with no plan made, how to make one", () => {
+    const p = page();
+    p.set("D", debriefOf(OWN));
+    const html = p.run<string>("debriefHtml(D)");
+    expect(html).toContain('<h2 class="h2" id="db-pl-h">Your plans</h2>');
+    expect(html).toMatch(/<th scope="row">With a plan<\/th><td class="r">4 <span class="tag"[^>]*>few<\/span><\/td><td class="r">50%<\/td>/);
+    expect(html).toContain("In R: −0.80 a trade over 4 trades with a stop.");
+    expect(html).toContain("1 trade lost more than the stop allowed: the stop was not kept, the price gapped through it, or the size was more than the plan&#39;s 1R.");
+    expect(html).toContain("1 winner closed before the target.");
+    expect(html).toContain("<h3>By setup</h3>");
+    expect(html).toContain("<h3>How sure you said you were</h3>");
+    p.set("U", debriefOf([mine(0, 0.4), mine(1, -0.4)]));
+    expect(p.run<string>("dbPlansHtml(U)")).toContain("None of your 2 trades here had a plan. On the Trade ticket, at a paper account, write why under Plan before you sign");
+    p.set("M", debriefOf(MACHINE));
+    expect(p.run<string>("dbPlansHtml(M)")).toBe("");
+  });
+
+  /* the account's answer (service.ts selfView): limits in force, a loosening waiting, what holds a new entry back */
+  const SELF = {
+    now: { maxEntries: 2, planFirst: true, liftHours: 24, words: "2 entries a day at most · a plan before every entry — loosened only 24 h after it is signed" },
+    pending: { to: { maxEntries: 5, liftHours: 24, words: "5 entries a day at most — loosened only 24 h after it is signed" }, signedAt: "2026-10-12T15:00:00.000Z", from: "2026-10-13T15:00:00.000Z" },
+    held: { why: "your own limit is 2 entries a day, and today has had 2: no new entry until midnight New York", until: "2026-10-13T04:00:00.000Z" },
+    entriesToday: 2,
+  };
+
+  it("Your own limits: what holds a new entry back, what holds now, a loosening waiting and from when; the owner's Change and Take away — a viewer's none; none set says what they are", () => {
+    const p = page();
+    p.set("X", SELF);
+    const html = p.run<string>("dbSelfHtml(X)");
+    expect(html).toContain('<h2 class="h2" id="db-self-h">Your own limits</h2><span class="dim small">2 entries today</span>');
+    expect(html).toContain('<div class="msg no" role="status">your own limit is 2 entries a day, and today has had 2: no new entry until midnight New York</div>');
+    expect(html).toContain('<p class="db-self-now">2 entries a day at most · a plan before every entry — loosened only 24 h after it is signed.</p>');
+    expect(html).toContain('<span class="tag warn">Waiting</span> 5 entries a day at most — loosened only 24 h after it is signed — from Tue 13 Oct 11:00 New York; signed Mon 12 Oct 11:00.');
+    expect(html).toContain('data-db-ls="self">Change them…</button>');
+    expect(html).toContain('data-db-ls="self-off">Take them away…</button>');
+    p.run('Owner.role = "viewer"');
+    expect(p.run<string>("dbSelfHtml(X)")).not.toContain("data-db-ls=");
+    p.run('Owner.role = "owner"');
+    const none = p.run<string>("dbSelfHtml({ entriesToday: 0 })");
+    expect(none).toContain("None set. Signed while calm, they hold your paper trading when it is not");
+    expect(none).toContain('data-db-ls="self">Set your own limits…</button>');
+    expect(p.run<string>("dbSelfHtml(undefined)")).toBe("");
+  });
+
+  it("the sheet that sets them starts from the limits in force and signs setPolicy self — a streak's pause 30 minutes where not said, one limit at least; taking them away says when it holds, after a yes", async () => {
+    const p = page();
+    p.run("globalThis.FormData = class { constructor(f) { this.f = f; } entries() { return Object.entries(this.f); } }");
+    p.set("X", SELF);
+    p.run("DB.read = { self: X }; QD = null; quoteDialog = (o) => { QD = o; }");
+    p.run("dbSelfForm()");
+    expect(p.run<string>("QD.fields")).toContain('name="maxEntries" type="number" inputmode="decimal" min="1" max="200" step="1" placeholder="none" value="2"');
+    expect(p.run<string>("QD.fields")).toContain('<input type="checkbox" name="planFirst" checked>');
+    const draft = p.run<{ type: string; change: string; value: string }>('QD.draft({ dayLossUsd: "250", losses: "3", coolMin: "", maxEntries: "4", planFirst: "on", liftHours: "48" })');
+    expect({ ...draft, value: JSON.parse(draft.value) }).toEqual({ type: "setPolicy", change: "self", value: { dayLossUsd: 250, streak: { losses: 3, coolMin: 30 }, maxEntries: 4, planFirst: true, liftHours: 48 } });
+    expect(p.run('QD.draft({ dayLossUsd: "", losses: "", coolMin: "", maxEntries: "", liftHours: "24" })')).toBe("Set one limit at least — to take them all away, use Take them away… instead.");
+    // what is signed, in the account's words, and when it holds
+    expect(p.run<string>('QD.show({ action: { value: JSON.stringify({ dayLossUsd: 250, streak: { losses: 3, coolMin: 30 }, maxEntries: 1, planFirst: true, liftHours: 0 }) } })')).toContain("no new entry after a day&#39;s loss of $250.00 · 30 minutes&#39; pause after 3 losses in a row · 1 entry a day at most · a plan before every entry — loosened as soon as it is signed");
+    expect(p.run<string>('QD.show({ action: { value: JSON.stringify({ maxEntries: 5, liftHours: 24 }) } })')).toContain("looser in any, they hold 24 h after you sign");
+    p.run("SELF_SENT = []; SELF_ASKED = []; confirmSheet = async (m) => { SELF_ASKED.push(m); return true; }; own = async (d) => { SELF_SENT.push(d); return { status: 200, body: { ok: true } }; }");
+    await p.run<Promise<void>>('dbLessonAct("self-off", {})');
+    expect(p.run("SELF_ASKED")).toEqual(["Your own limits stop holding 24 h from now, as you set them to: until then they hold as they are."]);
+    expect(p.run("SELF_SENT")).toEqual([{ type: "setPolicy", change: "self", value: "" }]);
+  });
+});

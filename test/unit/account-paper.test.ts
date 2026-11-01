@@ -1041,3 +1041,139 @@ describe("a trading limit whose entry budget renews (feat/paper-live p0: the sup
     expect((await limitNow()).spentUsd).toBe(spent);
   });
 });
+
+describe("THE OWNER'S PLAN AND OWN LIMITS (account/plans.ts): the plan signed for an entry rides on it to the journal; the limits the owner signs hold their paper entries — never a close — at the door, a loosening waiting the hours set", () => {
+  const btcOf = (): Listing => ({ symbol: "BTC/USD", name: "BTC market", kind: "spot", base: "BTC", quote: "USD", price: 60000, bid: 59990, ask: 60010, open: true, types: [], volumeUsd24h: 2e9 });
+  const krakenOf = (btc: Listing): PublicSource => ({ id: "kraken", name: "Kraken", kind: "exchange", connectTo: "kraken", connector: "live:exchange:kraken", listings: async (q) => [btc].filter((m) => !q.q || m.base.includes(q.q.toUpperCase())) });
+  const self = (v: Record<string, unknown> | ""): NoNonce<OwnerAction> => ({ type: "setPolicy", change: "self", value: v === "" ? "" : JSON.stringify(v) });
+  const planned = (venue: string, symbol: string, side: string, plan: Record<string, unknown>): NoNonce<OwnerAction> => ({ type: "setPlan", venue, symbol, side, value: JSON.stringify(plan) });
+  /** what the owner is told: the summary, or the refusal's code and words */
+  const said = (o: Outcome | Refusal): string => (isRefusal(o) ? `${o.code}: ${o.message}` : o.kind === "account" ? o.summary : o.kind);
+  const XYZ_BUY = { symbol: "XYZ/USDT:USDT", side: "buy", orderType: "market", qty: "1" };
+  /** START is Monday 12 October 2026, 11:00 New York (EDT): the day ends at 04:00 UTC on the 13th. The venues' clock (what stamps orders and
+   * fills) is set to the account's, as it is outside a test */
+  const MIDNIGHT = "2026-10-13T04:00:00.000Z";
+
+  it("your own limits, signed: the first and a tightening hold at once, a loosening waits the hours set — said in the answer, on the ledger, to the page and the Debrief — and a restart keeps both, the loosening holding from the same hour", async () => {
+    const { svc, own, home } = await boot({ clock: START });
+    expect(said(await own(self({ maxEntries: 3 })))).toBe("your own limits hold now: 3 entries a day at most — loosened only 24 h after it is signed");
+    expect(said(await own(self({ maxEntries: 2, planFirst: true })))).toBe("your own limits hold now: 2 entries a day at most · a plan before every entry — loosened only 24 h after it is signed");
+    expect(said(await own(self({ maxEntries: 5 })))).toBe("a loosening, so it waits the hours you set: from Tue Oct 13 11:00 New York your own limits are 5 entries a day at most — loosened only 24 h after it is signed; until then the ones you had hold");
+    // one that does not read changes nothing
+    expect(said(await own(self({ maxEntries: 0 })))).toBe("E_ACCOUNT_BAD_ACTION: maxEntries is 1 to 200, not 0");
+    const view = svc.selfView();
+    expect(view).toEqual({ now: { maxEntries: 2, planFirst: true, liftHours: 24, words: "2 entries a day at most · a plan before every entry — loosened only 24 h after it is signed" }, pending: { to: { maxEntries: 5, liftHours: 24, words: "5 entries a day at most — loosened only 24 h after it is signed" }, signedAt: new Date(START).toISOString(), from: new Date(START + DAY).toISOString() }, entriesToday: 0 });
+    const d = svc.debrief({});
+    if (isRefusal(d)) throw new Error(d.message);
+    expect(d.self).toEqual(view);
+    // the ledger: each signature, and a note in the same words
+    const rows = readFileSync(svc.ledgerPath(), "utf8").split("\n").filter(Boolean).map((x) => JSON.parse(x) as { kind?: string; tool?: string; outcome?: string; reason?: string });
+    expect(rows.filter((r) => r.kind === "action" && r.tool === "setPolicy" && r.outcome === "ok")).toHaveLength(3);
+    expect(rows.filter((r) => r.kind === "note" && /your own limits/.test(r.reason ?? "")).map((r) => r.reason!.slice(0, 32))).toEqual(["your own limits hold now: 3 entr", "your own limits hold now: 2 entr", "a loosening, so it waits the hou"]);
+    // a restart an hour on: what holds and what waits, from the same hour
+    const again = await boot({ home, connect: false, nonceFrom: 50, at: 3_600_000, clock: START + 3_600_000 });
+    await again.svc.restoring;
+    expect(again.svc.selfView()).toEqual({ ...view, entriesToday: 0 });
+    // and a day on, the loosening holds
+    const after = await boot({ home, connect: false, nonceFrom: 100, at: DAY, clock: START + DAY });
+    await after.svc.restoring;
+    expect(after.svc.selfView()).toEqual({ now: { maxEntries: 5, liftHours: 24, words: "5 entries a day at most — loosened only 24 h after it is signed" }, entriesToday: 0 });
+    // taken away: a loosening too, waiting its day
+    expect(said(await after.own(self("")))).toBe("a loosening, so it waits the hours you set: from Wed Oct 14 11:00 New York your own limits are taken away; until then the ones you had hold");
+  });
+
+  it("the most entries a day: an entry past it refused before anything is signed and at the door, until midnight New York — a close still goes, an entry canceled before it filled is none, the real venue's orders are not the paper trading's", async () => {
+    const { svc, engine, own, order, home } = await boot({ clock: START });
+    expect(code(await own(self({ maxEntries: 2 })))).toBe("account");
+    // prepared now, signed after the day's entries are spent: the door holds it then
+    const early = await engine.prepare({ type: "liveOrder", venue: "paper", ...XYZ_BUY });
+    if (isRefusal(early)) throw new Error(early.message);
+    // a resting limit is an entry; canceled before anything filled, it is none
+    const resting = await order("paper", { symbol: "XYZ/USDT:USDT", side: "buy", orderType: "limit", limitPrice: "40", qty: "1" });
+    if (isRefusal(resting) || resting.kind !== "order") throw new Error(`expected an order, got ${code(resting)}`);
+    expect(resting.order).toMatchObject({ entry: true, status: "open" });
+    expect(svc.selfView().entriesToday).toBe(1);
+    expect(code(await own({ type: "liveCancel", venue: "paper", order: resting.order.id }))).toBe("order");
+    expect(svc.selfView().entriesToday).toBe(0);
+    for (const n of [1, 2]) {
+      const placed = await order("paper", XYZ_BUY);
+      if (isRefusal(placed) || placed.kind !== "order") throw new Error(`entry ${n}: expected an order, got ${said(placed)}`);
+      expect(placed.order.entry).toBe(true);
+    }
+    const why = "your own limit is 2 entries a day, and today has had 2: no new entry until midnight New York";
+    expect(svc.selfView()).toMatchObject({ entriesToday: 2, held: { why, until: MIDNIGHT } });
+    const third = await engine.prepare({ type: "liveOrder", venue: "paper", ...XYZ_BUY });
+    expect(isRefusal(third) && third).toMatchObject({ code: "E_ACCOUNT_LIMIT", message: why, detail: { self: true, until: MIDNIGHT } });
+    const { nonce: _n, ...signed } = early.action;
+    expect(said(await own(signed as NoNonce<OwnerAction>))).toBe(`E_ACCOUNT_LIMIT: ${why}`);
+    // a close goes: a buy against the paper account's short of 2 ETH, no bigger than it — and is no entry
+    const close = await order("paper", { symbol: "ETH/USDT:USDT", side: "buy", orderType: "market", qty: "1" });
+    if (isRefusal(close) || close.kind !== "order") throw new Error(`expected the close to go, got ${said(close)}`);
+    expect(close.order.entry).toBeUndefined();
+    expect(code(await order("paper", { symbol: "ETH/USDT:USDT", side: "buy", orderType: "market", qty: "1", reduceOnly: true }))).toBe("order");
+    // a sell adds to the short, a buy past it opens a long: entries, held
+    expect(code(await order("paper", { symbol: "ETH/USDT:USDT", side: "sell", orderType: "market", qty: "1" }))).toBe("E_ACCOUNT_LIMIT");
+    expect(code(await order("paper", { symbol: "ETH/USDT:USDT", side: "buy", orderType: "market", qty: "3" }))).toBe("E_ACCOUNT_LIMIT");
+    // the real venue is not paper trading: its own cap holds there, not these
+    expect(code(await order("real", { symbol: "ETH/USDT:USDT", side: "buy", orderType: "market", qty: "0.01" }))).toBe("order");
+    expect(svc.selfView().entriesToday).toBe(2);
+    // a restart an hour on counts them still, the canceled one none
+    const again = await boot({ home, connect: false, nonceFrom: 50, at: 3_600_000, clock: START + 3_600_000 });
+    await again.svc.restoring;
+    expect(again.svc.selfView()).toMatchObject({ now: { maxEntries: 2 }, entriesToday: 2, held: { why, until: MIDNIGHT } });
+  });
+
+  it("a plan first: an entry with no plan signed for it refused at the door — prepared all the same, the plan being signed with it — the plan signed for it rides on the order and is taken; a plan goes only to a paper account, read strictly", async () => {
+    const { svc, engine, own, order } = await boot({ clock: START });
+    expect(code(await own(self({ planFirst: true })))).toBe("account");
+    expect(isRefusal(await engine.prepare({ type: "liveOrder", venue: "paper", ...XYZ_BUY }))).toBe(false);
+    expect(said(await order("paper", XYZ_BUY))).toBe("E_ACCOUNT_LIMIT: your own rule is a plan before every entry: write it on the ticket (why, the setup, the stop) and sign it with the order");
+    const plan = { why: "XYZ held 40 three times: a buy at the third test", setup: "range", confidence: 0.6, stop: 39, target: 48, riskUsd: 3 };
+    expect(said(await own(planned("paper", "XYZ/USDT:USDT", "buy", plan)))).toBe("a plan for your next buy of XYZ/USDT:USDT at Paper Ex: “XYZ held 40 three times: a buy at the third test”");
+    // a plan for a buy is not a sell's
+    expect(code(await order("paper", { ...XYZ_BUY, side: "sell" }))).toBe("E_ACCOUNT_LIMIT");
+    const placed = await order("paper", XYZ_BUY);
+    if (isRefusal(placed) || placed.kind !== "order") throw new Error(`expected an order, got ${said(placed)}`);
+    expect(placed.order).toMatchObject({ entry: true, plan: { ...plan, at: new Date(START).toISOString() } });
+    // taken with it: the next entry needs its own; a close needs none
+    expect(code(await order("paper", XYZ_BUY))).toBe("E_ACCOUNT_LIMIT");
+    expect(code(await order("paper", { symbol: "ETH/USDT:USDT", side: "buy", orderType: "market", qty: "1" }))).toBe("order");
+    // a plan at the real venue, for no side, or that does not read: refused
+    expect(said(await own(planned("real", "ETH/USDT:USDT", "buy", plan)))).toBe("E_ACCOUNT_BAD_ACTION: a plan goes with an entry at a paper account, whose trades the journal keeps: Real Ex is not one");
+    expect(said(await own(planned("paper", "XYZ/USDT:USDT", "hold", plan)))).toBe("E_ACCOUNT_BAD_ACTION: a plan's side is buy or sell, as its order's");
+    expect(said(await own(planned("paper", "XYZ/USDT:USDT", "buy", { why: " " })))).toBe("E_ACCOUNT_BAD_ACTION: a plan says why, in a sentence");
+    // the owner's signature on the plan is on the ledger
+    const rows = readFileSync(svc.ledgerPath(), "utf8").split("\n").filter(Boolean).map((x) => JSON.parse(x) as { kind?: string; tool?: string; outcome?: string; reason?: string });
+    expect(rows.filter((r) => r.kind === "action" && r.tool === "setPlan" && r.outcome === "ok").map((r) => r.reason)).toEqual(["a plan for your next buy of XYZ/USDT:USDT at Paper Ex: “XYZ held 40 three times: a buy at the third test”"]);
+  });
+
+  it("THE BLACK BOX keeps the plan: a bracket on the account's own paper with a plan signed for it, opened before a restart and stopped out after it, is one journal line by the owner carrying the plan — and the Debrief reads it in R, the stop gapped through", async () => {
+    const btc = btcOf();
+    const { own, order, home } = await boot({ sources: [krakenOf(btc)], connect: false, clock: START });
+    expect(code(await own({ type: "connectVenue", venue: "paper-1", connector: "live:paper", label: "", credentialRef: "" }))).toBe("account");
+    const plan = { why: "Bought the pullback to 60k", setup: "pullback", confidence: 0.7, stop: 57000, target: 66000, riskUsd: 30 };
+    expect(code(await own(planned("paper-1", "BTC/USD", "buy", plan)))).toBe("account");
+    const placed = await order("paper-1", { symbol: "BTC/USD", side: "buy", orderType: "market", qty: "0.01", takeProfit: "66000", stopLoss: "57000" });
+    if (isRefusal(placed) || placed.kind !== "order") throw new Error(`expected an order, got ${said(placed)}`);
+    expect(placed.order).toMatchObject({ entry: true, plan });
+    // a restart while it is open; the price falls through the stop-loss after
+    const again = await boot({ home, sources: [krakenOf(btc)], connect: false, nonceFrom: 50, at: 3_600_000, clock: START + 3_600_000 });
+    await again.svc.restoring;
+    Object.assign(btc, { price: 56000, bid: 55990, ask: 56010 });
+    expect(await again.svc.lookAtPaper()).toEqual(["paper-1"]);
+    const j = readJournal(home);
+    expect(j.rows).toHaveLength(1);
+    const t = j.rows[0]!;
+    expect(t).toMatchObject({ end: "stop-loss", by: { who: "owner" }, plan: { ...plan, at: new Date(START).toISOString() } });
+    const d = again.svc.debrief({});
+    if (isRefusal(d)) throw new Error(d.message);
+    expect(d.debrief.plans).toMatchObject({ planned: { n: 1, wins: 0 }, unplanned: { n: 0 }, r: { trades: 1, pastStop: 1 }, early: 0, setups: [{ label: "pullback", n: 1 }], calibration: [{ label: "0.7–0.8", n: 1, saidPct: 70, wonPct: 0 }] });
+    expect(d.debrief.plans!.r!.meanR).toBeCloseTo(t.netUsd / 30, 2);
+    expect(d.debrief.notes).toContain("1 of your planned trades lost more than their stop allowed: the stop was not kept, the price gapped through it, or the size was more than the plan's 1R.");
+    // the loss counts on a day's loss line the owner then signs: no new entry today
+    expect(code(await again.own(self({ dayLossUsd: 40 })))).toBe("account");
+    const why = "your own day's loss line is $40.00, and today's paper trades lost $41.36: no new entry until midnight New York";
+    expect(again.svc.selfView().held).toEqual({ why, until: MIDNIGHT });
+    expect(said(await again.order("paper-1", { symbol: "BTC/USD", side: "buy", orderType: "market", qty: "0.01" }))).toBe(`E_ACCOUNT_LIMIT: ${why}`);
+  });
+});

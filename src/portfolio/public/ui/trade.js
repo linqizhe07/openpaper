@@ -1000,6 +1000,49 @@ function tkTopPrice(which, top, { side, step }) {
   return tkToStep((bid + ask) / 2, step, side === "sell" ? "up" : "down");
 }
 
+/* the setups the plan's field suggests: the owner's own word is as good */
+const TK_SETUPS = ["breakout", "pullback", "trend", "mean reversion", "range", "news", "funding"];
+/* the paper account's own fee, a fill (live/paper.ts PAPER_FEE_BPS): what a plan's break-even pays both ways */
+const TK_PAPER_FEE = 0.001;
+/* a plan's stop and target as the ticket reads them: its own fields, else the bracket's (TP / SL) where it is ticked */
+function tkPlanPrices(f) {
+  const n = (v) => (String(v ?? "").trim() === "" || !(Number(v) > 0) ? undefined : Number(v));
+  return { stop: n(f.planStop) ?? (f.tpsl ? n(f.stopLoss) : undefined), target: n(f.planTarget) ?? (f.tpsl ? n(f.takeProfit) : undefined) };
+}
+/** THE PLAN as it is signed (setPlan's value, account/plans.ts parsePlan): why, the setup, how sure, the stop and the target, 1R — or null
+ * where it says no why */
+function tkPlanOf(f) {
+  const why = String(f.planWhy || "").trim();
+  if (!why) return null;
+  const { stop, target } = tkPlanPrices(f);
+  const setup = String(f.planSetup || "").trim();
+  const sure = Number(f.planSure);
+  const risk = Number(f.planRisk);
+  return { why, ...(setup ? { setup } : {}), ...(f.planSure && sure > 0 ? { confidence: sure } : {}), ...(stop !== undefined ? { stop } : {}), ...(target !== undefined ? { target } : {}), ...(risk > 0 ? { riskUsd: risk } : {}) };
+}
+/* the stop's distance from the entry, as a share of it, on the side that loses: 0 where the stop is on the wrong side */
+const tkStopShare = (entry, stop, side) => (entry > 0 && stop > 0 ? Math.max(0, side === "buy" ? (entry - stop) / entry : (stop - entry) / entry) : 0);
+/** the plan's numbers in words, under it: the stop's distance and, with the dollars at risk, 1R and the size it makes; the win rate the
+ * target and the stop need to break even after the fee both ways */
+function tkPlanWords(f, entry, side) {
+  const { stop, target } = tkPlanPrices(f);
+  if (!(entry > 0) || stop === undefined) return "Why you take it, in a sentence; with a stop and the dollars you risk to it, the ticket sizes the order and says what it needs to win.";
+  const sl = tkStopShare(entry, stop, side);
+  if (!sl) return "The stop is on the wrong side of the entry: it would never be the loss.";
+  const risk = Number(f.planRisk) > 0 ? Number(f.planRisk) : 0;
+  const parts = [`The stop is ${(sl * 100).toFixed(2)}% from the entry${risk ? `: 1R is ${money(risk)}, a size of ${money(risk / sl)}` : ""}`];
+  const tp = target !== undefined ? (side === "buy" ? (target - entry) / entry : (entry - target) / entry) : 0;
+  if (tp > 0) parts.push(`at this target and stop it must win ${Math.round(((sl + 2 * TK_PAPER_FEE) / (tp + sl)) * 100)}% of the time to break even, after the fee both ways`);
+  return `${parts.join("; ")}.`;
+}
+/* "Size by risk": the dollars an order is for so that its stop loses 1R — to the cent; 0 where the plan has no stop or no risk */
+function tkSizeByRisk(f, entry, side) {
+  const { stop } = tkPlanPrices(f);
+  const sl = tkStopShare(entry, stop, side);
+  const risk = Number(f.planRisk);
+  return sl > 0 && risk > 0 ? Math.round((risk / sl) * 100) / 100 : 0;
+}
+
 /** an order's draft from the ticket's fields: the market and side picked, the size in dollars or in the market's units, the limit and stop
  * (an event contract's typed in cents), the time in force and the flags the market takes */
 function tkOrderDraft(f, { venue, symbol, side, event }) {
@@ -1154,6 +1197,7 @@ function tkTicket(panel, kind0, preset) {
       <div class="row2" data-stop hidden><label class="fld"><span data-stop-l>Stop price</span><input name="stopPrice" inputmode="decimal" autocomplete="off" /></label></div>
       <div class="row2" data-trail hidden><label class="fld">Trail by<input name="trail" inputmode="decimal" placeholder="2" autocomplete="off" /></label><label class="fld"><span>In</span><select name="trailBy"><option value="percent">Percent</option><option value="price">Price</option></select></label></div>
       <div class="tk-exits" data-exits hidden><div class="row2"><label class="fld">TP price<input name="takeProfit" inputmode="decimal" placeholder="Optional" autocomplete="off" /></label><label class="fld" data-pct-f title="${esc(TK_EXIT_PCT_SAYS)}">Gain %<input name="tpPct" inputmode="decimal" placeholder="—" autocomplete="off" /></label></div><div class="row2"><label class="fld">SL price<input name="stopLoss" inputmode="decimal" placeholder="Optional" autocomplete="off" /></label><label class="fld" data-pct-f title="${esc(TK_EXIT_PCT_SAYS)}">Loss %<input name="slPct" inputmode="decimal" placeholder="—" autocomplete="off" /></label></div></div>
+      <details class="tk-adv tk-plan" data-plan hidden><summary><span class="tk-adv-t">Plan</span><span class="tk-adv-s" data-plan-sum></span>${icon("chevron", "sm")}</summary><div class="tk-adv-b"><label class="fld">Why<input name="planWhy" maxlength="300" placeholder="What you see, in a sentence" autocomplete="off" /></label><div class="row2"><label class="fld">Setup<input name="planSetup" maxlength="40" list="tk-setups" placeholder="breakout, pullback…" autocomplete="off" /></label><label class="fld">How sure<select name="planSure"><option value="">—</option>${[0.5, 0.6, 0.7, 0.8, 0.9].map((x) => `<option value="${x}">${x * 100}%</option>`).join("")}</select></label></div><datalist id="tk-setups">${TK_SETUPS.map((x) => `<option value="${esc(x)}"></option>`).join("")}</datalist><div class="row2"><label class="fld">Wrong at (stop)<input name="planStop" inputmode="decimal" placeholder="The SL above" autocomplete="off" /></label><label class="fld">Right at (target)<input name="planTarget" inputmode="decimal" placeholder="The TP above" autocomplete="off" /></label></div><div class="row2"><label class="fld">Risk to the stop ($)<input name="planRisk" inputmode="decimal" placeholder="1R" autocomplete="off" /></label><button type="button" class="btn btn-sm tk-plan-size" data-plan-size>Size by risk</button></div><p class="dim small" data-plan-say></p></div></details>
       <details class="tk-adv" data-adv hidden><summary><span class="tk-adv-t">Advanced</span><span class="tk-adv-s" data-adv-sum></span>${icon("chevron", "sm")}</summary><div class="tk-adv-b"><div class="tk-more" data-more hidden><span data-tif></span><label class="chk1" data-post hidden><input type="checkbox" name="postOnly" /> Post-only</label></div></div></details>
       <button type="submit" class="btn btn-primary btn-block" data-go disabled${LOOK ? ` title="${esc(LOOK)}"` : ""}>Sign and place</button>
       <div class="quote real" data-q><span class="dim">Type an amount.</span></div>
@@ -1515,6 +1559,7 @@ function tkTicket(panel, kind0, preset) {
     q("[data-stop-l]").textContent = ev ? "Stop (¢)" : "Stop price";
     q("[data-trail]").hidden = t !== "trailing_stop";
     q("[data-exits]").hidden = !(brackets && form.elements.tpsl.checked);
+    planShape();
     q("[data-post]").hidden = !(mk && mk.postOnly && t === "limit");
     const ehOn = !!(mk && mk.session && mk.session.extendedHours);
     q("[data-eh]").hidden = !ehOn;
@@ -1860,6 +1905,46 @@ function tkTicket(panel, kind0, preset) {
       if (el.value !== v) el.value = v;
     }
   };
+  /* THE OWNER'S PLAN (account/plans.ts), at a paper account only — the journal keeps paper trades, and the owner's own limits hold there:
+     what is written of it, said under it as it is typed (the stop's distance, 1R and the size it makes, the win rate the target and stop
+     need after the fee both ways); "Size by risk" sizes the order so that the stop loses 1R. Signed with the order, before it */
+  // declared, not assigned: shape() asks for the plan's part wherever in the ticket's start it first runs
+  function onPaper() {
+    return !!picked && (A.venues || []).some((v) => v.id === picked.venue && v.paper);
+  }
+  function planSay() {
+    const f = formFields(form);
+    const words = tkPlanWords(f, exitRef(), side);
+    const el = q("[data-plan-say]");
+    if (el && el.textContent !== words) el.textContent = words;
+    const rule = A.self && A.self.now && A.self.now.planFirst;
+    const sum = String(f.planWhy || "").trim() ? "written" : rule ? "your rule: one before every entry" : "";
+    const s2 = q("[data-plan-sum]");
+    if (s2 && s2.textContent !== sum) s2.textContent = sum;
+  }
+  function planShape() {
+    const el = q("[data-plan]");
+    if (!el) return;
+    const on = onPaper();
+    if (el.hidden === on) el.hidden = !on;
+    // the owner's own rule asks for a plan before every entry: shown open
+    if (on && A.self && A.self.now && A.self.now.planFirst && !el.dataset.opened) {
+      el.open = true;
+      el.dataset.opened = "1";
+    }
+    if (on) planSay();
+  }
+  q("[data-plan-size]").addEventListener("click", (e) => {
+    if (typeof e.preventDefault === "function") e.preventDefault();
+    const usd = tkSizeByRisk(formFields(form), exitRef(), side);
+    if (!usd) return void say("Size by risk needs a stop — the plan's, or the SL above — and the dollars you risk to it.", "wait");
+    form.elements.unit.value = "usd";
+    form.elements.amount.value = String(usd);
+    keep();
+    staleNow();
+    later(0);
+    planSay();
+  });
   // a percent typed writes its price (heard on the field itself, before the form hears the change: the price is then what is prepared)
   for (const [priceName, pctName, tp] of EXITS) {
     form.elements[pctName].addEventListener("input", () => {
@@ -2253,7 +2338,10 @@ function tkTicket(panel, kind0, preset) {
     // the leverage typed is set on its own (Set leverage…): it changes nothing the account prepares for the order
     if (n === "leverage" || n === "marginMode") return void levReady();
     if (n === "q" || n === "chain") return;
+    // the plan's fields are not the order's: said under it, nothing asked of the account again
+    if (/^plan/.test(n || "")) return void planSay();
     if (n === "takeProfit" || n === "stopLoss" || n === "limitPrice") exitPcts();
+    if (n === "takeProfit" || n === "stopLoss" || n === "limitPrice" || n === "amount") planSay();
     keep();
     staleNow();
     if (n === "amount" || n === "unit") {
@@ -2305,8 +2393,14 @@ function tkTicket(panel, kind0, preset) {
     busy = true;
     document.body.classList.add("busy");
     let r;
+    // the owner's plan for this entry, signed first (setPlan): the account keeps it for this order and puts it on it, and the journal's trade
+    // carries it. A plan refused stops the order: nothing is placed without the plan the owner wrote
+    const plan = !leg2 && onPaper() ? tkPlanOf(formFields(form)) : null;
     try {
-      r = await Owner.submit(p);
+      if (plan) {
+        const pr = await Owner.act({ type: "setPlan", venue: p.action.venue, symbol: p.action.symbol, side: p.action.side, value: JSON.stringify(plan) });
+        r = refusedAt(pr) ? pr : await Owner.submit(p);
+      } else r = await Owner.submit(p);
     } finally {
       busy = false;
       document.body.classList.remove("busy");
@@ -2319,6 +2413,8 @@ function tkTicket(panel, kind0, preset) {
       return void (leg2 ? prepSecond() : requote(true));
     }
     prepared = null;
+    // the plan went with the order: the next entry gets its own
+    if (plan) for (const k of ["planWhy", "planSetup", "planSure", "planStop", "planTarget", "planRisk"]) if (form.elements[k]) form.elements[k].value = "";
     // the order is placed: the positions and the statement kept are the ones before it, so the next read (the panel's position line, the
     // history tabs) asks the account afresh
     afterAction();

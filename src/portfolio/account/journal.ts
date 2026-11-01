@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { canonical, sha256 } from "../../core/hash.ts";
 import { appendJsonl } from "../../core/jsonl.ts";
 import type { ClosedTrip } from "../live/trips.ts";
+import type { TradePlan } from "./plans.ts";
 
 const GENESIS = "0".repeat(64);
 const TAIL_CHUNK = 16 * 1024;
@@ -55,6 +56,8 @@ export interface JournalTrade extends ClosedTrip {
   by: TradeHand;
   closedBy: TradeHand;
   lead?: TradeLead | undefined;
+  /** the owner's plan for it, signed on the ticket with the order that opened it (account/plans.ts) */
+  plan?: TradePlan | undefined;
 }
 export type JournalRow = JournalTrade & { v: 1; seq: number; ts: string; prev: string; hash: string };
 

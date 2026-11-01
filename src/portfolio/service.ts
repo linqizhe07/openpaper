@@ -48,7 +48,8 @@ import { orderPlan, type OrderPlan, type Part } from "./router.ts";
 import type { Side } from "./venues.ts";
 import { cents, detailOf, plainRefusal, routeLine, sayOf, waitWords } from "./words.ts";
 import { HOW_TEXT, MAX_NOTES, MemoryStore, NOTE_TEXT, TOPIC_WORDS, TOPICS, type MemoryNote, type MemoryRules, type Topic } from "./account/memory.ts";
-import { etDate, isEarlyClose } from "./account/calendar.ts";
+import { et, etDate, isEarlyClose } from "./account/calendar.ts";
+import { parsePlan, parseSelfLimits, PLAN_WAIT_MS, selfAt, selfBlock, selfWords, signSelf, type OwnTrade, type SelfLimits, type SelfState, type TradePlan } from "./account/plans.ts";
 import { pairingCode } from "./account/pairing.ts";
 import { AccountEngine, CARD_TTL_MS, slug, type AccountPage, type AccountSeed, type AgentAsk, type CardOffer, type DeclinedAsk, type Outcome, type WaitingConnection } from "./account/exchange.ts";
 import { defaultKeyRef } from "./live/credentials.ts";
@@ -58,8 +59,8 @@ import { BUCKET_MS, paperCurve, paperRangeStart, type PaperHistory, type PaperVe
 import { paperBarsWanted, paperBookStart, rebuildEquity, type PriceSeries } from "./live/paper-history.ts";
 import { loadBook, PAPER_MAX_CASH, paperBookPath, paperBooksOnDisk, paperDir, parsePaperCash, resetBookOnDisk, summaryOf, type PaperBook, type PaperBookSummary, type PaperChange } from "./live/paper.ts";
 import { costBasis, ordersOf, type CostBasis, type LoggedOrder, type VenuePosition } from "./account/costbasis.ts";
-import type { AutonomyHook, LiveOrder } from "./account/live-orders.ts";
-import { appendTrade, readJournal, type JournalRow, type TradeHand } from "./account/journal.ts";
+import type { AutonomyHook, LiveOrder, PlanHook } from "./account/live-orders.ts";
+import { appendTrade, journalPath, readJournal, type JournalRow, type TradeHand } from "./account/journal.ts";
 import { debriefOf, type Debrief } from "./account/debrief.ts";
 import { candidatesOf, effectOf, ruleWords, sameLesson, testOf, type Lesson, type LessonCandidate, type LessonEffect, type LessonTest } from "./account/lessons.ts";
 import type { BacktestRun } from "./backtest/engine.ts";
@@ -392,6 +393,16 @@ export class PortfolioService {
   /** the most one order or movement may be worth, in dollars: the server's `--live-cap` to start with, then what the owner last signed
    * (setPolicy cap), which a restart brings back from the ledger */
   private capUsd: number;
+  /** the owner's own limits on their paper trading (account/plans.ts), as signed; and the plans signed for their next entries, by venue,
+   * market and side, each held PLAN_WAIT_MS */
+  private selfState: SelfState = {};
+  private plans = new Map<string, TradePlan>();
+  /** what a restart brought back of the owner's: their paper entries of the last two days (their own entries a day count them), and the
+   * plans kept on their orders (a trade opened before the restart and closed after it carries its plan) */
+  private ownEntriesBefore: Array<{ clientId: string; at: string }> = [];
+  private ownPlansBefore = new Map<string, TradePlan>();
+  /** the owner's closed paper trades as their own limits read them, kept until the journal changes (the page asks every few seconds) */
+  private ownTradesKept: { size: number; mtimeMs: number; trades: OwnTrade[] } | undefined;
   /** the venues of a restarted account are being connected again: what they hold is not on the account yet */
   private reconnecting = false;
   /** the code the first browser pairs with (absent: a server that asks for none): this run's own, and a new one once the last device has
@@ -445,7 +456,7 @@ export class PortfolioService {
    * connected live: the simulated ones stay on the statement page. And the order door's one question beyond the dial (AutonomyHook): is
    * this order the desk's own, at its paper account, under the autonomy the owner signed — asked of the desk only for a venue that is a
    * paper account on this account (the door checks the same of the venue it is placing at) */
-  private host(): ConstructorParameters<typeof AccountEngine>[0] & AutonomyHook {
+  private host(): ConstructorParameters<typeof AccountEngine>[0] & AutonomyHook & PlanHook {
     const real = this.opts.real === true;
     const shown = (a: AccountAdapter | undefined) => (!real || a?.account.watchOnly ? a : undefined);
     return {
@@ -525,6 +536,19 @@ export class PortfolioService {
           this.capUsd = Number(value);
           this.ledger.append({ kind: "note", venue: "*", reason: `one order or movement may be worth up to $${value}`, detail: this.dialNow() });
           return { ok: true, summary: `one order or movement may be worth up to ${cents(this.capUsd)}` };
+        }
+        if (change === "self") {
+          // the owner's own limits on their paper trading (account/plans.ts): a tightening holds at once, a loosening after the hours the
+          // limits in force say — said in the summary, and on the ledger's note
+          const limits = parseSelfLimits(value);
+          if (typeof limits === "string") return no("E_ACCOUNT_BAD_ACTION", { message: limits });
+          const now = this.now();
+          const { state, from } = signSelf(this.selfState, limits, now);
+          this.selfState = state;
+          const holds = from === now;
+          const summary = holds ? (limits ? `your own limits hold now: ${selfWords(limits)}` : "your own limits are taken away") : `a loosening, so it waits the hours you set: from ${nyDay(from)} ${nyTime(from)} New York your own limits ${limits ? `are ${selfWords(limits)}` : "are taken away"}; until then the ones you had hold`;
+          this.ledger.append({ kind: "note", venue: "*", reason: summary });
+          return { ok: true, summary };
         }
         if (change === "maxLeverage") {
           // the most leverage an agent may set on a perpetual: widening, so it is the owner's to sign
@@ -649,6 +673,10 @@ export class PortfolioService {
         return done;
       },
       autonomy: (signer, venue) => (this.desk && this.paperVenue(venue) ? this.desk.autonomyFor(signer, venue) : undefined),
+      // the owner's plan for their next entry, and their own limits (account/plans.ts)
+      plan: (action) => this.planSigned(action),
+      takePlan: (venue, symbol, side, keep) => this.planFor(venue, symbol, side, keep),
+      selfBlock: (o) => this.selfHeld(o),
       // a paper account the account keeps itself, as its owner runs it (live/paper.ts): started again, or paper money added
       paper: (action) => this.paperControl(action),
       paperWords: (action) => this.paperControlWords(action),
@@ -1936,7 +1964,7 @@ export class PortfolioService {
    * lesson already kept that says the same, if one is; the lessons the desk keeps, newest first, each rule with what it would have done to
    * these trades and its test on those entered after it was proposed while it was not in force; whether a desk is hired, which a lesson is
    * signed to; the desk's versions, newest first, which the Debrief's version slice names */
-  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean; candidates: Array<LessonCandidate & { words: string; kept?: { id: string; state: Lesson["state"] } | undefined }>; lessons: Array<Lesson & { words?: string | undefined; effect?: LessonEffect | undefined; test?: LessonTest | undefined }>; deskTrades: number; desk: boolean; versions: DeskVersion[] } | Refusal {
+  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean; candidates: Array<LessonCandidate & { words: string; kept?: { id: string; state: Lesson["state"] } | undefined }>; lessons: Array<Lesson & { words?: string | undefined; effect?: LessonEffect | undefined; test?: LessonTest | undefined }>; deskTrades: number; desk: boolean; versions: DeskVersion[]; self: ReturnType<PortfolioService["selfView"]> } | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     const j = readJournal(this.opts.home);
     const since = o.days ? Date.parse(this.now()) - o.days * 86_400_000 : undefined;
@@ -1959,7 +1987,7 @@ export class PortfolioService {
       const test = testOf(l, rows);
       return { ...l, ...(l.rule ? { words: ruleWords(l.rule) } : {}), ...(effect ? { effect } : {}), ...(test ? { test } : {}) };
     });
-    return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact, candidates, lessons, deskTrades: rows.filter((r) => r.lead).length, desk: this.desk?.hired() ?? false, versions: [...(this.desk?.versionsKept() ?? [])].reverse() };
+    return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact, candidates, lessons, deskTrades: rows.filter((r) => r.lead).length, desk: this.desk?.hired() ?? false, versions: [...(this.desk?.versionsKept() ?? [])].reverse(), self: this.selfView() };
   }
 
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
@@ -2714,12 +2742,95 @@ export class PortfolioService {
     };
     const opened = orderOf(t.openClientId);
     const lead = opened ? this.desk?.leadOf(opened.id) : undefined;
+    // the owner's plan kept on the order that opened it (account/plans.ts) — or on one from before a restart, which says it was the owner's
+    const kept = !opened && t.openClientId ? this.ownPlansBefore.get(t.openClientId) : undefined;
+    const plan = opened?.authority === "owner" ? opened.plan : kept;
     const closedBy: TradeHand = t.end === "closed" ? handOf(orderOf(t.closeClientId)) : { who: "venue" };
     try {
-      appendTrade(this.opts.home, { ...t, venue, venueName: this.nameOf(venue), paper: true, by: handOf(opened), closedBy, ...(lead ? { lead } : {}) }, Date.parse(this.now()));
+      appendTrade(this.opts.home, { ...t, venue, venueName: this.nameOf(venue), paper: true, by: kept ? { who: "owner" } : handOf(opened), closedBy, ...(lead ? { lead } : {}), ...(plan ? { plan } : {}) }, Date.parse(this.now()));
     } catch (err) {
       console.error(`the journal could not take ${t.symbol}'s trade at ${venue}: ${String((err as Error)?.message ?? err).slice(0, 200)}`);
     }
+  }
+
+  /** THE OWNER'S PLAN for their next entry (setPlan, account/plans.ts): read strictly, and held for that order — at a paper account, the
+   * journal keeping paper trades — until it is placed or PLAN_WAIT_MS pass; a newer plan for the same market and side replaces it */
+  private planSigned(a: Extract<OwnerAction, { type: "setPlan" }>): Outcome | Refusal {
+    if (!this.paperVenue(a.venue)) return no("E_ACCOUNT_BAD_ACTION", { venue: a.venue, message: `a plan goes with an entry at a paper account, whose trades the journal keeps: ${this.nameOf(a.venue)} is not one` });
+    const symbol = a.symbol.trim();
+    if (!symbol || symbol.length > 60) return no("E_ACCOUNT_BAD_ACTION", { message: "a plan names the market of its order, as the venue lists it" });
+    if (a.side !== "buy" && a.side !== "sell") return no("E_ACCOUNT_BAD_ACTION", { message: "a plan's side is buy or sell, as its order's" });
+    if (a.value.length > 2_000) return no("E_ACCOUNT_BAD_ACTION", { message: "a plan is 2,000 characters of JSON at most" });
+    const plan = parsePlan(a.value, this.now());
+    if (typeof plan === "string") return no("E_ACCOUNT_BAD_ACTION", { message: plan });
+    this.plans.set(`${a.venue}|${symbol}|${a.side}`, plan);
+    return { ok: true, kind: "account", summary: `a plan for your next ${a.side} of ${symbol} at ${this.nameOf(a.venue)}: “${plan.why.slice(0, 80)}”` };
+  }
+
+  /** the plan held for the owner's entry at this venue, in this market, on this side, if one was signed in the last PLAN_WAIT_MS — taken,
+   * unless only read (`keep`) */
+  private planFor(venue: string, symbol: string, side: string, keep?: boolean): TradePlan | undefined {
+    const k = `${venue}|${symbol}|${side}`;
+    const p = this.plans.get(k);
+    if (!p) return undefined;
+    if (Date.parse(this.now()) - Date.parse(p.at) > PLAN_WAIT_MS) {
+      this.plans.delete(k);
+      return undefined;
+    }
+    if (!keep) this.plans.delete(k);
+    return p;
+  }
+
+  /** the owner's paper entries today (New York): this run's orders that opened or added to a position, and the ones a restart brought back —
+   * an entry canceled before anything filled is none. On the clock the orders are stamped by (realNow) */
+  private entriesToday(nowMs: number): number {
+    const at = new Map(this.ownEntriesBefore.map((e) => [e.clientId, e.at]));
+    for (const o of this.account?.orders ?? []) {
+      if (!o.entry || o.authority !== "owner") continue;
+      if (o.status === "canceled" && !(o.filledQty > 0)) at.delete(o.clientId);
+      else at.set(o.clientId, o.at);
+    }
+    const t = et(nowMs);
+    return [...at.values()].filter((x) => {
+      const d = et(Date.parse(x));
+      return d.y === t.y && d.m === t.m && d.d === t.d;
+    }).length;
+  }
+
+  /** WHAT HOLDS THE OWNER'S NEW PAPER ENTRY BACK NOW, if anything (account/plans.ts selfBlock): their own limits in force, read against their
+   * paper trades in the journal and their entries today. `planned` undefined: asked before a plan could be signed (the order prepared). The
+   * limits hold by the account's clock, as they were signed (the ledger's); the trades and entries are read on the clock that stamped them,
+   * the venues' (realNow) — one clock but in a test */
+  private selfHeld(o: { planned?: boolean | undefined }): { why: string; until?: string | undefined } | undefined {
+    this.selfState = selfAt(this.selfState, Date.parse(this.now()));
+    const l = this.selfState.now;
+    if (!l) return undefined;
+    const nowMs = this.realNow();
+    return selfBlock(l, { trades: this.ownTrades(), entriesToday: this.entriesToday(nowMs), planned: o.planned ?? true, nowMs });
+  }
+
+  /** the owner's closed paper trades in the journal, read again only once the journal has changed */
+  private ownTrades(): OwnTrade[] {
+    let st: { size: number; mtimeMs: number };
+    try {
+      st = statSync(journalPath(this.opts.home));
+    } catch {
+      return [];
+    }
+    const kept = this.ownTradesKept;
+    if (kept && kept.size === st.size && kept.mtimeMs === st.mtimeMs) return kept.trades;
+    const trades = readJournal(this.opts.home).rows.filter((r) => r.by.who === "owner").map((r) => ({ openedAt: r.openedAt, closedAt: r.closedAt, netUsd: r.netUsd }));
+    this.ownTradesKept = { size: st.size, mtimeMs: st.mtimeMs, trades };
+    return trades;
+  }
+
+  /** THE OWNER'S OWN LIMITS as the page reads them: in force (and in words), a loosening waiting and from when, what holds a new entry back
+   * now (a plan aside: the ticket signs one with its order), and the entries today */
+  selfView(): { now?: (SelfLimits & { words: string }) | undefined; pending?: { to: (SelfLimits & { words: string }) | null; signedAt: string; from: string } | undefined; held?: { why: string; until?: string | undefined } | undefined; entriesToday: number } {
+    this.selfState = selfAt(this.selfState, Date.parse(this.now()));
+    const { now, pending } = this.selfState;
+    const held = this.selfHeld({});
+    return { ...(now ? { now: { ...now, words: selfWords(now) } } : {}), ...(pending ? { pending: { ...pending, to: pending.to ? { ...pending.to, words: selfWords(pending.to) } : null } } : {}), ...(held ? { held } : {}), entriesToday: this.entriesToday(this.realNow()) };
   }
 
   /** WHAT THE LEDGER TOOK, told to the pages (the push channel; every row passes here as it is written): a statement line (`statement`,
@@ -3261,6 +3372,13 @@ export class PortfolioService {
     engine.adopt(r.state, r.ids, r.fired);
     this.seq = Math.max(this.seq, r.ids.card);
     if (r.dial) this.adoptDial(r.dial);
+    // the owner's own limits played again in their order, each at the moment it was signed, so a loosening still waiting waits on from then
+    for (const x of r.selfSigned) {
+      const l = parseSelfLimits(x.value);
+      if (typeof l !== "string") this.selfState = signSelf(this.selfState, l, x.at).state;
+    }
+    this.ownEntriesBefore = r.ownEntries.filter((e) => Date.parse(e.at) >= this.realNow() - 2 * 86_400_000);
+    this.ownPlansBefore = new Map(r.ownPlans);
     const report: RestoreReport = { runs: history.files.length, from: history.files[0] ?? "", owner: r.owner, agents: r.state.agents.filter((a) => a.revokedAt === undefined && a.validUntil > Date.parse(this.now())).length, limits: r.state.spends.filter((x) => x.revokedAt === undefined && x.validUntil > Date.parse(this.now())).length, mode: this.openness.mode === "open" ? "Beast" : "Guard", venues: r.connections.map((c) => ({ venue: c.venue, ok: false, why: "connecting again" })), orders: r.orders.length, payments: r.payments.length + r.authorisations.length + r.earns.length, skipped: [...r.skipped, ...(history.broken ? [`${history.broken.file}: its hash chain breaks${history.broken.at ? ` at row ${history.broken.at}` : ""}, so nothing after the break (and nothing older) was brought back`] : [])], state: "restoring" };
     this.restored = report;
     this.reconnecting = true;
@@ -4767,6 +4885,11 @@ function reachedVenue(r: Exclude<Outcome, Refusal>): "yes" | "maybe" | "no" {
 
 /** a day as the page writes one: New York, weekday, day and month — "Thu Nov 5" */
 const nyDay = (iso: string): string => new Date(iso).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+/** a moment's hour and minute in New York, on the 24-hour clock */
+const nyTime = (iso: string): string => {
+  const m = et(Date.parse(iso)).minutes;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+};
 
 /** the liquidity map of a real account: each venue's ready dollars, movable or not as that venue's own writer says (account/holdings.ts
  * movesOut and why), never by the kind of venue it is. A wallet's line names the chain the dollars are on */
