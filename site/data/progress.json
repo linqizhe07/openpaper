@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 56,
+      "title": "The license: what your record in the simulator lets one real order of your own be worth",
+      "mergedAt": "2026-11-01T16:03:20Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/56",
+      "branch": "feat/license-ladder"
+    },
+    {
       "number": 55,
       "title": "The simulator: a past day played back blind, traded with the same ticket, scored at its bell",
       "mergedAt": "2026-11-01T14:10:53Z",
