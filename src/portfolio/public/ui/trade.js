@@ -1912,13 +1912,17 @@ function tkTicket(panel, kind0, preset) {
   function onPaper() {
     return !!picked && (A.venues || []).some((v) => v.id === picked.venue && v.paper);
   }
+  // the practice account (ui/practice.js): every entry there carries its plan, as the door holds it
+  function onPractice() {
+    return !!picked && (A.venues || []).some((v) => v.id === picked.venue && v.connector === "live:practice");
+  }
   function planSay() {
     const f = formFields(form);
     const words = tkPlanWords(f, exitRef(), side);
     const el = q("[data-plan-say]");
     if (el && el.textContent !== words) el.textContent = words;
     const rule = A.self && A.self.now && A.self.now.planFirst;
-    const sum = String(f.planWhy || "").trim() ? "written" : rule ? "your rule: one before every entry" : "";
+    const sum = String(f.planWhy || "").trim() ? "written" : onPractice() ? "practice: one before every entry" : rule ? "your rule: one before every entry" : "";
     const s2 = q("[data-plan-sum]");
     if (s2 && s2.textContent !== sum) s2.textContent = sum;
   }
@@ -1927,8 +1931,8 @@ function tkTicket(panel, kind0, preset) {
     if (!el) return;
     const on = onPaper();
     if (el.hidden === on) el.hidden = !on;
-    // the owner's own rule asks for a plan before every entry: shown open
-    if (on && A.self && A.self.now && A.self.now.planFirst && !el.dataset.opened) {
+    // the owner's own rule, or the practice account, asks for a plan before every entry: shown open
+    if (on && ((A.self && A.self.now && A.self.now.planFirst) || onPractice()) && !el.dataset.opened) {
       el.open = true;
       el.dataset.opened = "1";
     }

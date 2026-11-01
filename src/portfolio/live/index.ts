@@ -38,6 +38,7 @@ import { KALSHI_KEY, kalshiSource } from "./kalshi.ts";
 import { locator } from "./location.ts";
 import { metamaskSource, type RunMm } from "./metamask.ts";
 import { PAPER_DEFAULT_CASH, paperSource, parsePaperCash } from "./paper.ts";
+import { PRACTICE_VENUE } from "../account/practice.ts";
 import type { PublicSource } from "./public-markets.ts";
 import type { MarketHub } from "./stream-hub.ts";
 import { POLYMARKET_TRADE_KEY, polymarketTradeSource } from "./polymarket-clob.ts";
@@ -79,6 +80,9 @@ export interface LiveDeps {
   /** a paper account STEPPED OVER RECORDED BARS (the desk backtested, backtest/desk.ts): its book judges the time between two looks against
    * its source's bars (paper.ts PaperRequest.bars) — a stop, a limit or a liquidation inside the bar that reached it */
   paperBars?: true | undefined;
+  /** THE SIMULATOR (account/practice.ts), as the service keeps it: the source its practice account prices at — the session's market, none
+   * between sessions — and the practice clock, in whole minutes */
+  practice?: { source: () => PublicSource | undefined; clock: () => number } | undefined;
 }
 
 export interface LiveRequest {
@@ -110,6 +114,8 @@ interface Connector {
   /** venues the simulation opens with that this is the real side of */
   venues: string[];
   open: Opener;
+  /** not offered among the connections a page lists: opened from its own place (the practice account, from the Practice page) */
+  unlisted?: true | undefined;
 }
 
 const said = (source: LiveSource): string => `${source.probe.can.length ? `the venue says this credential can ${source.probe.can.join(", ")}` : "connected"} · ${source.probe.note}`;
@@ -283,6 +289,28 @@ const paper: Connector = {
     return isRefusal(opened) ? opened : { ...opened, summary: `${opened.source.name}: ${opened.source.probe.note}` };
   },
 };
+/** THE PRACTICE ACCOUNT (account/practice.ts): a paper account of the account's own, under the id `practice` alone, that prices at the
+ * simulator's session — a past day played back blind — and runs on the practice clock, judging the minutes between two looks against the
+ * session's bars. The reference is the paper money it starts with; each session starts its book again with the session's own */
+const practice: Connector = {
+  kind: "practice",
+  label: "Practice account · the simulator: a past day played back blind, at ten to fifty times its speed",
+  needs: "none",
+  example: "Nothing to connect: the Practice page opens it, and each session starts its book again with the session's paper money.",
+  venues: [],
+  unlisted: true,
+  async open(req, deps) {
+    if (req.venue !== PRACTICE_VENUE) return no("E_ACCOUNT_BAD_ACTION", { venue: req.venue, message: `the practice account is connected as "${PRACTICE_VENUE}", one to an account` });
+    const sim = deps.practice;
+    if (!sim) return no("E_ACCOUNT_BAD_ACTION", { venue: req.venue, message: "this account keeps no simulator" });
+    const cash = parsePaperCash(req.reference, req.venue);
+    if (isRefusal(cash)) return cash;
+    const opened = await paperSource({ home: deps.home, venue: req.venue, label: req.label || "Practice", cashUsd: cash, sources: () => [sim.source()].filter((x): x is PublicSource => x !== undefined), clock: sim.clock, bars: true });
+    if (isRefusal(opened)) return opened;
+    opened.source.practice = true;
+    return { ...opened, summary: `${opened.source.name}: the simulator's paper account — ${opened.source.probe.note}` };
+  },
+};
 const polymarket = byAddress("polymarket", "Polymarket · by the account wallet's address", "The account wallet Polymarket shows in the profile menu (the deposit or proxy wallet), not the key that signs for it.", ["polymarket"], polymarketSource, false);
 /** Polymarket to trade: the key that signs for the account wallet, in a key file. Polymarket's location check comes before anything else */
 const polymarketTrade: Connector = {
@@ -314,7 +342,7 @@ const metamask: Connector = {
   },
 };
 
-export const CONNECTORS: Connector[] = [paper, exchange, alpaca, alpacaPaper, robinhood, robinhoodCrypto, kalshi, polymarketUs, metamask, wallet, hyperliquid, hyperliquidTrade, hyperliquidPaper, polymarket, polymarketTrade, ondo];
+export const CONNECTORS: Connector[] = [paper, exchange, alpaca, alpacaPaper, robinhood, robinhoodCrypto, kalshi, polymarketUs, metamask, wallet, hyperliquid, hyperliquidTrade, hyperliquidPaper, polymarket, polymarketTrade, ondo, practice];
 
 /** register a connector kind (the other sources add themselves here) */
 export function register(c: Connector): void {
@@ -330,7 +358,7 @@ export const parseConnector = (connector: string): { kind: string; variant: stri
 
 /** what the page offers: every connector, and for each venue on the account the one that is its real side */
 export function liveOptions(home: string): LiveOptions {
-  const options: LiveOption[] = CONNECTORS.map((c) => ({ connector: `live:${c.kind}`, label: c.label, needs: c.needs, example: c.example, ...(c.needs === "key-file" ? { defaultRef: defaultKeyRef("<venue>") } : {}), venues: c.venues, kind: c.kind }));
+  const options: LiveOption[] = CONNECTORS.filter((c) => !c.unlisted).map((c) => ({ connector: `live:${c.kind}`, label: c.label, needs: c.needs, example: c.example, ...(c.needs === "key-file" ? { defaultRef: defaultKeyRef("<venue>") } : {}), venues: c.venues, kind: c.kind }));
   return { home, options };
 }
 

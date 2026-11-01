@@ -120,14 +120,25 @@ export interface HistorySourceOptions {
   markets: BacktestMarket[];
   clock: () => number;
   costs?: Partial<BacktestCosts> | undefined;
+  /** the source's own id and name, and the word its listings and books are tagged with (default: the backtest's). The simulator's
+   * (account/practice.ts) is "practice" */
+  id?: string | undefined;
+  name?: string | undefined;
+  tag?: string | undefined;
+  /** false: a listing says no moment of its own (quoteAt) — the simulator's clock is the practice calendar's, which a page that weighs a
+   * quote's age against its own clock must not read as one; the paper account reads it when it read it, on its own clock */
+  stamp?: boolean | undefined;
 }
 
 /** the recorded bars of a backtest, as a public source at a clock (see the top of this file) */
 export function historySource(o: HistorySourceOptions): PublicSource {
   const costs: BacktestCosts = { ...DEFAULT_COSTS, ...(o.costs ?? {}) };
+  const sourceId = o.id ?? BACKTEST_SOURCE_ID;
+  const sourceName = o.name ?? BACKTEST_SOURCE_NAME;
+  const tag = o.tag ?? "backtest";
   const by = new Map(o.markets.map((m) => [m.symbol.toUpperCase(), m] as const));
-  const unknown = (symbol: string): Refusal => no("E_VENUE_REJECTED", { venue: BACKTEST_SOURCE_ID, message: `the backtest holds ${o.markets.map((m) => m.symbol).join(", ") || "no market"}, not ${symbol.slice(0, 40)}` });
-  const quoteWords = (m: BacktestMarket): string => `${m.from} · ${m.interval} bar's open (backtest)`;
+  const unknown = (symbol: string): Refusal => no("E_VENUE_REJECTED", { venue: sourceId, message: `the ${tag} holds ${o.markets.map((m) => m.symbol).join(", ") || "no market"}, not ${symbol.slice(0, 40)}` });
+  const quoteWords = (m: BacktestMarket): string => `${m.from} · ${m.interval} bar's open (${tag})`;
 
   const listingAt = (m: BacktestMarket, now: number): Listing | undefined => {
     const i = barUnderWay(m, now);
@@ -150,7 +161,7 @@ export function historySource(o: HistorySourceOptions): PublicSource {
     const every = m.fundingEveryH ?? 1;
     return {
       symbol: m.symbol,
-      name: `${m.name} (backtest)`,
+      name: `${m.name} (${tag})`,
       kind: m.kind,
       base: m.base,
       quote: m.quote,
@@ -160,17 +171,17 @@ export function historySource(o: HistorySourceOptions): PublicSource {
       types: [],
       ...(before !== undefined && before > 0 ? { change24h: round(price - before, 10), changePct24h: round(((price - before) / before) * 100, 6) } : {}),
       ...(volumeKnown ? { volumeUsd24h: round(volumeUsd24h, 2) } : {}),
-      statsFrom: "the backtest's own bars that closed in the 24 hours before the clock",
+      statsFrom: `the ${tag}'s own bars that closed in the 24 hours before the clock`,
       ...(m.kind === "perp" ? { markPrice: price, ...(rate !== undefined ? { fundingRate: rate, nextFundingAt: iso(Math.floor(now / (every * HOUR_MS)) * every * HOUR_MS + every * HOUR_MS), fundingEveryH: every } : {}) } : {}),
       ...(m.maxLeverage !== undefined ? { maxLeverage: m.maxLeverage } : {}),
       ...(m.qtyStep !== undefined ? { qtyStep: m.qtyStep } : {}),
       ...(m.minQty !== undefined ? { minQty: m.minQty } : {}),
       ...(m.priceStep !== undefined ? { priceStep: m.priceStep } : {}),
       ...(m.minNotional !== undefined ? { minNotional: m.minNotional } : {}),
-      ...(i < 0 ? { note: `the backtest's bars of ${m.symbol} end at ${iso(m.bars[closed - 1]!.t + INTERVAL_MS[m.interval])}` } : {}),
-      quoteAt: iso(now),
+      ...(i < 0 ? { note: `the ${tag}'s bars of ${m.symbol} end at ${iso(m.bars[closed - 1]!.t + INTERVAL_MS[m.interval])}` } : {}),
+      ...(o.stamp === false ? {} : { quoteAt: iso(now) }),
       quoteFrom: quoteWords(m),
-      venueName: BACKTEST_SOURCE_NAME,
+      venueName: sourceName,
     };
   };
   const statsOf = (l: Listing): MarketStats => ({ ...(l.price !== undefined ? { price: l.price } : {}), ...(l.changePct24h !== undefined ? { changePct24h: l.changePct24h, change24h: l.change24h } : {}), ...(l.volumeUsd24h !== undefined ? { volumeUsd24h: l.volumeUsd24h } : {}) });
@@ -184,10 +195,10 @@ export function historySource(o: HistorySourceOptions): PublicSource {
   };
 
   return {
-    id: BACKTEST_SOURCE_ID,
-    name: BACKTEST_SOURCE_NAME,
+    id: sourceId,
+    name: sourceName,
     kind: "exchange",
-    connectTo: BACKTEST_SOURCE_ID,
+    connectTo: sourceId,
     connector: "live:backtest",
     readOnly: "recorded bars played back: their markets trade in a backtest's paper account only",
     listings: async (q) => {
@@ -215,7 +226,7 @@ export function historySource(o: HistorySourceOptions): PublicSource {
       if (!m) return unknown(symbol);
       const now = o.clock();
       const i = barUnderWay(m, now);
-      if (i < 0) return no("E_VENUE_RAIL_CLOSED", { venue: BACKTEST_SOURCE_ID, message: `the backtest has no ${m.symbol} bar under way at ${iso(now)}` });
+      if (i < 0) return no("E_VENUE_RAIL_CLOSED", { venue: sourceId, message: `the ${tag} has no ${m.symbol} bar under way at ${iso(now)}` });
       const open = m.bars[i]!.o;
       // the levels hold together a share of what the bar BEFORE traded; with no volume told, as much as any order
       const prev = i > 0 ? m.bars[i - 1] : undefined;
@@ -231,14 +242,14 @@ export function historySource(o: HistorySourceOptions): PublicSource {
         asks.push([ask, Number.isFinite(each) ? round(each / ask, 12) : 1e15]);
         bids.push([bid, Number.isFinite(each) ? round(each / bid, 12) : 1e15]);
       }
-      return { bids, asks, at: iso(now), from: `${m.from} (backtest: the bar's open, ${costs.halfSpreadBps} bps half spread, ${levels} levels ${costs.levelBps} bps apart)`, depth: "full", more: { bids: false, asks: false } };
+      return { bids, asks, at: iso(now), from: `${m.from} (${tag}: the bar's open, ${costs.halfSpreadBps} bps half spread, ${levels} levels ${costs.levelBps} bps apart)`, depth: "full", more: { bids: false, asks: false } };
     },
     candles: async (symbol, interval, w: CandleWindow): Promise<CandlePage | Refusal> => {
       const m = by.get(symbol.trim().toUpperCase());
       if (!m) return unknown(symbol);
       const now = o.clock();
       // a finer size than recorded: the history at it starts after any time asked, so the paper account asks a coarser one
-      if (finer(interval, m.interval)) return { bars: [], more: false, ends: `the backtest holds ${m.symbol} in ${m.interval} bars only`, source: m.from };
+      if (finer(interval, m.interval)) return { bars: [], more: false, ends: `the ${tag} holds ${m.symbol} in ${m.interval} bars only`, source: m.from };
       const all = barsAt(m, interval, now);
       const until = w.until ?? Number.POSITIVE_INFINITY;
       const since = w.since ?? Number.NEGATIVE_INFINITY;
@@ -248,8 +259,8 @@ export function historySource(o: HistorySourceOptions): PublicSource {
       if (cut) bars = bars.slice(-limit);
       const first = all[0]?.t;
       const more = cut || (bars.length > 0 && first !== undefined && bars[0]!.t > first && w.since === undefined);
-      const ends = first !== undefined && since < first ? `the backtest's ${m.symbol} bars start ${iso(first)}` : undefined;
-      return { bars, more, ...(ends ? { ends } : {}), source: m.from, ...(interval !== m.interval ? { folded: `${interval} bars folded from the backtest's ${m.interval} bars` } : {}) };
+      const ends = first !== undefined && since < first ? `the ${tag}'s ${m.symbol} bars start ${iso(first)}` : undefined;
+      return { bars, more, ...(ends ? { ends } : {}), source: m.from, ...(interval !== m.interval ? { folded: `${interval} bars folded from the ${tag}'s ${m.interval} bars` } : {}) };
     },
     fundingHistory: async (symbol, from, to) => {
       const m = by.get(symbol.trim().toUpperCase());

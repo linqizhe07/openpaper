@@ -3,7 +3,8 @@
    figure is the account's and every sentence is its words over the trades: nothing is worked out or made up here.
 
    What it reads, only while the pane shows:
-     GET /api/account/debrief?venue=&who=&days=   the debrief of those trades, the venues that have trades, the latest 50 trades
+     GET /api/account/debrief?venue=&who=&days=&practice=   the debrief of those trades, the venues that have trades, the latest 50 trades —
+                                                  the paper accounts', or the simulator's (practice=1: ui/practice.js), read apart
 
    THE PAGE: a header (what this is in a line; whose trades — everyone's, yours, the desk's, the agents' —, which paper account, the
    window) · the findings (the debrief's notes, the inversion test first: whether a losing run could be turned round, or its loss is its
@@ -30,7 +31,7 @@
    now, a loosening waiting and from when, what holds a new entry back now — set and taken away by the owner's signature, a loosening
    waiting the hours the limits in force say. */
 
-const DB = { read: null, err: "", venue: "", who: "", days: "" };
+const DB = { read: null, err: "", venue: "", who: "", days: "", practice: "" };
 const DB_HOURS = ["00–04", "04–08", "08–12", "12–16", "16–20", "20–24"];
 const DB_LS_STATE = { proposed: "Waiting for you", adopted: "Adopted", rejected: "Rejected", retired: "Retired" };
 const DB_LS_FROM = { evening: "the evening report", weekly: "the weekly review", debrief: "the Debrief", you: "you" };
@@ -40,6 +41,8 @@ const DB_TEST = { helps: ["up", "Helps"], hurts: ["warn", "Hurts"], unproven: ["
 const DB_RULES = [["", "Words only — no rule"], ["chase", "Don't chase a move"], ["funding", "Don't pay heavy funding"], ["volume", "Leave thin markets alone"], ["hours", "Skip some hours"], ["side", "One side only"], ["markets", "Leave some markets alone"], ["confidence", "Search sure enough"], ["plan", "Hold the plan"]];
 const DB_WHO = [["", "Everyone"], ["you", "You"], ["desk", "The desk"], ["agents", "Agents"]];
 const DB_DAYS = [["", "All"], ["90", "90 days"], ["30", "30 days"], ["7", "7 days"]];
+/* the paper accounts' trades, or the simulator's (ui/practice.js), which are read apart: their days are past days on the practice calendar */
+const DB_KINDS = [["", "Paper accounts"], ["1", "Practice"]];
 const DB_ENDS = { "take-profit": "Take-profit", "stop-loss": "Stop-loss", closed: "Closed by an order", liquidated: "Liquidated", settled: "Settled" };
 const DB_SLICES = [["market", "Market"], ["side", "Side"], ["hours", "Entered (New York)"], ["held", "Held"], ["by", "Who"], ["confidence", "Search's confidence"], ["version", "Desk version"]];
 
@@ -57,7 +60,8 @@ function dbRead() {
   const q = new URLSearchParams();
   if (DB.venue) q.set("venue", DB.venue);
   if (DB.who) q.set("who", DB.who);
-  if (DB.days) q.set("days", DB.days);
+  if (DB.days && !DB.practice) q.set("days", DB.days);
+  if (DB.practice) q.set("practice", "1");
   const path = `/api/account/debrief${q.toString() ? `?${q}` : ""}`;
   return api(path, { ttl: 5_000 }).then((b) => {
     if (b && b.ok) [DB.read, DB.err] = [b, ""];
@@ -74,10 +78,11 @@ function dbWire(el) {
   el.addEventListener("click", (e) => {
     const ls = e.target.closest("[data-db-ls]");
     if (ls && !ls.disabled) return void dbLessonAct(ls.dataset.dbLs, ls.dataset);
-    const b = e.target.closest("[data-db-who],[data-db-days]");
+    const b = e.target.closest("[data-db-who],[data-db-days],[data-db-kind]");
     if (!b) return;
     if (b.dataset.dbWho !== undefined) DB.who = b.dataset.dbWho;
     if (b.dataset.dbDays !== undefined) DB.days = b.dataset.dbDays;
+    if (b.dataset.dbKind !== undefined) [DB.practice, DB.venue] = [b.dataset.dbKind, ""];
     dbAgain();
     dbRead();
   });
@@ -106,10 +111,13 @@ function dbHeadHtml(r) {
   const pick = (items, on, attr, label) => `<div class="seg" role="group" aria-label="${esc(label)}">${items.map(([v, t]) => `<button type="button" data-${attr}="${esc(v)}" aria-pressed="${String(v === on)}">${esc(t)}</button>`).join("")}</div>`;
   const venue = venues.length > 1 ? `<label class="db-venue"><span class="sr">Paper account</span><select name="db-venue"><option value="">Every paper account</option>${venues.map((v) => `<option value="${esc(v.id)}"${v.id === DB.venue ? " selected" : ""}>${esc(v.name)} · ${esc(plural(v.trades, "trade"))}</option>`).join("")}</select></label>` : "";
   const chain = r && r.intact === false ? '<span class="chip bad" title="A line of the journal was changed or cut: what follows it is not read">Journal broken</span>' : "";
-  return `<div class="db-top"><div><h1 class="h2">Debrief</h1><p class="dim small">Why the paper trades made or lost money: every round trip the paper accounts closed, from the account's journal — what the costs took, whether the losing trades had an edge to turn round, how far each went for and against you, and where it went wrong.</p></div><div class="db-scope">${pick(DB_WHO, DB.who, "db-who", "Whose trades")}${pick(DB_DAYS, DB.days, "db-days", "The window")}${venue}${chain}</div></div>`;
+  // the practice account's days are the practice calendar's: a window back from now says nothing of them
+  const days = DB.practice ? "" : pick(DB_DAYS, DB.days, "db-days", "The window");
+  return `<div class="db-top"><div><h1 class="h2">Debrief</h1><p class="dim small">${DB.practice ? "Why your practice trades made or lost money: every round trip the simulator's sessions closed, from the account's journal, read apart from the paper accounts'." : "Why the paper trades made or lost money: every round trip the paper accounts closed, from the account's journal — what the costs took, whether the losing trades had an edge to turn round, how far each went for and against you, and where it went wrong."}</p></div><div class="db-scope">${pick(DB_KINDS, DB.practice, "db-kind", "Which trades")}${pick(DB_WHO, DB.who, "db-who", "Whose trades")}${days}${venue}${chain}</div></div>`;
 }
 
 function dbEmptyHtml() {
+  if (DB.practice) return '<section class="sec"><p class="empty">No practice trade yet. Every round trip a practice session closes is written to the journal and debriefed here, apart from the paper accounts\' trades: play a session on the Practice page.</p></section>';
   return `<section class="sec"><p class="empty">No closed trade here yet. Every round trip a paper account closes — yours from Trade, the desk's from the Superagent, an agent's over MCP — is written to the journal and debriefed here: open and close a trade on a paper account, or start the desk on one.</p></section>`;
 }
 

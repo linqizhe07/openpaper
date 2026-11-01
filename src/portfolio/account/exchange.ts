@@ -196,7 +196,7 @@ export interface Host {
   /** WHAT HOLDS THE OWNER'S NEW ENTRY BACK at a paper account, if anything (account/plans.ts selfBlock): the owner's own limits read against
    * their paper trades and entries today. `planned`: the entry carries a plan; undefined while the order is only prepared (a plan is signed
    * with it, after) */
-  selfBlock?(o: { planned?: boolean | undefined }): { why: string; until?: string | undefined } | undefined;
+  selfBlock?(o: { planned?: boolean | undefined; venue?: string | undefined }): { why: string; until?: string | undefined } | undefined;
   /** A BRAIN'S KEY (account/brain-keys.ts): the owner's setBrainKey lands here once the door has checked the signature, the owner, the
    * nonce and the ten minutes. The key itself is not in the action: the route that took it staged it under this action's `hash`, and the
    * host takes it from there and writes the provider's key file — `summary` (what the ledger's row says) names the provider, the base
@@ -216,6 +216,10 @@ export interface Host {
   backtest?(action: Extract<OwnerAction, { type: "setBacktest" }>): Promise<Refusal | { ok: true; summary: string; data?: unknown }>;
   /** what a setBacktest would do, in words, for the dialog before it is signed — or why it cannot be done */
   backtestWords?(action: Extract<OwnerAction, { type: "setBacktest" }>): Refusal | { words: string };
+  /** THE SIMULATOR (account/practice.ts): the owner's setPractice — a session started or ended — once the door has checked it */
+  practice?(action: Extract<OwnerAction, { type: "setPractice" }>): Promise<Refusal | { ok: true; summary: string; data?: unknown }>;
+  /** what a setPractice would do, in words, for the dialog before it is signed — or why it cannot be done */
+  practiceWords?(action: Extract<OwnerAction, { type: "setPractice" }>): Refusal | { words: string };
 }
 
 /** one way of connecting a real venue, as the page offers it */
@@ -661,7 +665,10 @@ export class AccountEngine {
     if (PAPER_TYPES.has(action.type) && Math.abs(now - action.nonce) > PAPER_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a paper account's reset or paper money added is good for ${PAPER_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a paper account's reset or paper money added is good for ${PAPER_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
     // the lab's holdout moved or looked at, or the desk run: signed and sent at once, never an envelope kept to spend a look at the held-out
     // data, or a minute of the desk's stepping, later
-    if (LAB_TYPES.has(action.type) && Math.abs(now - action.nonce) > LAB_TTL_MS) return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: a backtest the owner signs (a look at the held-out data, the holdout moved, the desk's run) is good for ${LAB_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: a backtest the owner signs (a look at the held-out data, the holdout moved, the desk's run) is good for ${LAB_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
+    if (LAB_TYPES.has(action.type) && Math.abs(now - action.nonce) > LAB_TTL_MS) {
+      const what = action.type === "setPractice" ? "a practice session the owner starts or ends" : "a backtest the owner signs (a look at the held-out data, the holdout moved, the desk's run)";
+      return this.refused(no("E_ACCOUNT_EXPIRED", { message: now > action.nonce ? `signed ${Math.round((now - action.nonce) / 60_000)} min ago: ${what} is good for ${LAB_TTL_MS / 60_000} minutes after signing — sign again` : `dated ${Math.round((action.nonce - now) / 60_000)} min ahead: ${what} is good for ${LAB_TTL_MS / 60_000} minutes around its date`, detail: { signedAt: new Date(action.nonce).toISOString() } }), envelope, signer);
+    }
     // a browser signs only ITSELF out: another device's signature, or an owner's wallet key, signs no device out (Devices lets a browser
     // in; a change of signers is convertToMultiSigUser) — and a sign-out is signed and sent at once, never an envelope kept for later
     if (action.type === "signOut" && action.device !== signer) return this.refused(no("E_ACCOUNT_BAD_ACTION", { message: "a browser signs only itself out: this sign-out names another device", detail: { signer, device: action.device } }), envelope, signer);
@@ -869,6 +876,14 @@ export class AccountEngine {
         // the lab (backtest/lab.ts): the holdout moved, a training run tried on the held-out data, or the desk run — the owner's, by signature
         if (!this.host.backtest) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no backtests" });
         const r = await this.host.backtest(action);
+        if (isRefusal(r)) return r;
+        this.host.log({ kind: "action", venue: "*", tool: action.type, signer, envelope, outcome: "ok", reason: r.summary });
+        return r.data !== undefined ? { ok: true, kind: "result", result: r.data } : { ok: true, kind: "account", summary: r.summary };
+      }
+      case "setPractice": {
+        // the simulator (account/practice.ts): a session started — a day of the past read and spent — or ended at once; no money moves
+        if (!this.host.practice) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no simulator" });
+        const r = await this.host.practice(action);
         if (isRefusal(r)) return r;
         this.host.log({ kind: "action", venue: "*", tool: action.type, signer, envelope, outcome: "ok", reason: r.summary });
         return r.data !== undefined ? { ok: true, kind: "result", result: r.data } : { ok: true, kind: "account", summary: r.summary };
@@ -1708,6 +1723,15 @@ export class AccountEngine {
         if (wrong) return no("E_ACCOUNT_BAD_ACTION", { message: wrong });
         if (!this.host.backtestWords) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no backtests" });
         const w = this.host.backtestWords(action);
+        if (isRefusal(w)) return w;
+        quote = { words: w.words, feeUsd: 0, receiveUsd: 0, lands: "at once", access: "owner", final: true, legs: [] };
+      }
+      // a practice session started or ended: what it would do, in words, before the dialog shows it to be signed
+      if (action.type === "setPractice") {
+        const wrong = malformed(action);
+        if (wrong) return no("E_ACCOUNT_BAD_ACTION", { message: wrong });
+        if (!this.host.practiceWords) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no simulator" });
+        const w = this.host.practiceWords(action);
         if (isRefusal(w)) return w;
         quote = { words: w.words, feeUsd: 0, receiveUsd: 0, lands: "at once", access: "owner", final: true, legs: [] };
       }

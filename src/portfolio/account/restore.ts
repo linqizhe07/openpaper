@@ -38,6 +38,7 @@ import type { LiveOrder } from "./live-orders.ts";
 import type { KeptAuthorisation } from "./pay-real.ts";
 import type { Payment } from "./payments.ts";
 import type { TradePlan } from "./plans.ts";
+import { PRACTICE_VENUE } from "./practice.ts";
 import { actionHash, isAgentAction, isOwnerAction, isJwk, kidOf, malformed, signerOf, type AgentAction, type Envelope, type OwnerAction } from "./sign.ts";
 import { applyOwner, applyReport, deviceKeys, FIRED_ALERTS_KEPT, isOwner, type AccountState, type ApplyOptions, type FiredAlert, type SpendApproval } from "./state.ts";
 
@@ -398,7 +399,8 @@ export async function rebuild(rows: readonly LedgerRow[], base: AccountState, op
   // days' by the clock that stamped them), and the plans kept on their orders (what a trade opened before the restart and closed after it
   // carries to the journal)
   const all = [...orders.values()];
-  const ownEntries = all.filter((o) => o.entry && o.authority === "owner" && !(o.status === "canceled" && !(o.filledQty > 0))).map((o) => ({ clientId: o.clientId, at: o.at }));
+  // the practice account's entries are the simulator's: none of the owner's own limits counts them
+  const ownEntries = all.filter((o) => o.entry && o.authority === "owner" && o.venue !== PRACTICE_VENUE && !(o.status === "canceled" && !(o.filledQty > 0))).map((o) => ({ clientId: o.clientId, at: o.at }));
   const ownPlans = all.flatMap((o) => (o.plan && o.authority === "owner" ? [[o.clientId, o.plan] as const] : []));
   return { state: s, dial, authorisations: [...kept.values()], connections: [...connections.values()], orders: all.filter(unfinishedOrder), payments: [...payments.values()].filter(unfinishedPayment), earns: [...earns.values()].filter((e) => e.status === "pending"), ids, fired, skipped, owner: s.owners.length > 0, selfSigned, ownEntries, ownPlans };
 }

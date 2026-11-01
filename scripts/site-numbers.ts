@@ -103,7 +103,8 @@ export async function compute(): Promise<SiteNumbers> {
     generatedAt: new Date().toISOString().slice(0, 10),
     mcpTools: mcpTools(),
     marketKinds: { count: TABS.filter((t) => t.id !== "all").length, labels: TABS.filter((t) => t.id !== "all").map((t) => t.label) },
-    connectionKinds: { count: CONNECTORS.length, ids: CONNECTORS.map((c) => c.kind) },
+    // the ways a user connects an account: not the practice account, which the Practice page opens (live/index.ts unlisted)
+    connectionKinds: { count: CONNECTORS.filter((c) => !c.unlisted).length, ids: CONNECTORS.filter((c) => !c.unlisted).map((c) => c.kind) },
     exchanges: { byApiKey: exchanges.length, named, more: exchanges.length - named },
     capUsd: capUsd(),
     cardMinutes: cardMinutes(),

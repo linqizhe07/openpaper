@@ -111,6 +111,8 @@ export type OwnerAction =
   /** the owner's plan for their next entry at `venue` in `symbol` on `side` (account/plans.ts): the value is the plan as JSON — kept on
    * that order when it is placed within ten minutes, so the journal's trade carries it */
   | { type: "setPlan"; venue: string; symbol: string; side: string; value: string; nonce: number }
+  /** THE SIMULATOR (account/practice.ts): a session started (`value`: what is asked, JSON) or ended before its bell (`value`: its id) */
+  | { type: "setPractice"; change: string; value: string; nonce: number }
   /** plug a venue the user already has into the account: which one, how it is reached, and where its credential lives (a reference, never the value) */
   | { type: "connectVenue"; venue: string; connector: string; label: string; credentialRef: string; nonce: number }
   | { type: "disconnectVenue"; venue: string; nonce: number }
@@ -231,7 +233,7 @@ export type AgentAction =
 
 export type Action = OwnerAction | AgentAction;
 
-export const OWNER_TYPES = ["sendAsset", "swap", "approveAgent", "approveBuilderFee", "approveSpend", "createSubAccount", "userSetAbstraction", "convertToMultiSigUser", "setDestination", "approveCard", "setPolicy", "connectVenue", "disconnectVenue", "liveMove", "liveOrder", "liveCancel", "liveAmend", "liveClose", "liveLeverage", "setWatch", "setAlert", "setIntent", "liveEarn", "answerAsk", "setMemory", "forgetMemory", "setMemoryRules", "setDesk", "setBrainKey", "resetPaper", "topUpPaper", "setBacktest", "setPlan", "signOut"] as const;
+export const OWNER_TYPES = ["sendAsset", "swap", "approveAgent", "approveBuilderFee", "approveSpend", "createSubAccount", "userSetAbstraction", "convertToMultiSigUser", "setDestination", "approveCard", "setPolicy", "connectVenue", "disconnectVenue", "liveMove", "liveOrder", "liveCancel", "liveAmend", "liveClose", "liveLeverage", "setWatch", "setAlert", "setIntent", "liveEarn", "answerAsk", "setMemory", "forgetMemory", "setMemoryRules", "setDesk", "setBrainKey", "resetPaper", "topUpPaper", "setBacktest", "setPlan", "setPractice", "signOut"] as const;
 export const AGENT_TYPES = ["agentSendAsset", "agentSwap", "agentPay", "agentExecute", "agentOrder", "agentLiveMove", "agentLiveOrder", "agentLiveCancel", "agentLiveAmend", "agentLiveClose", "agentLiveLeverage", "agentReport", "agentAsk", "agentLiveEarn", "agentRemember", "agentForget", "agentDeskSay"] as const;
 /** an instruction that moves money — or, like a leverage change, changes what a position risks — is good for minutes after it is signed,
  * not for the two days of the nonce window */
@@ -250,9 +252,10 @@ export const BRAIN_KEY_TTL_MS = MONEY_TTL_MS;
  * envelope is good for as long as a money instruction, around the moment it is dated — never one kept to start the book again days later */
 export const PAPER_TYPES: ReadonlySet<string> = new Set(["resetPaper", "topUpPaper"]);
 export const PAPER_TTL_MS = MONEY_TTL_MS;
-/** the lab's holdout moved or looked at, or the desk run over the bars (setBacktest holdout · evaluate · desk): signed and sent at once — an
- * envelope kept for later is never one that spends a look at the held-out data, moves the holdout or runs the desk days after it was signed */
-export const LAB_TYPES: ReadonlySet<string> = new Set(["setBacktest"]);
+/** the lab's holdout moved or looked at, or the desk run over the bars (setBacktest holdout · evaluate · desk), and a practice session started
+ * or ended (setPractice: its day read from the network, the desk run over it at its bell): signed and sent at once — an envelope kept for
+ * later is never one that spends a look at the held-out data, moves the holdout, runs the desk or spends a day days after it was signed */
+export const LAB_TYPES: ReadonlySet<string> = new Set(["setBacktest", "setPractice"]);
 export const LAB_TTL_MS = MONEY_TTL_MS;
 /** a sign-out is signed and sent at once: an envelope kept for later is never one that signs a browser out of the account days after */
 export const SIGN_OUT_TTL_MS = MONEY_TTL_MS;
@@ -333,6 +336,7 @@ const OWNER_FIELDS: Record<OwnerAction["type"], { primary: string; fields: Field
   liveLeverage: { primary: "AccountTransaction:LiveLeverage", fields: [{ name: "venue", type: "string" }, { name: "symbol", type: "string" }, { name: "leverage", type: "string" }, { name: "marginMode", type: "string" }, NONCE] },
   setWatch: { primary: "AccountTransaction:SetWatch", fields: [{ name: "venue", type: "string" }, { name: "symbol", type: "string" }, { name: "on", type: "string" }, NONCE] },
   setPlan: { primary: "AccountTransaction:SetPlan", fields: [{ name: "venue", type: "string" }, { name: "symbol", type: "string" }, { name: "side", type: "string" }, { name: "value", type: "string" }, NONCE] },
+  setPractice: { primary: "AccountPractice:Set", fields: [{ name: "change", type: "string" }, { name: "value", type: "string" }, NONCE] },
   // the price is text, a plain decimal as the owner typed it: what the dialog shows is what is signed, and the account reads it back as a number
   setAlert: { primary: "AccountTransaction:SetAlert", fields: [{ name: "id", type: "string" }, { name: "venue", type: "string" }, { name: "symbol", type: "string" }, { name: "condition", type: "string" }, { name: "price", type: "string" }, { name: "on", type: "string" }, NONCE] },
   // `agent` is text, not an address: it may be "*", every agent

@@ -2,7 +2,8 @@
  * perpetuals, Coinbase's coins, the US stocks line — so the Backtest pane can be clicked through with no network. Each market's price is
  * a random walk from a fixed seed (src/core/prng.ts mulberry32): an hour's move of about half a percent, a drift that changes sign every
  * few weeks so there are trends to follow and ranges to lose in, the same path for the same market whenever it is asked; its bars are cut
- * from that hourly path (a bar's open, close, high and low are the path's own), from 2025-01-01 to the stand-in's clock. A perpetual pays
+ * from that hourly path (a bar's open, close, high and low are the path's own; a bar shorter than an hour — the simulator's minutes — goes
+ * from one hour's price to the next with a wiggle of its own), from 2025-01-01 to the stand-in's clock. A perpetual pays
  * funding that drifts around a small positive mean. None of it is a market's: the pane's figures here mean nothing. */
 import { mulberry32 } from "../../src/core/prng.ts";
 import type { HistorySources } from "../../src/portfolio/backtest/data.ts";
@@ -54,8 +55,20 @@ function source(id: string, name: string, kind: "perp" | "spot" | "stock", clock
       const now = clock();
       const px = hourly(baseOf(symbol), now);
       const at = (t: number): number => px[Math.min(px.length - 1, Math.max(0, Math.floor((t - FIRST) / H)))]!;
+      // inside an hour (the simulator's minutes): the way from one hour's price to the next, with a wiggle of its own
+      const within = (t: number): number => {
+        const a = at(t);
+        const frac = (((t - FIRST) % H) + H) % H / H;
+        return (a + (at(t + H) - a) * frac) * (1 + 0.0012 * Math.sin(t / 420_000) + 0.0006 * Math.sin(t / 97_000));
+      };
       const bars: Candle[] = [];
       for (let t = Math.max(Math.ceil((w.since ?? FIRST) / step) * step, FIRST); t < (w.until ?? now) && t + step <= now && bars.length < 5000; t += step) {
+        if (step < H) {
+          const o = within(t);
+          const c = within(t + step);
+          bars.push({ t, o, h: Math.max(o, c) * 1.0003, l: Math.min(o, c) * 0.9997, c, v: 20 });
+          continue;
+        }
         const hours = Array.from({ length: Math.max(1, Math.round(step / H)) + 1 }, (_, k) => at(t + k * H));
         bars.push({ t, o: hours[0]!, h: Math.max(...hours) * 1.0005, l: Math.min(...hours) * 0.9995, c: hours[hours.length - 1]!, v: 2_000 });
       }
