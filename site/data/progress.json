@@ -1,7 +1,14 @@
 {
-  "asOf": "2026-10-31",
+  "asOf": "2026-11-01",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 54,
+      "title": "Your own trading: a plan signed with each entry, and limits that hold when you do not",
+      "mergedAt": "2026-11-01T02:48:45Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/54",
+      "branch": "feat/owner-plans"
+    },
     {
       "number": 53,
       "title": "Lessons tested: on the trades after them, in the lab, and the desk versioned",
