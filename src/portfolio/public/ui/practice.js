@@ -7,17 +7,21 @@
                                            has), the quote now, the practice account's cash, position and orders and the session's trades —
                                            its score with the day, the coin and the factor once it has ended; the sessions ended; the days
                                            left to practise on and to sit as exams
+     GET  /api/account/license             THE LICENSE (account/license.ts): what the record here lets one real order of the owner's own be
+                                           worth — read when the page opens and again after each bell
    What it sends:
      POST /api/account/practice/clock      the clock started, stopped or set to 10, 20, 30 or 50 times (unsigned: no money, no day spent)
      connectVenue live:practice            the practice account opened, once (signed)
      setPractice start · end               a session started, or ended before its bell (signed, its words said before)
+     setPolicy self                        the owner's own limits with the license in them, or out of them (signed, after a yes)
    Buy…, Sell… and Close… open the Trade ticket and the close sheet on the practice market: the same door, and the plan the ticket asks for.
 
    THE PAGE: the header · the practice account to open · the session on — its clock and controls, the chart (its minutes, folded as asked;
    no date anywhere: its days are D−2, D−1 and the Day), the quote, the position and orders, the trades so far · its score at the bell, the
-   day told · a session to start · the sessions ended. While a session's clock runs the page reads again about once a practice minute. */
+   day told · a session to start · your license · the sessions ended. While a session's clock runs the page reads again about once a
+   practice minute. */
 
-const PR = { read: null, err: "", bars: [], session: "", size: 5, timer: 0 };
+const PR = { read: null, err: "", bars: [], session: "", size: 5, timer: 0, license: null, licSessions: -1 };
 const PR_SIZES = [[1, "1m"], [5, "5m"], [15, "15m"], [60, "1h"]];
 /* the candles drawn, and the minutes kept: the two days before a session and its day */
 const PR_SHOWN = 96;
@@ -44,9 +48,21 @@ function prRead() {
       if (id !== PR.session) [PR.session, PR.bars] = [id, []];
       PR.bars = PR.bars.concat(b.bars || []).slice(-PR_KEPT);
       [PR.read, PR.err] = [b, ""];
+      // the license, read when the page opens and again once a bell has added a session to the record
+      const played = (b.sessions || []).length;
+      if (played !== PR.licSessions) {
+        PR.licSessions = played;
+        prLicense();
+      }
     } else PR.err = refusalOf(b) || "The account did not answer.";
     prAgain();
     prNext();
+  });
+}
+function prLicense() {
+  return api("/api/account/license").then((b) => {
+    if (b && b.ok) PR.license = b;
+    prAgain();
   });
 }
 function prAgain() {
@@ -87,6 +103,7 @@ function prWire(el) {
       if (typeof DB === "object") DB.practice = "1";
       go("debrief", {});
     }
+    if (act === "lic-hold" || act === "lic-up" || act === "lic-off") void prLicenseAct(act);
   });
 }
 
@@ -107,7 +124,7 @@ function prDraw(el) {
   if (!r) return;
   const s = r.session;
   const on = s && !s.endedAt;
-  paint(body, `${PR.err ? `<div class="msg no">${esc(PR.err)}</div>` : ""}${r.connected ? "" : prOpenHtml()}${on ? prSessionHtml(r) : ""}${s && s.endedAt ? prScoreHtml(s, r) : ""}${r.connected && !on ? prStartHtml(r) : ""}${prHistoryHtml(r.sessions || [])}`);
+  paint(body, `${PR.err ? `<div class="msg no">${esc(PR.err)}</div>` : ""}${r.connected ? "" : prOpenHtml()}${on ? prSessionHtml(r) : ""}${s && s.endedAt ? prScoreHtml(s, r) : ""}${r.connected && !on ? prStartHtml(r) : ""}${prLicenseHtml(PR.license)}${prHistoryHtml(r.sessions || [])}`);
 }
 
 function prHeadHtml(r) {
@@ -251,6 +268,72 @@ function prHistoryHtml(list) {
     return `<tr><td>${esc(x.n)}${x.window === "exam" ? ' <span class="tag warn">Exam</span>' : ""}</td><td>${esc(x.coin)} · ${esc(prDay(x.day))}</td><td class="r">${sc.you ? `${esc(prPct(sc.you.netPct))} <span class="dim">· ${esc(plural(sc.you.trades, "trade"))}</span>` : "—"}</td><td class="r">${sc.chance ? `${esc(Math.round(sc.chance.rank * 100))}%` : "—"}</td><td class="r">${sc.hold ? esc(prPct(sc.hold.netPct)) : "—"}</td><td class="r">${esc(desk)}</td></tr>`;
   }).join("");
   return `<section class="sec pr-history" aria-labelledby="pr-h-h"><div class="card-head"><h2 class="h2" id="pr-h-h">Sessions played</h2><span class="dim small">${esc(plural(list.length, "session"))}</span></div><div class="t-wrap"><table class="t"><thead><tr><th scope="col">#</th><th scope="col">It was</th><th scope="col" class="r">You</th><th scope="col" class="r">Beat chance</th><th scope="col" class="r">Holding</th><th scope="col" class="r">The desk</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+
+/* YOUR LICENSE (account/license.ts): the ladder, the record's two books read apart — practice and the exam, each with its checks — what the
+   next level needs, what holds your own real orders now, and your Hold… · Step up… · Stop… — each your own limits signed again with the
+   license in them or out of them (setPolicy self), after a yes that says what it does */
+const PR_CHECKS = [["edge", "Edge after costs"], ["chance", "Beside chance"], ["plans", "Plans kept"], ["calibration", "Calibration"]];
+function prLicenseHtml(v) {
+  if (!v) return "";
+  const me = owns();
+  const held = v.held !== undefined;
+  const rung = (l) => `<li class="${l.level === v.level ? "at" : l.level < v.level ? "done" : ""}"><span class="pr-rung"><b>${esc(l.level)} · ${esc(l.name)}</b>${l.level === v.level ? ' <span class="tag up">Your record</span>' : ""}${held && l.level === v.held ? ' <span class="tag">Held</span>' : ""}</span><span class="small">${esc(l.words)}${l.capUsd === null && !v.readOnly ? ` (${esc(money(v.serverCapUsd))} now)` : ""}</span></li>`;
+  const next = v.next ? `<div class="pr-next"><h3>Level ${esc(v.next.level)} · ${esc(v.next.name)} needs</h3><ul>${v.next.missing.map((m) => `<li>${esc(m.charAt(0).toUpperCase() + m.slice(1))}</li>`).join("")}</ul></div>` : '<p class="small">Your record shows the top of the ladder.</p>';
+  const self = v.self || {};
+  const pend = self.pending && (self.pending.to ? self.pending.to.license : undefined) !== (self.now ? self.now.license : undefined) ? `<p class="small"><span class="tag warn">Waiting</span> ${self.pending.to && self.pending.to.license !== undefined ? `level ${esc(self.pending.to.license)}` : "your real orders let go of the license"} from ${esc(nyDay(self.pending.from))} ${esc(nyTime(self.pending.from))} New York.</p>` : "";
+  const now = v.readOnly
+    ? '<p class="small">This server was started read-only: it places no real order, so the license has nothing to hold here.</p>'
+    : !held
+    ? `<p class="small">It does not bind now: your own real orders are held by the server's cap alone (${esc(money(v.serverCapUsd))} an order). Held to your license, an entry of your own past what it allows is refused; a close always goes, and an agent keeps to its own limits.</p>`
+    : `<p class="small pr-held">${v.capUsd > 0 ? `Your own real entries: up to <b>${esc(money(v.capUsd))}</b> an order` : "<b>No real entry of your own</b>: paper and practice only"} — level ${esc(v.held)} (${esc(prLevelName(v, v.held))})${v.signed > v.held ? `: you signed up to level ${esc(v.signed)}, and your record shows level ${esc(v.level)} now` : ""}. A close always goes.</p>`;
+  const acts = !me || v.readOnly ? "" : !held ? '<div class="acts"><button type="button" class="btn btn-sm btn-primary" data-pr="lic-hold">Hold my real orders to it…</button></div>' : `<div class="acts">${v.level > v.signed ? `<button type="button" class="btn btn-sm btn-primary" data-pr="lic-up">Step up to level ${esc(v.level)}…</button>` : ""}<button type="button" class="btn btn-sm" data-pr="lic-off">Stop holding them to it…</button></div>`;
+  return `<section class="sec pr-lic" aria-labelledby="pr-l-h"><div class="card-head"><h2 class="h2" id="pr-l-h">Your license</h2><span class="chip">Level ${esc(v.level)} · ${esc(v.name)}</span></div><p class="small">What your record here lets one real order of your own be worth. Practice and the exam are read apart; a session counts from its bell.</p><ol class="pr-ladder">${(v.ladder || []).map(rung).join("")}</ol><div class="pr-books">${prBookHtml(v.books.train, v)}${prBookHtml(v.books.exam, v)}</div>${next}${now}${pend}${acts}</section>`;
+}
+function prLevelName(v, level) {
+  const l = (v.ladder || [])[level];
+  return l ? l.name : `level ${level}`;
+}
+/* one window's record: its trades against what the next level needs of it, and its four checks — each passed or not, in its words */
+function prBookHtml(b, v) {
+  if (!b) return "";
+  const need = v.next && v.ladder[v.next.level] ? v.ladder[v.next.level].needs[b.window] : undefined;
+  const count = `<li class="${need === undefined ? "" : b.trades >= need ? "ok" : "no"}"><span class="pr-mark" aria-hidden="true">${need === undefined ? "·" : b.trades >= need ? "✓" : "✗"}</span><span><b>Trades</b> ${esc(plural(b.trades, "trade"))} in ${esc(plural(b.sessions, "session"))}${need !== undefined ? ` — level ${esc(v.next.level)} needs ${esc(need)}` : ""}</span></li>`;
+  const checks = PR_CHECKS.map(([k, label]) => {
+    const c = b[k] || { ok: false, words: "" };
+    return `<li class="${c.ok ? "ok" : "no"}"><span class="pr-mark" aria-hidden="true">${c.ok ? "✓" : "✗"}</span><span><b>${esc(label)}</b><span class="sr">${c.ok ? " passed" : " not yet"}:</span> ${esc(c.words)}</span></li>`;
+  }).join("");
+  return `<div class="pr-book"><h3>${b.window === "exam" ? "The exam" : "Practice"}</h3><ul class="pr-checks">${count}${checks}</ul></div>`;
+}
+/* what one real order of the owner's own may be worth at a level, under the server's cap */
+function prCapAt(v, level) {
+  const l = (v.ladder || [])[level];
+  return !l ? 0 : l.capUsd === null ? v.serverCapUsd : Math.min(l.capUsd, v.serverCapUsd);
+}
+async function prLicenseAct(act) {
+  const v = PR.license;
+  if (!v || !owns()) return;
+  const now = (v.self && v.self.now) || null;
+  const limits = {};
+  if (now) for (const k of ["dayLossUsd", "streak", "maxEntries", "planFirst", "license", "liftHours"]) if (now[k] !== undefined) limits[k] = now[k];
+  const lift = now ? now.liftHours : 24;
+  const replaced = v.self && v.self.pending ? " A loosening of your own limits still waiting is replaced by this signature." : "";
+  const send = (value) => own({ type: "setPolicy", change: "self", value }, () => prLicense());
+  const worth = (level) => (prCapAt(v, level) > 0 ? `up to ${money(prCapAt(v, level))}` : "nothing");
+  if (act === "lic-hold") {
+    if (!(await confirmSheet(`From now on a real order of your own that opens or adds to a position may be worth ${worth(v.level)} — level ${v.level} (${v.name}), what your record shows now — and less at once if your record falls. A close always goes; an agent keeps to its own limits. Letting go of it later waits ${lift} h, as your own limits say.${replaced}`, { title: "Hold your real orders to your license", yes: "Sign" }))) return;
+    return void send(JSON.stringify({ ...limits, license: v.level, liftHours: limits.liftHours !== undefined ? limits.liftHours : 24 }));
+  }
+  if (act === "lic-up") {
+    if (!(await confirmSheet(`Level ${v.level} (${v.name}): a real order of your own may be worth ${worth(v.level)}. A loosening, so it holds ${lift} h after you sign — and only as far as your record still shows then.${replaced}`, { title: `Step up to level ${v.level}`, yes: "Sign" }))) return;
+    return void send(JSON.stringify({ ...limits, license: v.level }));
+  }
+  if (act === "lic-off") {
+    const { license: _held, ...rest } = limits;
+    const others = Object.keys(rest).filter((k) => k !== "liftHours").length;
+    if (!(await confirmSheet(`${lift ? `${lift} h from now` : "At once"}, as your own limits say, your real orders are held by the server's cap alone (${money(v.serverCapUsd)} an order); until then your license holds.${others ? " Your other own limits stay as they are." : ""}${replaced}`, { title: "Stop holding your real orders to your license", yes: "Sign", danger: true }))) return;
+    return void send(others ? JSON.stringify(rest) : "");
+  }
 }
 
 /* A SESSION STARTED (setPractice start): what is asked, its words from the account before it is signed */

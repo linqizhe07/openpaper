@@ -694,7 +694,7 @@ Trade 屏的下单票上，纸上账户多了一块 **Plan**（在止盈止损�
 | 每天最多几笔 `maxEntries` | 纽约时间一天里开新仓的上限；挂单在成交之前撤掉的不算 |
 | 先写计划 `planFirst` | 没有计划的开仓一律拒绝 |
 
-- 约束只管纸上账户的**新开仓**（开仓或加仓），**从不挡平仓**：reduce-only、卖掉持有的、和持仓反向又不超过它的单都照常走。真钱的账户不归它管，那边有自己的单笔上限。
+- 约束只管纸上账户的**新开仓**（开仓或加仓），**从不挡平仓**：reduce-only、卖掉持有的、和持仓反向又不超过它的单都照常走。真钱的账户不归它管（执照除外，第 6j 条），那边有自己的单笔上限。
 - 会随时间过去的三条，在准备订单时、签名之前就说；先写计划要到签名时才看得出有没有。拒绝码是 `E_ACCOUNT_LIMIT`，带着原因和到什么时候。
 - **收紧马上生效，放松要等。** 调高一个数、去掉一条、全部去掉、缩短等待，都算放松，要等现在生效的约束里写的小时数（`liftHours`，0 到 168，默认 24）之后才生效，在那之前旧的照旧。页面写明到纽约几点生效；再签一次，会替换还在等的那个。
 - 服务重启之后都还在：约束和还在等的放松按账本里的签名重放，等待从当初签名的时间算起；今天已经开了几笔也照算。
@@ -706,7 +706,7 @@ portfolio_debrief                       debrief.plans（你的计划）和 self�
 GET /api/account                        多了 self
 GET /api/account/debrief                同上
 setPlan {venue, symbol, side, value}    下一笔开仓的计划，value 是 JSON：why、setup、confidence、stop、target、riskUsd
-setPolicy {change: "self", value}       你的约束，value 是 JSON：dayLossUsd、streak、maxEntries、planFirst、liftHours；空字符串是全部去掉
+setPolicy {change: "self", value}       你的约束，value 是 JSON：dayLossUsd、streak、maxEntries、planFirst、license（执照，第 6j 条）、liftHours；空字符串是全部去掉
 ```
 
 计划和约束都只有你能签，agent 只能读。
@@ -763,6 +763,58 @@ setPractice {change: "end", value}       提前结束这一局，value 是局的
 ```
 
 开局和提前结束只有你能签；agent 只能读。
+
+## 6j · 执照：练出来的记录，决定你自己的真钱单子能多大
+
+练习页上多了一块 **Your license**。它只读模拟机里的记录，练习和考试分开读，然后告诉你：按这份记录，你自己下的一笔真钱单子最多能多大。只有你签了名，它才管你。
+
+**读哪些交易**：练习账户里你自己的交易，以黑匣子记的为准，只算已经收盘的局（正在打的一局，收盘以后才算）。按那一局抽的是哪种日子，分成两本：
+
+- **练习**：留出期开始之前两年里的日子。
+- **考试**：留出期本身的日子，每一天只考一次。
+
+纸上账户的交易不算：那些市场的分钟线没有存下来，没法和随机入场比。它们在 Debrief 里看。
+
+**五项检查**，两本分开算：
+
+| 检查 | 过关的条件 |
+|---|---|
+| 笔数 | 每一级要的笔数不同，见下表 |
+| 扣成本后的期望 | 每笔净值（占入场金额的百分比）的 95% 区间，下限要大于 0。和 Debrief 里是同一个数 |
+| 和随机入场比 | 每局收盘时存下的 1,000 次随机入场，合起来拼成 1,000 份"随机记录"：每份里，每一笔都换成同一局里随机一分钟入场，方向和持仓时长不变，按笔数加权。你的记录要胜过其中至少 90% |
+| 守计划 | 至少 90% 的交易守住了计划：计划里写了止损或 1R，而且扣成本之前亏得不超过 1R 的 1.05 倍。止损没守住、价格跳空穿过去、仓位比 1R 大，都算没守住 |
+| 校准 | 至少 30 笔写了把握度（How sure）。按把握度分档，每档说的把握度和实际胜率差几个百分点，按笔数加权平均，不超过 10 |
+
+**阶梯**：
+
+| 级 | 名字 | 你自己的一笔真钱单子最多 | 记录要有什么 |
+|---|---|---|---|
+| 0 | Student | 不能下：只有纸上和练习 | — |
+| 1 | Learner | $25 | 练习 100 笔，五项都过 |
+| 2 | Licensed | $100 | 在 Learner 之上，考试 50 笔，五项都过 |
+| 3 | Senior | 服务自己的上限 | 练习 300 笔、考试 100 笔，两本五项都过 |
+
+无论哪一级，都不超过服务自己的上限（`--live-cap`，或你在 Settings 里签的数）。那个上限管所有真钱单子和资金划转。
+
+**签了才管你**：点 **Hold my real orders to it…**，执照就写进你给自己定的约束（第 6h 条），级别是记录现在显示的那一级。这是收紧，签完马上生效。之后：
+
+- 你自己在真钱场所下的**开仓**（开仓或加仓），金额超过执照允许的就被拒，拒绝码 `E_ACCOUNT_LIMIT`，附上原因和下一级还差什么。准备订单时查一次，签名之后再查一次；改单把你自己的单子改大，也会查。
+- **从不挡平仓**。agent 的单子由它自己的交易额度管，不归你的执照管。纸上账户和练习账户也不受它限制。
+- 实际生效的级别，是你签的级别和记录现在显示的级别里**较低**的那个。记录变差，马上降下来；记录好转，最多回到你签的那一级。
+- **升级**：记录显示更高一级时，页面上出现 **Step up to level N…**。签的级别不能高于记录现在显示的级别，否则门会拒。升级算放松，要等你约束里写的小时数（默认 24）之后才生效，到那时还要记录仍然支持。
+- **不想被它管了**：点 **Stop holding them to it…**。这也算放松，要等同样的小时数。在 Debrief 页改别的约束时，执照保持原样；把约束全部去掉，执照也一起去掉。
+
+**随机入场怎么存**：每局收盘时，那 1,000 次随机入场的结果存进 `<home>/practice/tries/<局的 id>.json`，这一局在 `sessions.jsonl` 里的那一行记着这个文件的哈希。文件和哈希对不上（被改过，或者丢了），"和随机入场比"这一项就不判，算没过。这个功能上线之前打完的局没有存，不算进这一项，页面会写明跳过了几局。
+
+agent 和 API：
+
+```
+GET /api/account/license                 执照：两本记录各自的五项检查、记录显示的级别、下一级还差什么、阶梯；
+                                         签了的话，还有你签的级别、生效的级别、现在一笔最多多少；以及你的约束
+setPolicy {change: "self", value}        value 的 JSON 里加 license（0 到 3）：你自己的真钱开仓按执照管，最高到这一级
+```
+
+执照只有你能签；agent 只能读。
 
 ## 7 · 动钱
 
@@ -1051,7 +1103,7 @@ Agent 的管理（放谁进来、给多少额度、它们在做什么、它们�
 | `setIntent` | `id, agent, venue, symbol, side, usd, text, validUntil` | `id` 空是新的；`agent` 是地址或 `*`；`validUntil` 0 是收回。什么都不授予 |
 | `answerAsk` | `ask, decision` | `decision` 只能是 `"decline"`。答应一个请求就是去做它要的那件事（上面这些动作），做完请求自己关掉 |
 | `approveCard` | `card, action, decision` | `action` 是那张卡的 `hash`，`decision` 是 `approve` 或 `reject`；放行时所有检查重跑 |
-| `setPolicy` | `change, value` | `mode` / `open`（切到 Beast）、`session` / `30d`（重开或续会话）、`maxLeverage` / 倍数、`restore` / 场所（对 agent 重新打开）、`reach` / `场所:能力,能力`（对 agent 开放这家的哪些动作）、`say` / 一句话（送给页面的关键词脚本 agent——`--classic` 对账单上的那个；Account 页面上没有它的对话框）、`self` / JSON（你给自己纸上交易定的约束，第 6h 条；空字符串是全部去掉，放松要等）；`advance`、`reset` 只在模拟上。收紧（切回 Guard、对 agent 关掉一个场所）不用签：`POST /api/mode {mode: "guard"}`、`POST /api/revoke {account}` |
+| `setPolicy` | `change, value` | `mode` / `open`（切到 Beast）、`session` / `30d`（重开或续会话）、`maxLeverage` / 倍数、`restore` / 场所（对 agent 重新打开）、`reach` / `场所:能力,能力`（对 agent 开放这家的哪些动作）、`say` / 一句话（送给页面的关键词脚本 agent——`--classic` 对账单上的那个；Account 页面上没有它的对话框）、`self` / JSON（你给自己定的约束，第 6h 条，其中 `license` 是执照，第 6j 条；空字符串是全部去掉，放松要等）；`advance`、`reset` 只在模拟上。收紧（切回 Guard、对 agent 关掉一个场所）不用签：`POST /api/mode {mode: "guard"}`、`POST /api/revoke {account}` |
 | `convertToMultiSigUser` | `signers` | Devices：让一个待批的浏览器也能签（页面上只有这个；要两个都签的流程没做） |
 | `setMemory` | `scope, id, topic, text` | 记忆（第 8c 条）：`scope` 是一个 agent 的地址；`id` 空是新的一条，写一条的 id 是改它（改了就是你说的），把一条等你答的原样签一遍就是记下它（还是它学的）；`topic` 是 style · rules · venues。字不进账本 |
 | `forgetMemory` | `scope, what` | `scope` 是一个 agent 的地址；`what` 是一条的 id，或 `all`（删掉它的文件，没有回收站）|

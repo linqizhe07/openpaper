@@ -351,3 +351,26 @@ describe("your plans and your own limits (account/debrief.ts plans, ui/debrief.j
     expect(p.run("SELF_SENT")).toEqual([{ type: "setPolicy", change: "self", value: "" }]);
   });
 });
+
+describe("the license in your own limits (ui/debrief.js)", () => {
+  /* limits in force with the license in them (service.ts selfView) */
+  const HELD = { now: { maxEntries: 2, license: 1, liftHours: 24, words: "2 entries a day at most · your own real entries held to your license, up to level 1 (Learner) — loosened only 24 h after it is signed" }, entriesToday: 0 };
+
+  it("said in words; kept as it is when the sheet signs the other limits — it is changed on Practice — and said to go with them when they are all taken away", async () => {
+    const p = page();
+    expect(p.run<string>("dbSelfWords({ maxEntries: 2, license: 1, liftHours: 24 })")).toBe("2 entries a day at most · your own real entries held to your license, up to level 1 — loosened only 24 h after it is signed");
+    p.run("globalThis.FormData = class { constructor(f) { this.f = f; } entries() { return Object.entries(this.f); } }");
+    p.set("X", HELD);
+    p.run("DB.read = { self: X }; QD = null; quoteDialog = (o) => { QD = o; }");
+    p.run("dbSelfForm()");
+    expect(p.run<string>("QD.fields")).toContain("Your license stays as it is — your own real entries held to it, up to level 1: it is changed on Practice.");
+    const draft = p.run<{ value: string }>('QD.draft({ dayLossUsd: "", losses: "", coolMin: "", maxEntries: "3", liftHours: "24" })');
+    expect(JSON.parse(draft.value)).toEqual({ maxEntries: 3, license: 1, liftHours: 24 });
+    // the other limits cleared: the license alone still limits, so it is signed as it is
+    expect(JSON.parse(p.run<{ value: string }>('QD.draft({ dayLossUsd: "", losses: "", coolMin: "", maxEntries: "", liftHours: "24" })').value)).toEqual({ license: 1, liftHours: 24 });
+    p.run("LS_ASKED = []; LS_SENT = []; confirmSheet = async (m) => { LS_ASKED.push(m); return true; }; own = async (d) => { LS_SENT.push(d); return { status: 200, body: { ok: true } }; }");
+    await p.run<Promise<void>>('dbLessonAct("self-off", {})');
+    expect(p.run("LS_ASKED")).toEqual(["Your own limits stop holding 24 h from now, as you set them to: until then they hold as they are. Your license goes with them: your own real orders are then held by the server's cap alone."]);
+    expect(p.run("LS_SENT")).toEqual([{ type: "setPolicy", change: "self", value: "" }]);
+  });
+});

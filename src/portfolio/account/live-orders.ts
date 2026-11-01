@@ -151,10 +151,13 @@ export interface AutonomyHook {
 
 /** THE OWNER'S PLAN AND OWN LIMITS (account/plans.ts): the plan the owner signed for their next entry, read (`keep`) or taken for the order
  * it goes on, and what holds a new entry of theirs back at a paper account — asked only of the owner's order at a paper account that opens
- * or adds to a position (opens), never of a close. Their words go back to the owner as the refusal's (E_ACCOUNT_LIMIT) */
+ * or adds to a position (opens), never of a close. And THE LICENSE (account/license.ts), where their own limits hold their real entries to
+ * it: what holds one back, worth `usd` — asked only of the owner's order at a real venue that opens or adds to a position (adds), never of a
+ * close. Their words go back to the owner as the refusal's (E_ACCOUNT_LIMIT) */
 export interface PlanHook {
   takePlan?(venue: string, symbol: string, side: string, keep?: boolean): TradePlan | undefined;
   selfBlock?(o: { planned?: boolean | undefined; venue?: string | undefined }): { why: string; until?: string | undefined } | undefined;
+  licenseBlock?(usd: number): { why: string; level: number; capUsd: number } | undefined;
 }
 
 /** what this door uses of the engine, besides what the money door uses */
@@ -577,6 +580,8 @@ export class LiveOrders {
       const held = this.e.host.selfBlock?.({ venue: p.v.id });
       if (held) return no("E_ACCOUNT_LIMIT", { venue: p.v.id, message: held.why, detail: { self: true, ...(held.until ? { until: held.until } : {}) } });
     }
+    const licensed = await this.licensed(p);
+    if (licensed) return licensed;
     // a buy signs the most it may cost; a sell signs what it is worth now, and a market sell may then fetch at most 2% less
     const worth = (p.side === "buy" ? cents(p.maxUsd) : Math.floor(p.notional * 100 + 1e-6) / 100).toFixed(2);
     const { refuses, note: _also, ...est } = await this.estimateOf(p);
@@ -626,6 +631,9 @@ export class LiveOrders {
     if (this.money()!.realNow() > a.deadline) return no("E_ACCOUNT_EXPIRED", { message: "this order was good for ten minutes after it was prepared: prepare it again" });
     const p = this.hold(planned, a.symbol, Number(a.maxNotional), "signed for");
     if (isRefusal(p)) return p;
+    // the license, judged again: the record may have changed since the order was prepared
+    const licensed = await this.licensed(p);
+    if (licensed) return licensed;
     // THE OWNER'S OWN LIMITS (account/plans.ts): a new entry at a paper account — never a close — is held to them, a plan kept for it read
     // first and taken only once the entry goes, so a refused entry leaves its plan for the next try
     const entry = await this.opens(p);
@@ -638,11 +646,26 @@ export class LiveOrders {
     return this.place(p, { signer: who.signer, authority: "owner", action: who.hash, envelope: who.envelope, ...(plan ? { plan } : {}), ...(entry ? { entry: true } : {}) });
   }
 
-  /** An order of the owner's at a PAPER account that opens a position or adds to one — where the owner's own limits hold (account/plans.ts).
-   * Not one that only closes or cuts: reduce-only; a sell where selling only sells what is held (a coin, a share, a contract of an event);
-   * a perpetual's order against the position it holds, no bigger than it. A position the venue does not answer for is taken as none */
+  /** An order of the owner's at a PAPER account that opens a position or adds to one — where the owner's own limits hold (account/plans.ts) */
   private async opens(p: Plan): Promise<boolean> {
-    if (p.v.paper !== true || p.reduceOnly) return false;
+    return p.v.paper === true && (await this.adds(p));
+  }
+
+  /** THE LICENSE (account/license.ts): the owner's order at a REAL venue — never at a paper account — that opens a position or adds to one,
+   * worth more than their license lets it be where their own limits hold them to it. The cap is judged first: a position is read only for
+   * an order over it */
+  private async licensed(p: Plan): Promise<Refusal | undefined> {
+    if (p.v.paper === true) return undefined;
+    const held = this.e.host.licenseBlock?.(p.maxUsd);
+    if (!held || !(await this.adds(p))) return undefined;
+    return no("E_ACCOUNT_LIMIT", { venue: p.v.id, message: held.why, detail: { self: true, license: held.level, capUsd: held.capUsd, orderUsd: Number(p.maxUsd.toFixed(2)) } });
+  }
+
+  /** An order that opens a position or adds to one. Not one that only closes or cuts: reduce-only; a sell where selling only sells what is
+   * held (a coin, a share, a contract of an event); a perpetual's order against the position it holds, no bigger than it. A position the
+   * venue does not answer for is taken as none */
+  private async adds(p: Plan): Promise<boolean> {
+    if (p.reduceOnly) return false;
     if (p.side === "sell" && (p.m.sellsReduce === true || (p.m.kind !== "perp" && p.m.kind !== "future"))) return false;
     if (p.m.kind !== "perp" && p.m.kind !== "future") return true;
     const read = p.v.trader.positions;
@@ -1181,6 +1204,9 @@ export class LiveOrders {
     const r = await this.amendPlan(o, a);
     if (isRefusal(r)) return r;
     const p = r.p;
+    // the license, where the change makes an order of the owner's own worth more (account/license.ts)
+    const licensed = o.authority === "owner" && p.maxUsd > o.usd + 1e-9 ? await this.licensed(p) : undefined;
+    if (licensed) return licensed;
     const worth = (p.side === "buy" ? cents(p.maxUsd) : Math.floor(p.notional * 100 + 1e-6) / 100).toFixed(2);
     return { action: { type: "liveAmend", ...a, maxNotional: worth, deadline: this.money()!.realNow() + TTL_MS }, quote: { words: `${o.id}: ${this.words(p)}`, name: p.m.name, kind: p.m.kind, base: p.m.base, quote: p.m.quote, price: p.price, notionalUsd: Number(p.notional.toFixed(2)), maxUsd: Number(worth), ...(p.worstPrice !== undefined ? { worstPrice: p.worstPrice } : {}), capUsd: this.money()!.writes().capUsd, ...(p.v.paper ? { paper: true as const } : {}) } };
   }
@@ -1197,6 +1223,8 @@ export class LiveOrders {
       if (this.money()!.realNow() > signed.deadline) return no("E_ACCOUNT_EXPIRED", { message: "this change was good for ten minutes after it was prepared: prepare it again" });
       const held = this.hold(r.p, o.symbol, Number(signed.maxNotional), "signed for");
       if (isRefusal(held)) return held;
+      const licensed = o.authority === "owner" && held.maxUsd > o.usd + 1e-9 ? await this.licensed(held) : undefined;
+      if (licensed) return licensed;
       // an agent's order the owner grows still counts on the agent's limit: the growth has to fit that limit, as the agent's own change
       // would have to — the owner's signature changes the order, not the limit (a bigger limit is its own signature, under Agents)
       const onto = o.approval ? this.e.state.spends.find((s) => s.id === o.approval) : undefined;

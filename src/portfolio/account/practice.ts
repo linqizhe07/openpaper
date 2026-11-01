@@ -26,7 +26,7 @@
  * THE BELL. At the session's end its open orders are canceled and its positions closed at the last price, by the venue; then the score:
  *   you       the session's trades as the journal keeps them: the net, the trades, the wins, the result in R and the stops kept
  *   chance    1,000 random entries with your trades' count, sides and holding times, on the same minutes (backtest/screen.ts baselineOf):
- *             where yours rank among them
+ *             where yours rank among them — the tries themselves kept for the license (<home>/practice/tries/<id>.json, account/license.ts)
  *   holding   the market bought at the session's first ask and sold at its last bid, the fee paid both ways
  *   the desk  the account's desk (the momentum script for a brain: backtest/desk.ts) over the same bars, folded to five minutes, with the
  *             same money
@@ -268,7 +268,8 @@ export interface PracticeYou {
 }
 export interface PracticeScore {
   you: PracticeYou;
-  chance?: Pick<Baseline, "trades" | "monkeys" | "ownPct" | "medianPct" | "lowPct" | "highPct" | "rank" | "p" | "verdict" | "words"> | undefined;
+  /** `kept`: the hash of the session's tries as its bell kept them for the license (KeptTries) */
+  chance?: (Pick<Baseline, "trades" | "monkeys" | "ownPct" | "medianPct" | "lowPct" | "highPct" | "rank" | "p" | "verdict" | "words"> & { kept?: string | undefined }) | undefined;
   hold: { netUsd: number; netPct: number };
   /** `open`: the desk ended its run holding a position, marked at the last price (a run does not close what it holds at its end) */
   desk?: { netUsd: number; netPct: number; trades: number; fills: number; open?: boolean | undefined } | { error: string } | undefined;
@@ -276,8 +277,8 @@ export interface PracticeScore {
   reveal: { day: string; coin: string; scale: number; window: PracticeWindow };
 }
 
-/** a trade's risk in dollars as its plan says it — its 1R, else its stop's distance on what it held */
-function riskOf(t: Pick<JournalRow, "plan" | "entryPrice" | "qty">): number | undefined {
+/** a trade's risk in dollars as its plan says it — its 1R, else its stop's distance on what it held (the license reads it too) */
+export function riskOf(t: Pick<JournalRow, "plan" | "entryPrice" | "qty">): number | undefined {
   const p = t.plan;
   if (!p) return undefined;
   if (p.riskUsd !== undefined && p.riskUsd > 0) return p.riskUsd;
@@ -326,14 +327,25 @@ export function holdOf(m: BacktestMarket, from: number, to: number, cashUsd: num
   return { netUsd: round((cashUsd * pct) / 100, 2), netPct: round(pct, 4) };
 }
 
+function baselineAt(m: BacktestMarket, from: number, to: number, trips: ReadonlyArray<ClosedTrip>, seed: string, costs: Pick<BacktestCosts, "halfSpreadBps">, feeBps: number, keep: boolean): Baseline | undefined {
+  const tapes = [tapeOf(m, from, to)];
+  return baselineOf({ tapes, trades: tradesOf(trips, tapes), costs: screenCosts(feeBps, costs.halfSpreadBps), seed, keep });
+}
+const chancePart = (b: Baseline): NonNullable<PracticeScore["chance"]> => ({ trades: b.trades, monkeys: b.monkeys, ownPct: b.ownPct, medianPct: b.medianPct, lowPct: b.lowPct, highPct: b.highPct, rank: b.rank, p: b.p, verdict: b.verdict, words: b.words });
+
 /** CHANCE: random entries beside yours — as many trades, on the same sides, each held as long as yours was, on the session's minutes
  * (backtest/screen.ts). None where you made no trade */
 export function chanceOf(m: BacktestMarket, from: number, to: number, trips: ReadonlyArray<ClosedTrip>, seed: string, costs: Pick<BacktestCosts, "halfSpreadBps"> = PRACTICE_COSTS, feeBps = PAPER_FEE_BPS): PracticeScore["chance"] {
-  const tapes = [tapeOf(m, from, to)];
-  const trades = tradesOf(trips, tapes);
-  const b = baselineOf({ tapes, trades, costs: screenCosts(feeBps, costs.halfSpreadBps), seed });
+  const b = baselineAt(m, from, to, trips, seed, costs, feeBps, false);
+  return b ? chancePart(b) : undefined;
+}
+
+/** CHANCE AT THE BELL, and its tries kept for the license: the session's id is the seed, and the score's chance carries the tries' hash */
+export function chanceKept(m: BacktestMarket, from: number, to: number, trips: ReadonlyArray<ClosedTrip>, id: string, costs: Pick<BacktestCosts, "halfSpreadBps"> = PRACTICE_COSTS, feeBps = PAPER_FEE_BPS): { chance: NonNullable<PracticeScore["chance"]>; tries: KeptTries } | undefined {
+  const b = baselineAt(m, from, to, trips, id, costs, feeBps, true);
   if (!b) return undefined;
-  return { trades: b.trades, monkeys: b.monkeys, ownPct: b.ownPct, medianPct: b.medianPct, lowPct: b.lowPct, highPct: b.highPct, rank: b.rank, p: b.p, verdict: b.verdict, words: b.words };
+  const tries: KeptTries = { v: 1, id, trades: b.trades, ownPct: b.ownPct, means: b.means ?? [] };
+  return { chance: { ...chancePart(b), kept: triesHash(tries) }, tries };
 }
 
 const money = (n: number): string => `${n < 0 ? "−" : "+"}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -358,6 +370,9 @@ export const practiceLedgerPath = (home: string): string => join(practiceDir(hom
 export const practiceSessionPath = (home: string): string => join(practiceDir(home), "session.json");
 /** the session's market, as it is traded: rebased, on the practice calendar */
 export const practiceBarsPath = (home: string): string => join(practiceDir(home), "bars.json");
+/** a session's id as practiceId makes it: the only names a session's kept tries are read or written under */
+const SESSION_ID = /^s\d{1,6}-[0-9a-f]{8}$/;
+export const practiceTriesPath = (home: string, id: string): string => join(practiceDir(home), "tries", `${id}.json`);
 
 /** a row of the practice record: a session started (its day spent), or ended with its score */
 export type PracticeEntry =
@@ -428,6 +443,34 @@ export function readSession(home: string): PracticeSession | undefined {
     return undefined;
   }
 }
+/** A SESSION'S RANDOM ENTRIES, kept at its bell for the license (account/license.ts, which pools many sessions' tries into random records
+ * of all their trades): how many of the session's trades they were drawn beside, what those trades made screened as the tries were, and
+ * each try's net a trade — percent, in the order drawn. The session's row in the practice record carries the hash of it (`chance.kept`): a
+ * file that is not what the row says is not read */
+export interface KeptTries {
+  v: 1;
+  id: string;
+  trades: number;
+  ownPct: number;
+  means: number[];
+}
+export const triesHash = (t: KeptTries): string => sha256(canonical(t));
+export function writeTries(home: string, t: KeptTries): void {
+  if (!SESSION_ID.test(t.id)) throw new Error(`not a session's id: ${t.id}`);
+  writeWhole(practiceTriesPath(home, t.id), `${JSON.stringify(t)}\n`);
+}
+/** a session's kept tries, where the file is there and is what the row's hash says */
+export function readTries(home: string, id: string, kept: string): KeptTries | "missing" | "changed" {
+  if (!SESSION_ID.test(id)) return "missing";
+  let t: KeptTries;
+  try {
+    t = JSON.parse(readFileSync(practiceTriesPath(home, id), "utf8")) as KeptTries;
+  } catch {
+    return "missing";
+  }
+  return t && t.v === 1 && t.id === id && Array.isArray(t.means) && triesHash(t) === kept ? t : "changed";
+}
+
 export function writeBars(home: string, m: BacktestMarket): void {
   writeWhole(practiceBarsPath(home), `${JSON.stringify(m)}\n`);
 }

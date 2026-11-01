@@ -267,24 +267,26 @@ function dbSelfHtml(x) {
 
 /* the limits in words, as the account says them (account/plans.ts selfWords) */
 function dbSelfWords(l) {
-  const parts = [l.dayLossUsd !== undefined ? `no new entry after a day's loss of ${money(l.dayLossUsd)}` : "", l.streak ? `${l.streak.coolMin} minutes' pause after ${l.streak.losses} losses in a row` : "", l.maxEntries !== undefined ? `${plural(l.maxEntries, "entry", "entries")} a day at most` : "", l.planFirst ? "a plan before every entry" : ""].filter(Boolean);
+  const parts = [l.dayLossUsd !== undefined ? `no new entry after a day's loss of ${money(l.dayLossUsd)}` : "", l.streak ? `${l.streak.coolMin} minutes' pause after ${l.streak.losses} losses in a row` : "", l.maxEntries !== undefined ? `${plural(l.maxEntries, "entry", "entries")} a day at most` : "", l.planFirst ? "a plan before every entry" : "", l.license !== undefined ? `your own real entries held to your license, up to level ${l.license}` : ""].filter(Boolean);
   return `${parts.join(" · ")} — ${l.liftHours === 0 ? "loosened as soon as it is signed" : `loosened only ${l.liftHours} h after it is signed`}`;
 }
 
-/* the sheet that sets them: each limit or none, the hours a loosening waits — prepared, shown and signed in one sheet */
+/* the sheet that sets them: each limit or none, the hours a loosening waits — prepared, shown and signed in one sheet. The license is kept
+   as it is: it is held, stepped up and let go of on Practice (ui/practice.js), where the record it reads is */
 function dbSelfForm() {
   const x = (DB.read && DB.read.self) || {};
   const n = x.now || {};
+  const lic = n.license !== undefined ? { license: n.license } : {};
   const num = (name, label, attrs, v) => field(label, `<input name="${name}" type="number" inputmode="decimal" ${attrs}${v !== undefined ? ` value="${esc(v)}"` : ""}>`);
   quoteDialog({
     title: "Your own limits",
     sub: "What holds your paper trading when you are not calm, signed now while you are. They stop new entries only — a close always goes. Tightening holds at once; loosening, or taking them away, waits the hours you set here.",
-    fields: `${num("dayLossUsd", "No new entry after a day's loss of ($)", 'min="1" step="any" placeholder="none"', n.dayLossUsd)}<div class="row2">${num("losses", "After this many losses in a row", 'min="2" max="20" step="1" placeholder="none"', n.streak && n.streak.losses)}${num("coolMin", "pause (minutes)", 'min="5" max="1440" step="5" placeholder="30"', n.streak && n.streak.coolMin)}</div>${num("maxEntries", "Entries a day, at most", 'min="1" max="200" step="1" placeholder="none"', n.maxEntries)}<label class="chk1"><input type="checkbox" name="planFirst"${n.planFirst ? " checked" : ""}> A plan before every entry</label>${num("liftHours", "A loosening waits (hours)", 'min="0" max="168" step="1"', n.liftHours !== undefined ? n.liftHours : 24)}`,
+    fields: `${num("dayLossUsd", "No new entry after a day's loss of ($)", 'min="1" step="any" placeholder="none"', n.dayLossUsd)}<div class="row2">${num("losses", "After this many losses in a row", 'min="2" max="20" step="1" placeholder="none"', n.streak && n.streak.losses)}${num("coolMin", "pause (minutes)", 'min="5" max="1440" step="5" placeholder="30"', n.streak && n.streak.coolMin)}</div>${num("maxEntries", "Entries a day, at most", 'min="1" max="200" step="1" placeholder="none"', n.maxEntries)}<label class="chk1"><input type="checkbox" name="planFirst"${n.planFirst ? " checked" : ""}> A plan before every entry</label>${num("liftHours", "A loosening waits (hours)", 'min="0" max="168" step="1"', n.liftHours !== undefined ? n.liftHours : 24)}${n.license !== undefined ? `<p class="dim small">Your license stays as it is — your own real entries held to it, up to level ${esc(n.license)}: it is changed on Practice.</p>` : ""}`,
     go: "Sign your limits",
     draft(form) {
       const f = formFields(form);
       const v = (k) => (String(f[k] ?? "").trim() === "" ? undefined : Number(f[k]));
-      const limits = { ...(v("dayLossUsd") !== undefined ? { dayLossUsd: v("dayLossUsd") } : {}), ...(v("losses") !== undefined ? { streak: { losses: v("losses"), coolMin: v("coolMin") !== undefined ? v("coolMin") : 30 } } : {}), ...(v("maxEntries") !== undefined ? { maxEntries: v("maxEntries") } : {}), ...(f.planFirst ? { planFirst: true } : {}), liftHours: v("liftHours") !== undefined ? v("liftHours") : 24 };
+      const limits = { ...(v("dayLossUsd") !== undefined ? { dayLossUsd: v("dayLossUsd") } : {}), ...(v("losses") !== undefined ? { streak: { losses: v("losses"), coolMin: v("coolMin") !== undefined ? v("coolMin") : 30 } } : {}), ...(v("maxEntries") !== undefined ? { maxEntries: v("maxEntries") } : {}), ...(f.planFirst ? { planFirst: true } : {}), ...lic, liftHours: v("liftHours") !== undefined ? v("liftHours") : 24 };
       if (Object.keys(limits).length < 2) return x.now ? "Set one limit at least — to take them all away, use Take them away… instead." : "Set one limit at least.";
       return { type: "setPolicy", change: "self", value: JSON.stringify(limits) };
     },
@@ -465,7 +467,8 @@ async function dbLessonAct(act, d) {
   if (act === "self") return void dbSelfForm();
   if (act === "self-off") {
     const lift = r.self && r.self.now ? r.self.now.liftHours : 0;
-    if (!(await confirmSheet(lift ? `Your own limits stop holding ${lift} h from now, as you set them to: until then they hold as they are.` : "Your own limits stop holding at once.", { title: "Take your own limits away", yes: "Sign", danger: true }))) return;
+    const lic = r.self && r.self.now && r.self.now.license !== undefined ? " Your license goes with them: your own real orders are then held by the server's cap alone." : "";
+    if (!(await confirmSheet(`${lift ? `Your own limits stop holding ${lift} h from now, as you set them to: until then they hold as they are.` : "Your own limits stop holding at once."}${lic}`, { title: "Take your own limits away", yes: "Sign", danger: true }))) return;
     return void own({ type: "setPolicy", change: "self", value: "" }, () => {
       forget("/api/account/debrief");
       return dbRead();

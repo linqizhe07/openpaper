@@ -42,9 +42,9 @@ describe("your own limits, read (parseSelfLimits)", () => {
   });
 
   it("says why they are not: not JSON, a field they do not take, none of them named, a number out of its bounds or not whole, a streak without both its numbers", () => {
-    expect(parseSelfLimits("3 a day")).toBe("your own limits are JSON: {dayLossUsd, streak, maxEntries, planFirst, liftHours}, or nothing to take them all away");
-    expect(parseSelfLimits("[]")).toBe("your own limits are {dayLossUsd, streak, maxEntries, planFirst, liftHours}");
-    expect(parseSelfLimits(JSON.stringify({ maxLoss: 10 }))).toBe('your own limits are dayLossUsd, streak, maxEntries, planFirst, liftHours: "maxLoss" is not one of them');
+    expect(parseSelfLimits("3 a day")).toBe("your own limits are JSON: {dayLossUsd, streak, maxEntries, planFirst, license, liftHours}, or nothing to take them all away");
+    expect(parseSelfLimits("[]")).toBe("your own limits are {dayLossUsd, streak, maxEntries, planFirst, license, liftHours}");
+    expect(parseSelfLimits(JSON.stringify({ maxLoss: 10 }))).toBe('your own limits are dayLossUsd, streak, maxEntries, planFirst, license, liftHours: "maxLoss" is not one of them');
     // a wait alone, or a plan not asked for, limits nothing
     for (const v of [{}, { liftHours: 12 }, { planFirst: false }]) expect(parseSelfLimits(JSON.stringify(v))).toMatch(/^your own limits name one at least/);
     expect(parseSelfLimits(JSON.stringify({ dayLossUsd: 0.5 }))).toBe("dayLossUsd is 1 to 10000000, not 0.5");

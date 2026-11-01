@@ -229,6 +229,9 @@ export interface Baseline {
   words: string;
   /** the tries' nets in twenty bins, for a picture: where the first starts and how wide each is, % */
   bins: { fromPct: number; widthPct: number; counts: number[] };
+  /** each try's net a trade, %, in the order drawn — only where asked (`keep`): the simulator keeps a session's for the license, which pools
+   * the tries of many sessions into random records of all their trades (account/license.ts) */
+  means?: number[] | undefined;
 }
 /** the tries a baseline takes, and the most trades it judges in all (tries × trades): past it, fewer tries */
 export const BASELINE_MONKEYS = 1_000;
@@ -237,7 +240,7 @@ const BINS = 20;
 
 /** THE BASELINE (see the top of this file): the run's own entries — `trades`, on `tapes` cut to the run's window — beside `monkeys` tries of
  * random ones, drawn from `seed`. None without trades */
-export function baselineOf(o: { tapes: readonly Tape[]; trades: readonly ScreenedTrade[]; costs: ScreenCosts; seed: string; monkeys?: number | undefined }): Baseline | undefined {
+export function baselineOf(o: { tapes: readonly Tape[]; trades: readonly ScreenedTrade[]; costs: ScreenCosts; seed: string; monkeys?: number | undefined; keep?: boolean | undefined }): Baseline | undefined {
   const n = o.trades.length;
   if (!n) return undefined;
   const tries = Math.max(1, Math.min(o.monkeys ?? BASELINE_MONKEYS, Math.floor(BASELINE_WORK_MOST / n)));
@@ -303,6 +306,7 @@ export function baselineOf(o: { tapes: readonly Tape[]; trades: readonly Screene
     verdict,
     words: head + said + check,
     bins: { fromPct: round(lo * 100, 6), widthPct: round(width * 100, 6), counts },
+    ...(o.keep ? { means: Array.from(means, (x) => round(x * 100, 6)) } : {}),
   };
 }
 
