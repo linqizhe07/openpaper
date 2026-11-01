@@ -173,7 +173,7 @@
  *                                                        closed, oldest first — each its entry and exit, net, fees, funding, MAE and MFE,
  *                                                        how it ended, who opened and closed it, the desk's lead where one placed it —
  *                                                        with how many there are and whether the chain is intact (or where it broke)
- *   GET  /api/account/debrief?venue=&who=&days=          THE DEBRIEF of those trades (account/debrief.ts): net, costs and gross per trade
+ *   GET  /api/account/debrief?venue=&who=&days=&practice= THE DEBRIEF of those trades (account/debrief.ts): net, costs and gross per trade
  *                                                        with their ranges, the win rate the wins' and losses' sizes need, the plan's,
  *                                                        whether the losses could be turned round, MAE and MFE, R, how trades ended,
  *                                                        slices, the desk's calibration, the curve, the findings in words — of one venue,
@@ -182,8 +182,16 @@
  *                                                        And the desk's lessons (account/lessons.ts): the candidates its trades among
  *                                                        these put forward, every lesson it keeps with what each rule would have done to
  *                                                        them, and whether a desk is hired — the owner adopts one with a signed setDesk
- *                                                        change "lesson"
- *   GET  /api/account/book?venue=&symbol=&depth=20        one market's order book, best first (a market whose source has no book: its best
+ *                                                        change "lesson". practice=1: the simulator's trades alone, which are otherwise
+ *                                                        left out
+ *   GET  /api/account/practice?since=                    THE SIMULATOR (account/practice.ts): the session on — its practice clock, its
+ *                                                        minute bars closed by it (after `since`), the quote now, its score and the day,
+ *                                                        the coin and the factor once it has ended — the sessions ended, the days left
+ *                                                        to practise on and to sit as exams. A session is started or ended by the owner's
+ *                                                        signed setPractice
+ *   POST /api/account/practice/clock {run, speed}        the session's clock started, stopped or set to 10, 20, 30 or 50 times the
+ *                                                        account's own: unsigned, since it moves no money and spends no day
+ *   GET  /api/account/book?venue=&symbol=&depth=20       one market's order book, best first (a market whose source has no book: its best
  *                                                        bid and ask only, depth "top"); kept a second and a half
  *   GET  /api/account/trades?venue=&symbol=&limit=30      one market's latest trades, newest first; kept three seconds (a source that
  *                                                        publishes no trades at all: an empty list and `none`, the sentence saying so, 200)
@@ -939,11 +947,28 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
   }));
   app.get("/api/account/debrief", wrap(async (req, res) => {
     if (!mounted(res)) return;
-    const q = strings(req, res, { venue: 80, who: 10, days: 3 });
+    const q = strings(req, res, { venue: 80, who: 10, days: 3, practice: 1 });
     if (!q) return;
     if (q.who !== "" && q.who !== "you" && q.who !== "desk" && q.who !== "agents") return void bad(res, "who is you, desk or agents (or nothing: everyone)");
     if (q.days !== "" && q.days !== "7" && q.days !== "30" && q.days !== "90") return void bad(res, "days is 7, 30 or 90 (or nothing: every trade)");
-    answerOf(res, svc.debrief({ ...(q.venue ? { venue: q.venue } : {}), ...(q.who ? { who: q.who as "you" | "desk" | "agents" } : {}), ...(q.days ? { days: Number(q.days) } : {}) }));
+    if (q.practice !== "" && q.practice !== "1") return void bad(res, "practice is 1 (the simulator's trades) or nothing (the paper accounts')");
+    answerOf(res, svc.debrief({ ...(q.venue ? { venue: q.venue } : {}), ...(q.who ? { who: q.who as "you" | "desk" | "agents" } : {}), ...(q.days ? { days: Number(q.days) } : {}), ...(q.practice ? { practice: true } : {}) }));
+  }));
+  app.get("/api/account/practice", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { since: 16 });
+    if (!q) return;
+    const since = q.since === "" ? undefined : Number(q.since);
+    if (since !== undefined && !Number.isFinite(since)) return void bad(res, "since is the start of the last bar the page has, in ms");
+    answerOf(res, await svc.practice({ ...(since !== undefined ? { since } : {}) }));
+  }));
+  app.post("/api/account/practice/clock", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const body = req.body as { run?: unknown; speed?: unknown } | undefined;
+    if (!body || typeof body !== "object" || Array.isArray(body) || (body.run === undefined && body.speed === undefined)) return void bad(res, "need {run: true | false} or {speed}, or both");
+    if (body.run !== undefined && typeof body.run !== "boolean") return void bad(res, "run is true (the clock goes) or false (it stops)");
+    if (body.speed !== undefined && typeof body.speed !== "number") return void bad(res, "speed is a number: 10, 20, 30 or 50");
+    answerOf(res, svc.practiceClock({ ...(typeof body.run === "boolean" ? { run: body.run } : {}), ...(typeof body.speed === "number" ? { speed: body.speed } : {}) }));
   }));
   app.get("/api/account/backtest", wrap(async (req, res) => {
     if (!mounted(res)) return;

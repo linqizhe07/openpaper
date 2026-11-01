@@ -1,0 +1,44 @@
+/* PRACTICE (ui/practice.js): the simulator's session, its chart, its score at the bell. Colours, radii and type only from ui/tokens.css,
+   Light and Black alike; the cards, tables, toggles and buttons are the shell's own (ui/shell.css). Up and down are said in words and
+   signs as well (chg), never by colour alone */
+.pr { display: flex; flex-direction: column; gap: 20px; min-width: 0; container-type: inline-size; }
+.pr-body { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.pr-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.pr-top p { margin: 6px 0 0; max-width: 72ch; }
+
+/* the clock: the practice time, how much is played, the controls */
+.pr-clock { display: grid; grid-template-columns: minmax(0, auto) minmax(120px, 1fr) auto; gap: 16px; align-items: center; margin: 4px 0 16px; }
+.pr-time { display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+.pr-num { font-family: var(--font-num); font-size: 22px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.pr-bar { height: 8px; border-radius: var(--radius-pill); background: var(--surface-2); overflow: hidden; }
+.pr-bar span { display: block; height: 100%; background: var(--accent); border-radius: var(--radius-pill); }
+.pr-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+@container (max-width: 760px) { .pr-clock { grid-template-columns: minmax(0, 1fr); } .pr-ctl { justify-content: flex-start; } }
+
+/* the chart beside the quote and the position, stacked on a narrow pane */
+.pr-main { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(220px, 1fr); gap: 20px; min-width: 0; }
+@container (max-width: 860px) { .pr-main { grid-template-columns: minmax(0, 1fr); } }
+.pr-chart { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.pr-svg { width: 100%; height: 260px; display: block; }
+.pr-svg line { stroke-width: 1; vector-effect: non-scaling-stroke; }
+.pr-svg .up line, .pr-svg .up rect { stroke: var(--up); fill: var(--up); }
+.pr-svg .down line, .pr-svg .down rect { stroke: var(--down); fill: var(--down); }
+.pr-svg .day { stroke: var(--line); stroke-dasharray: 3 3; }
+.pr-svg text { fill: var(--dim); font-size: 11px; }
+.pr-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.pr-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pr-quote { font-variant-numeric: tabular-nums; }
+.pr-quote .dim { display: block; margin-top: 2px; }
+.pr-pos p, .pr-orders ul { margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+.pr-orders ul { padding-left: 18px; font-size: 13px; }
+.pr-acts { margin-top: 0; }
+.pr-trades { margin-top: 16px; }
+.pr-trades summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--dim); padding: 6px 0; }
+
+/* the bell */
+.pr-reveal { font-size: 15px; margin: 4px 0 12px; }
+.pr-figs th[scope="row"] { font-weight: 600; color: var(--dim); font-size: 13px; text-align: left; white-space: nowrap; }
+.pr-figs td { white-space: normal; }
+.pr-words { margin: 12px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.5; }
+.pr-coins { border: 0; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.pr-coins legend { font-size: 13px; font-weight: 600; color: var(--dim); margin-bottom: 6px; }

@@ -77,6 +77,10 @@ import { signAgent, type Action, type AgentAction, type Envelope, type Hex, type
 import type { TradeLead } from "./journal.ts";
 import { fundingPctDay, holdPlan, judge, LESSON_TEXT, LESSONS_ADOPTED_MOST, makeRoom, noChange, parseRoles, parseRule, RULE_GUIDE, ruleWords, sameLesson, type Lesson, type LessonFrom, type LessonRule, type PlanRule } from "./lessons.ts";
 import type { AgentKey } from "./state.ts";
+import { PRACTICE_VENUE } from "./practice.ts";
+
+/** the desk hired at, or moved to, the practice account: refused — the simulator is the owner's own (account/practice.ts) */
+const PRACTICE_NOT_THE_DESKS = "the practice account is the owner's own simulator: the desk trades at another paper account";
 
 // ---- the roles -------------------------------------------------------------------------------------------------------------------
 
@@ -1701,6 +1705,7 @@ export class Desk {
     const page = await this.world.page();
     const venue = page?.venues.find((x) => x.id === asked.venue);
     if (!venue || !venue.live) return bad(`"${asked.venue}" is not a venue connected on the account`);
+    if (venue.id === PRACTICE_VENUE) return bad(PRACTICE_NOT_THE_DESKS);
     if (!venue.trade || venue.trade.can === false) return bad(`${venue.name} does not trade from here: the desk trades one venue that does (a paper account, or an exchange whose key may trade)`);
     if (said === true && venue.paper !== true) return bad(`${venue.name} is real money: the desk places orders without cards only at a paper account. Hire it at one, or hire it without the autonomy`);
     // the venue's name as its row says it now, kept for when the row is gone (venueLabel)
@@ -1807,6 +1812,7 @@ export class Desk {
       const page = await this.world.page();
       const venue = page?.venues.find((x) => x.id === o.venue);
       if (!venue || !venue.live) return bad(`"${o.venue}" is not a venue connected on the account`);
+      if (venue.id === PRACTICE_VENUE) return bad(PRACTICE_NOT_THE_DESKS);
       if (this.file.leads.some((l) => l.state === "executed" || l.state === "confirmed" || l.state === "closing")) return bad("the desk has open leads at its venue: close them, or end the session, before it moves venue");
       // the autonomy the owner signed is for paper money: with it on, the desk moves only to another paper account
       if (this.file.autonomy?.paper === true && venue.paper !== true) return bad(`the desk trades on its own on paper (autonomy): ${venue.name} is real money, so it does not move there with autonomy on. Turn it off first (autonomy {"paper": false}), and its orders there wait on cards`);

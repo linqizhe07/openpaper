@@ -58,6 +58,8 @@ export interface JournalTrade extends ClosedTrip {
   lead?: TradeLead | undefined;
   /** the owner's plan for it, signed on the ticket with the order that opened it (account/plans.ts) */
   plan?: TradePlan | undefined;
+  /** a trade of the simulator's (account/practice.ts): its session, by id and number — its times on the practice calendar */
+  practice?: { session: string; n: number } | undefined;
 }
 export type JournalRow = JournalTrade & { v: 1; seq: number; ts: string; prev: string; hash: string };
 

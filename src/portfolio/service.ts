@@ -24,7 +24,9 @@
  *   decide(approvalId, …)       the human's answer to a card, as one more leg
  *   read / overview             never gated; one read across every account
  */
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createHash, randomInt } from "node:crypto";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Ledger, type LedgerRow } from "../agent/ledger.ts";
@@ -81,7 +83,7 @@ import { exchangeEarner, type EarnPosition, type EarnProduct, type LiveEarner } 
 import { exchangeEarnHook } from "./live/exchange-trade.ts";
 import type { LiveVenue } from "./account/live-moves.ts";
 import { CANDLE_INTERVALS, CANDLE_RANGES, DONE, floorTo, HISTORY_MOST, inDollars, INTERVAL_MS, type Candle, type CandleInterval, type CandlePage, type CandleRange, type CandleWindow, type FundingLine, type LiveTrader, type Market, type MarketKind, type MarketStats, type OrderBook, type Position, type PublicTrade } from "./live/trade.ts";
-import { historyKeep, INTERVAL_RANGE, keepMsOf, PAGE_MOST, pageOf, pageWeight, RANGE_BAR, rangeSince, sessionsSince, windowKey } from "./live/history.ts";
+import { foldBars, historyKeep, INTERVAL_RANGE, keepMsOf, PAGE_MOST, pageOf, pageWeight, RANGE_BAR, rangeSince, sessionsSince, windowKey } from "./live/history.ts";
 import { compareAcross, normalBase, type Comparison, type PlaceRule } from "./live/compare.ts";
 import { fold, paperFillLine, type StatementLine } from "./account/statement.ts";
 import { WalletProofs } from "./live/proof.ts";
@@ -110,10 +112,12 @@ import { BOOK_TOP, joinHubs, StreamHub, type HubTick, type HubVenue, type Market
 import { applyBrainKey, BrainKeyStage, envBlocksOf, envWinsOf, type BrainKeyDone } from "./account/brain-keys.ts";
 import { DETECT_BODY_WORDS, detectBrain, type Detected } from "./account/brain-detect.ts";
 import { brainProviders, presetBest, presetHost, testBrain } from "./account/brains.ts";
-import { marketText, realHistorySources, type HistorySources } from "./backtest/data.ts";
+import { loadHistory, marketText, realHistorySources, type HistorySources } from "./backtest/data.ts";
 import { labWalkForward, WALK_COMBOS_MOST, WALK_FOLDS, WALK_RUNS_MOST, walkAskOf, walkSummary } from "./backtest/walk.ts";
 import { askOf, DESK_INTERVALS, deskAskOf, holdoutStartMs, labCatalog, labEvaluate, labList, labRead, labRun, labScreen, outcomeSummary, readHoldout, readTrials, screenAskOf, screenSummary, setHoldout, WINDOW_DEFAULT_DAYS, type LabDeps, type TrialRow } from "./backtest/lab.ts";
-import { DESK_NAME, DESK_PARAMS, deskParamWords, DESK_WORDS } from "./backtest/desk-params.ts";
+import { DESK_NAME, DESK_PARAMS, deskParams, deskParamWords, DESK_WORDS } from "./backtest/desk-params.ts";
+import { historySource, type BacktestMarket } from "./backtest/source.ts";
+import { appendPractice, chanceOf, clockAt, clockMoved, holdOf, parsePracticeAsk, pickPractice, PRACTICE_CASH_DEFAULT, PRACTICE_COINS, PRACTICE_COINS_DEFAULT, PRACTICE_CONTEXT_DAYS, PRACTICE_COSTS, PRACTICE_DESK_MINUTES, PRACTICE_EPOCH, PRACTICE_SPEEDS, PRACTICE_VENUE, practiceDays, practiceId, practiceMarket, practiceUsed, readBars, readPractice, readSession, scoreWords, writeBars, writeSession, youOf, type PracticeAsk, type PracticeRow, type PracticeScore, type PracticeSession } from "./account/practice.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** the most work a backtest the service is asked for may take, in steps times markets: 200,000 is two years of hourly bars on ten markets
@@ -133,6 +137,35 @@ export const BACKTEST_DESK_STEPS = 4_500;
 const DESK_STEP_MS = 3;
 /** a setBacktest whose change is none of the three, in words */
 const LAB_CHANGES = (change: unknown): string => `a backtest's change is holdout (a day), evaluate (a training run's id) or desk (the desk's run, as JSON), not "${String(change).slice(0, 30)}"`;
+/** THE SIMULATOR (account/practice.ts): the days drawn for a session at most when the ones drawn are too thin, the sessions ended a read
+ * lists, and the most minute bars one read gives (two days of context and a whole day played: 4,320) */
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+const PRACTICE_DRAWS = 3;
+const PRACTICE_LISTED = 30;
+const PRACTICE_BARS_MOST = 5_000;
+/** an entry at the practice account without its plan, as the door refuses it */
+const PRACTICE_PLAN_FIRST = "In practice every entry carries its plan: say why, where it is wrong (the stop) and what it puts at risk in the ticket's Plan, then send it again";
+/** a setPractice whose change is neither, in words */
+const PRACTICE_CHANGES = (change: unknown): string => `a practice change is start (what is asked, as JSON) or end (the session's id), not "${String(change).slice(0, 30)}"`;
+
+/** THE SIMULATOR AS THE PAGE READS IT (GET /api/account/practice; service.ts practice) */
+export interface PracticeView {
+  connected: boolean;
+  venue: string;
+  session?: { id: string; n: number; window: "train" | "exam"; symbol: string; name: string; hours: number; cashUsd: number; from: string; to: string; now: string; running: boolean; speed: number; minute: number; minutes: number; startedAt: string; endedAt?: string | undefined; end?: "bell" | "owner" | undefined; score?: (PracticeScore & { words: string[] }) | undefined } | undefined;
+  bars?: Candle[] | undefined;
+  quote?: { price: number; bid: number; ask: number } | undefined;
+  /** the practice account now: its paper cash, the session market's position, the owner's open orders there, and the session's trades as
+   * the journal keeps them (each with its plan's R where it said its risk) */
+  account?: { cashUsd: number; position?: Position | undefined; orders: Array<Pick<LiveOrder, "id" | "side" | "type" | "qty" | "status" | "at" | "limitPrice" | "stopPrice">>; trades: Array<{ side: "long" | "short"; openedAt: string; closedAt: string; qty: number; entryPrice: number; exitPrice: number; netUsd: number; returnPct: number; end: string; closedBy: string; why?: string | undefined; setup?: string | undefined; stop?: number | undefined; r?: number | undefined }> } | undefined;
+  sessions: Array<{ id: string; n: number; window: "train" | "exam"; day: string; coin: string; hours: number; cashUsd: number; endedAt: string; end: "bell" | "owner"; score: PracticeScore & { words: string[] } }>;
+  record: { rows: number; intact: boolean; why?: string | undefined };
+  left?: { train: number; exam: number } | undefined;
+  holdout?: string | undefined;
+  asks: { coins: readonly string[]; coinsDefault: readonly string[]; speeds: readonly number[]; cashDefault: number; hoursMost: number };
+}
 export const FIXTURES = join(ROOT, "fixtures", "home", "portfolio");
 
 export interface Seeds {
@@ -201,6 +234,9 @@ export interface ServiceOptions {
    * keyless, over the service's own network; stand-ins in tests), the most steps a run the service is asked for may take, the most work a
    * walk-forward may, and the most steps the desk may when the owner signs for it */
   backtest?: { sources?: HistorySources | undefined; maxSteps?: number | undefined; maxWalkWork?: number | undefined; maxDeskSteps?: number | undefined } | undefined;
+  /** THE SIMULATOR (account/practice.ts): what draws its days and coins (0 ≤ x < 1; by default the system's randomness) and, in tests, the
+   * desk's run over a session's bars (by default backtest/desk.ts runDeskBacktest). Its bars are read from the lab's history sources */
+  practice?: { random?: (() => number) | undefined; desk?: ((ask: Parameters<typeof import("./backtest/desk.ts").runDeskBacktest>[0]) => Promise<BacktestRun | Refusal>) | undefined } | undefined;
 }
 
 /** one slice of an order (or any step an agent flies): where, what, and the agent's words for it */
@@ -403,6 +439,17 @@ export class PortfolioService {
   private ownPlansBefore = new Map<string, TradePlan>();
   /** the owner's closed paper trades as their own limits read them, kept until the journal changes (the page asks every few seconds) */
   private ownTradesKept: { size: number; mtimeMs: number; trades: OwnTrade[] } | undefined;
+  /** THE SIMULATOR (account/practice.ts): the session on, or the last — its market and the source the practice account prices at — kept in
+   * the home (practice/session.json, practice/bars.json) and brought back, its clock stopped, after a restart */
+  private practiceSession: PracticeSession | undefined;
+  private practiceMarket: BacktestMarket | undefined;
+  private practiceSource: PublicSource | undefined;
+  /** a session being started (its day read), its bell being rung, the desk run over its bars: one at a time each */
+  private practiceStarting = false;
+  private practiceRinging: Promise<void> | undefined;
+  private practiceDeskRun: Promise<void> | undefined;
+  /** the practice minute the session's file last kept its clock at */
+  private practiceSaved = Number.NaN;
   /** the venues of a restarted account are being connected again: what they hold is not on the account yet */
   private reconnecting = false;
   /** the code the first browser pairs with (absent: a server that asks for none): this run's own, and a new one once the last device has
@@ -683,6 +730,8 @@ export class PortfolioService {
       // the lab (backtest/lab.ts), as its owner runs it: the holdout moved, or a training run tried on the held-out data
       backtest: (action) => this.labAct(action),
       backtestWords: (action) => this.labWords(action),
+      practice: (action) => this.practiceAct(action),
+      practiceWords: (action) => this.practiceWordsOf(action),
       ...(real && this.opts.liveWrites
         ? {
             agentWalletAddress: (name: string) => {
@@ -1433,7 +1482,8 @@ export class PortfolioService {
     const asked = historyAsk(interval, ask);
     if (isRefusal(asked)) return asked;
     const { iv, range, before, limit } = asked;
-    const now = this.realNow();
+    // the practice account's markets are a past day's, on the practice calendar: their ranges are counted back from the practice clock
+    const now = id === PRACTICE_VENUE ? this.practiceNow() : this.realNow();
     const w: CandleWindow = before !== undefined ? { until: before, limit } : { since: rangeSince(range!, now), limit, range };
     // the window the answer is held to: a US stock's 1D and 5D are its latest sessions (the source counts them so), which may start earlier
     const held: CandleWindow = w.range !== undefined && w.since !== undefined ? { ...w, since: Math.min(w.since, sessionsSince(w.range, now)) } : w;
@@ -1964,18 +2014,20 @@ export class PortfolioService {
    * lesson already kept that says the same, if one is; the lessons the desk keeps, newest first, each rule with what it would have done to
    * these trades and its test on those entered after it was proposed while it was not in force; whether a desk is hired, which a lesson is
    * signed to; the desk's versions, newest first, which the Debrief's version slice names */
-  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean; candidates: Array<LessonCandidate & { words: string; kept?: { id: string; state: Lesson["state"] } | undefined }>; lessons: Array<Lesson & { words?: string | undefined; effect?: LessonEffect | undefined; test?: LessonTest | undefined }>; deskTrades: number; desk: boolean; versions: DeskVersion[]; self: ReturnType<PortfolioService["selfView"]> } | Refusal {
+  debrief(o: { venue?: string | undefined; who?: "you" | "desk" | "agents" | undefined; days?: number | undefined; latest?: number | undefined; practice?: boolean | undefined }): { debrief: Debrief; venues: Array<{ id: string; name: string; trades: number }>; latest: JournalRow[]; intact: boolean; candidates: Array<LessonCandidate & { words: string; kept?: { id: string; state: Lesson["state"] } | undefined }>; lessons: Array<Lesson & { words?: string | undefined; effect?: LessonEffect | undefined; test?: LessonTest | undefined }>; deskTrades: number; desk: boolean; versions: DeskVersion[]; self: ReturnType<PortfolioService["selfView"]> } | Refusal {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     const j = readJournal(this.opts.home);
-    const since = o.days ? Date.parse(this.now()) - o.days * 86_400_000 : undefined;
+    // the simulator's trades are read apart (practice), and left out otherwise: their days are a past day's, on the practice calendar
+    const all = j.rows.filter((r) => !!r.practice === (o.practice === true));
+    const since = o.days && !o.practice ? Date.parse(this.now()) - o.days * 86_400_000 : undefined;
     const venues = new Map<string, { id: string; name: string; trades: number }>();
-    for (const r of j.rows) {
+    for (const r of all) {
       const v = venues.get(r.venue) ?? { id: r.venue, name: r.venueName, trades: 0 };
       v.trades++;
       venues.set(r.venue, v);
     }
     const hand = { you: "owner", desk: "desk", agents: "agent" } as const;
-    const rows = j.rows.filter((r) => (!o.venue || r.venue === o.venue) && (!o.who || r.by.who === hand[o.who]) && (since === undefined || Date.parse(r.closedAt) >= since));
+    const rows = all.filter((r) => (!o.venue || r.venue === o.venue) && (!o.who || r.by.who === hand[o.who]) && (since === undefined || Date.parse(r.closedAt) >= since));
     const kept = this.desk?.lessonsKept() ?? [];
     // each rule in words as the desk says it (account/lessons.ts ruleWords): the page and an agent read the same sentence
     const candidates = candidatesOf(rows).map((c) => {
@@ -1988,6 +2040,325 @@ export class PortfolioService {
       return { ...l, ...(l.rule ? { words: ruleWords(l.rule) } : {}), ...(effect ? { effect } : {}), ...(test ? { test } : {}) };
     });
     return { debrief: debriefOf(rows), venues: [...venues.values()], latest: rows.slice(-(o.latest ?? 50)).reverse(), intact: j.intact, candidates, lessons, deskTrades: rows.filter((r) => r.lead).length, desk: this.desk?.hired() ?? false, versions: [...(this.desk?.versionsKept() ?? [])].reverse(), self: this.selfView() };
+  }
+
+  // ---- THE SIMULATOR (account/practice.ts) ------------------------------------------------------------------------------------------------
+
+  /** the session kept in the home, brought back before the venues are: its clock stopped where its file last kept it (the service was not
+   * running meanwhile, and a practice day does not go on without its owner) */
+  private practiceLoad(): void {
+    const s = readSession(this.opts.home);
+    if (!s) return;
+    const m = readBars(this.opts.home);
+    if (!s.endedAt) s.clock = { at: Math.min(s.clock.at, s.to), realAt: this.realNow(), running: false, speed: s.clock.speed };
+    this.practiceAdopt(s, m && m.symbol === s.symbol ? m : undefined);
+  }
+
+  /** the session on, its market, and the source the practice account prices at: the market's minutes at the practice clock */
+  private practiceAdopt(s: PracticeSession, m: BacktestMarket | undefined): void {
+    this.practiceSession = s;
+    this.practiceMarket = m;
+    this.practiceSource = m ? historySource({ markets: [m], clock: () => this.practiceNow(), costs: PRACTICE_COSTS, id: PRACTICE_VENUE, name: "Practice", tag: "practice", stamp: false }) : undefined;
+    this.practiceSaved = Math.floor(this.practiceNow() / MINUTE_MS);
+    // what was read of the practice account's markets was the session's before
+    this.marketReads.drop(PRACTICE_VENUE, true);
+  }
+
+  /** THE PRACTICE CLOCK as the practice account reads it, in whole minutes — a minute's prices are its bar's open until the next starts — so
+   * each look a minute or more after the one before it judges the minutes between whole, their highs and lows (live/paper.ts catchUp) */
+  private practiceNow(): number {
+    const s = this.practiceSession;
+    if (!s) return PRACTICE_EPOCH;
+    return Math.floor(clockAt(s.clock, this.realNow(), s.to) / MINUTE_MS) * MINUTE_MS;
+  }
+
+  /** THE OWNER'S setPractice, once the door has checked it: a session started — its day drawn, read and spent, its market made, the practice
+   * account's book started again with its money, its clock waiting for the owner — or the session on ended now, as its bell would end it */
+  private async practiceAct(a: Extract<OwnerAction, { type: "setPractice" }>): Promise<Refusal | { ok: true; summary: string; data?: unknown }> {
+    if (a.change === "start") {
+      const ask = parsePracticeAsk(a.value);
+      if (typeof ask === "string") return no("E_ACCOUNT_BAD_ACTION", { message: ask });
+      return this.practiceStart(ask);
+    }
+    if (a.change === "end") {
+      const s = this.practiceSession;
+      if (!s || s.endedAt) return no("E_ACCOUNT_BAD_ACTION", { message: "no practice session is on" });
+      if (s.id !== a.value.trim()) return no("E_ACCOUNT_BAD_ACTION", { message: `the session on is ${s.id}, not ${a.value.trim().slice(0, 40)}` });
+      await this.ringBell("owner");
+      return { ok: true, summary: `practice session ${s.n} ended: ${s.coin} on ${s.day}`, data: await this.practice({}) };
+    }
+    return no("E_ACCOUNT_BAD_ACTION", { message: PRACTICE_CHANGES(a.change) });
+  }
+
+  /** what a setPractice would do, in words, for the dialog before it is signed — or why not, as the door would say it */
+  private practiceWordsOf(a: Extract<OwnerAction, { type: "setPractice" }>): Refusal | { words: string } {
+    const s = this.practiceSession;
+    if (a.change === "start") {
+      const ask = parsePracticeAsk(a.value);
+      if (typeof ask === "string") return no("E_ACCOUNT_BAD_ACTION", { message: ask });
+      if (s && !s.endedAt) return no("E_ACCOUNT_BAD_ACTION", { message: `practice session ${s.n} is on: end it before starting another` });
+      if (!this.liveVenues.get(PRACTICE_VENUE)) return no("E_ACCOUNT_BAD_ACTION", { venue: PRACTICE_VENUE, message: "the practice account is not connected: connect it first" });
+      const coins = ask.coins.length === 1 ? ask.coins[0]! : `one of ${ask.coins.join(", ")}`;
+      return { words: `Start a practice session: ${ask.exam ? "a day of the held-out data — an EXAM, the day spent for good" : "a day of the two years before the holdout"} of ${coins}, drawn at random and played back blind at ${ask.speed}× for ${ask.hours} h from its 00:00 UTC, with ${cents(ask.cashUsd)} of paper money — the practice account's book starts again with it. Every entry there carries its plan; the day and the coin are told at the bell.` };
+    }
+    if (a.change === "end") {
+      if (!s || s.endedAt) return no("E_ACCOUNT_BAD_ACTION", { message: "no practice session is on" });
+      return { words: `End practice session ${s.n} now: its open orders canceled, its positions closed at the price now, and its score made — the rest of its day is not played.` };
+    }
+    return no("E_ACCOUNT_BAD_ACTION", { message: PRACTICE_CHANGES(a.change) });
+  }
+
+  private async practiceStart(ask: PracticeAsk): Promise<Refusal | { ok: true; summary: string; data?: unknown }> {
+    const on = this.practiceSession;
+    if (on && !on.endedAt) return no("E_ACCOUNT_BAD_ACTION", { message: `practice session ${on.n} is on: end it before starting another` });
+    if (this.practiceStarting || this.practiceRinging) return no("E_ACCOUNT_BAD_ACTION", { message: "a practice session is being started or ended: try again in a moment" });
+    if (this.practiceDeskRun) return no("E_ACCOUNT_BAD_ACTION", { message: "the desk is still being run over the last session's day, for its score: try again in a moment" });
+    const controls = this.paperControls.get(PRACTICE_VENUE);
+    if (!this.liveVenues.get(PRACTICE_VENUE) || !controls) return no("E_ACCOUNT_BAD_ACTION", { venue: PRACTICE_VENUE, message: "the practice account is not connected: connect it first" });
+    this.practiceStarting = true;
+    try {
+      const home = this.opts.home;
+      const nowMs = Date.parse(this.now());
+      const holdout = readHoldout(home, nowMs);
+      if (isRefusal(holdout)) return holdout;
+      const record = readPractice(home);
+      if (!record.intact) return no("E_ACCOUNT_BAD_ACTION", { message: `the practice record (practice/sessions.jsonl) is broken at line ${record.brokenAt}: ${record.why}` });
+      const used = practiceUsed(record.rows);
+      let days = practiceDays({ holdoutStart: holdoutStartMs(holdout), now: nowMs, exam: ask.exam, used: used.days });
+      const random = this.opts.practice?.random ?? (() => randomInt(0, 2 ** 32) / 2 ** 32);
+      const thin: string[] = [];
+      for (let draw = 0; draw < PRACTICE_DRAWS; draw++) {
+        const pick = pickPractice(days, ask.coins, random);
+        if (!pick) break;
+        const start = Date.parse(`${pick.day}T00:00:00Z`);
+        const bars = await this.practiceBars(pick.coin, start - PRACTICE_CONTEXT_DAYS * DAY_MS, start + ask.hours * HOUR_MS);
+        if (isRefusal(bars)) return bars;
+        const made = practiceMarket({ coin: pick.coin, bars, day: pick.day, n: used.next, hours: ask.hours });
+        if (typeof made === "string") {
+          // too few of its minutes traded: another day is drawn, this one not spent (the owner never saw it)
+          thin.push(made);
+          days = days.filter((d) => d !== pick.day);
+          continue;
+        }
+        const at = this.now();
+        const s: PracticeSession = { v: 1, id: practiceId(used.next, pick.day, pick.coin, at), n: used.next, window: ask.exam ? "exam" : "train", day: pick.day, coin: pick.coin, scale: made.scale, shiftMs: made.shiftMs, symbol: made.market.symbol, from: made.from, to: made.to, hours: ask.hours, cashUsd: ask.cashUsd, clock: { at: made.from, realAt: this.realNow(), running: false, speed: ask.speed }, startedAt: at };
+        // the day is spent from here, whatever becomes of the session
+        appendPractice(home, { kind: "start", id: s.id, n: s.n, window: s.window, day: s.day, coin: s.coin, hours: s.hours, cashUsd: s.cashUsd, speed: ask.speed }, nowMs);
+        writeBars(home, made.market);
+        writeSession(home, s);
+        this.practiceAdopt(s, made.market);
+        // the practice account's book started again with the session's money, on the session's own clock
+        const reset = await controls.reset(ask.cashUsd);
+        if (isRefusal(reset)) return reset;
+        this.adapters.get(PRACTICE_VENUE)?.wake?.();
+        this.ledger.append({ kind: "note", venue: PRACTICE_VENUE, reason: `practice session ${s.n} (${s.id}) started: ${s.window === "exam" ? "an exam" : "practice"}, ${s.hours} h at ${ask.speed}×, ${cents(s.cashUsd)} — its day and coin told at its bell` });
+        return { ok: true, summary: `practice session ${s.n} is ready: ${s.symbol}, ${s.hours} h at ${ask.speed}× with ${cents(s.cashUsd)} — its clock waits for you`, data: await this.practice({}) };
+      }
+      return no("E_ACCOUNT_BAD_ACTION", { message: `${ask.exam ? `no day of the holdout (from ${holdout.start}) is left to sit as an exam` : "no day of the two years before the holdout is left to practise on"}${thin.length ? `: the days drawn were too thin — ${thin.join("; ")}` : ""}` });
+    } finally {
+      this.practiceStarting = false;
+    }
+  }
+
+  /** a day's minute bars of a coin, read from the lab's history sources (Coinbase Exchange's USD pair) into a directory of their own, let go
+   * after: a session keeps its market in its own file, and a window kept in the lab's history would be read whole between two far days */
+  private async practiceBars(coin: string, from: number, to: number): Promise<Candle[] | Refusal> {
+    const deps = this.labDeps();
+    const work = mkdtempSync(join(tmpdir(), "openpaper-practice-"));
+    try {
+      const loaded = await loadHistory({ refs: [{ cls: "spot", base: coin }], interval: "1m", from, to, cache: work, sources: deps.sources, clock: deps.clock });
+      if (isRefusal(loaded)) return loaded;
+      return loaded.markets[0]?.bars ?? [];
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }
+
+  /** THE SESSION'S CLOCK started, stopped or set to another speed (POST /api/account/practice/clock): unsigned — it moves no money and spends
+   * no day. From where it stands now */
+  practiceClock(o: { run?: boolean | undefined; speed?: number | undefined }): Refusal | { ok: true; clock: { now: string; running: boolean; speed: number } } {
+    const s = this.practiceSession;
+    if (!s || s.endedAt) return no("E_ACCOUNT_BAD_ACTION", { message: "no practice session is on" });
+    if (o.speed !== undefined && !PRACTICE_SPEEDS.includes(o.speed)) return no("E_ACCOUNT_BAD_ACTION", { message: `the speed is ${PRACTICE_SPEEDS.join(", ")} times` });
+    if (o.run === true && this.practiceNow() >= s.to) return no("E_ACCOUNT_BAD_ACTION", { message: "the session's clock has reached its end: its bell rings" });
+    s.clock = clockMoved(s.clock, this.realNow(), s.to, { running: o.run, speed: o.speed });
+    writeSession(this.opts.home, s);
+    this.practiceSaved = Math.floor(this.practiceNow() / MINUTE_MS);
+    return { ok: true, clock: { now: new Date(this.practiceNow()).toISOString(), running: s.clock.running, speed: s.clock.speed } };
+  }
+
+  /** THE SIMULATOR BETWEEN LOOKS: the session's clock kept in its file each practice minute (a restart brings it back where it stood), the
+   * bell rung once the clock has reached the session's end, and the desk run for a session that ended without it (a restart between) */
+  private async practiceTick(): Promise<void> {
+    const s = this.practiceSession;
+    if (!s) return;
+    if (s.endedAt) {
+      if (!s.score?.desk && !this.practiceDeskRun) void this.practiceDesk(s);
+      return;
+    }
+    const minute = Math.floor(this.practiceNow() / MINUTE_MS);
+    if (minute !== this.practiceSaved) {
+      this.practiceSaved = minute;
+      s.clock = clockMoved(s.clock, this.realNow(), s.to, {});
+      writeSession(this.opts.home, s);
+    }
+    if (this.practiceNow() >= s.to) await this.ringBell("bell");
+  }
+
+  /** THE BELL (account/practice.ts): the clock stopped on its minute, the book looked at up to there — what the last minutes filled comes
+   * first — the session's open orders canceled and its positions closed at the price then, by the venue (the journal takes their trades),
+   * and your side of the score made; the desk is run after it. Once */
+  private ringBell(end: "bell" | "owner"): Promise<void> {
+    if (this.practiceRinging) return this.practiceRinging;
+    const s = this.practiceSession;
+    if (!s || s.endedAt) return Promise.resolve();
+    const ring = (async () => {
+      const moved = clockMoved(s.clock, this.realNow(), s.to, { running: false });
+      s.clock = { ...moved, at: Math.floor(moved.at / MINUTE_MS) * MINUTE_MS };
+      writeSession(this.opts.home, s);
+      await this.paperLooks.get(PRACTICE_VENUE)?.().catch(() => false);
+      const trader = this.liveVenues.get(PRACTICE_VENUE)?.trader;
+      if (trader) {
+        for (const o of this.account?.orders ?? []) if (o.venue === PRACTICE_VENUE && !DONE.has(o.status) && o.ref) await trader.cancel(o.ref, o.symbol).catch(() => undefined);
+        const held = trader.positions ? await trader.positions().catch(() => []) : [];
+        for (const p of isRefusal(held) ? [] : held) {
+          if (!(p.qty > 0)) continue;
+          const clientId = createHash("sha256").update(`bell:${s.id}:${p.symbol}`).digest("hex").slice(0, 32);
+          if (trader.close) await trader.close(p.symbol, p.qty, clientId).catch(() => undefined);
+        }
+        this.account?.trade.dueNow(PRACTICE_VENUE);
+        await this.account?.settle().catch(() => undefined);
+      }
+      s.endedAt = this.now();
+      s.end = end;
+      s.score = this.practiceScoreOf(s);
+      writeSession(this.opts.home, s);
+      this.ledger.append({ kind: "note", venue: PRACTICE_VENUE, reason: `practice session ${s.n} (${s.id}) ${end === "owner" ? "ended by the owner" : "rang its bell"}: ${s.coin} on ${s.day} — ${scoreWords(s.score)[0]}` });
+    })();
+    this.practiceRinging = ring.finally(() => {
+      this.practiceRinging = undefined;
+    });
+    return this.practiceRinging.then(() => void this.practiceDesk(s));
+  }
+
+  /** the practice account as the Practice page shows it beside the session: its cash, the session market's position, the owner's orders
+   * open there, and the session's trades from the journal */
+  private async practiceAccount(s: PracticeSession): Promise<PracticeView["account"]> {
+    const v = this.liveVenues.get(PRACTICE_VENUE);
+    const controls = this.paperControls.get(PRACTICE_VENUE);
+    if (!v || !controls) return undefined;
+    const held = v.trader?.positions ? await v.trader.positions().catch(() => []) : [];
+    const position = isRefusal(held) ? undefined : held.find((p) => p.symbol === s.symbol && p.qty > 0);
+    const orders = (this.account?.orders ?? []).filter((o) => o.venue === PRACTICE_VENUE && o.symbol === s.symbol && !DONE.has(o.status)).map((o) => ({ id: o.id, side: o.side, type: o.type, qty: o.qty, status: o.status, at: o.at, ...(o.limitPrice !== undefined ? { limitPrice: o.limitPrice } : {}), ...(o.stopPrice !== undefined ? { stopPrice: o.stopPrice } : {}) }));
+    const trades = readJournal(this.opts.home).rows.filter((r) => r.practice?.session === s.id).map((r) => {
+      const risk = r.plan ? (r.plan.riskUsd ?? (r.plan.stop !== undefined ? Math.abs(r.entryPrice - r.plan.stop) * r.qty : undefined)) : undefined;
+      return { side: r.side, openedAt: r.openedAt, closedAt: r.closedAt, qty: r.qty, entryPrice: r.entryPrice, exitPrice: r.exitPrice, netUsd: r.netUsd, returnPct: r.returnPct, end: r.end, closedBy: r.closedBy.who, ...(r.plan ? { why: r.plan.why, ...(r.plan.setup ? { setup: r.plan.setup } : {}), ...(r.plan.stop !== undefined ? { stop: r.plan.stop } : {}) } : {}), ...(risk && risk > 0 ? { r: Number((r.netUsd / risk).toFixed(3)) } : {}) };
+    });
+    return { cashUsd: controls.summary().cashUsd, ...(position ? { position } : {}), orders, trades };
+  }
+
+  /** your side of the score, holding the market and chance, from the journal's trades of the session (account/practice.ts) */
+  private practiceScoreOf(s: PracticeSession): PracticeScore {
+    const rows = readJournal(this.opts.home).rows.filter((r) => r.practice?.session === s.id);
+    const m = this.practiceMarket && this.practiceMarket.symbol === s.symbol ? this.practiceMarket : undefined;
+    const until = Math.min(s.to, s.clock.at);
+    const chance = m ? chanceOf(m, s.from, until, rows, s.id) : undefined;
+    return { you: youOf(rows, s.cashUsd), ...(chance ? { chance } : {}), hold: m ? holdOf(m, s.from, until, s.cashUsd) : { netUsd: 0, netPct: 0 }, reveal: { day: s.day, coin: s.coin, scale: s.scale, window: s.window } };
+  }
+
+  /** THE DESK OVER THE SESSION'S DAY (backtest/desk.ts), after its bell: the momentum script on five-minute bars folded from the session's
+   * minutes, with the session's money, over the minutes played — its result in the score, and the session's row in the practice record */
+  private practiceDesk(s: PracticeSession): Promise<void> {
+    if (this.practiceDeskRun) return this.practiceDeskRun;
+    const run = (async () => {
+      const m = this.practiceMarket && this.practiceMarket.symbol === s.symbol ? this.practiceMarket : undefined;
+      const until = Math.min(s.to, s.clock.at);
+      let desk: PracticeScore["desk"];
+      const params = deskParams({});
+      if (!m) desk = { error: "the session's bars are no longer kept" };
+      else if (until - s.from < 2 * PRACTICE_DESK_MINUTES * MINUTE_MS) desk = { error: "the session ended before the desk's first bars closed" };
+      else if (typeof params === "string") desk = { error: params };
+      else {
+        const work = mkdtempSync(join(tmpdir(), "openpaper-practice-desk-"));
+        try {
+          const folded: BacktestMarket = { ...m, interval: "5m", bars: foldBars(m.bars.filter((b) => b.t < until), "5m") };
+          const runDesk = this.opts.practice?.desk ?? (await import("./backtest/desk.ts")).runDeskBacktest;
+          const out = await runDesk({ markets: [folded], from: s.from, to: until, cashUsd: s.cashUsd, costs: { ...PRACTICE_COSTS }, params, work });
+          // what it still held at its end: the fills that bought beside the ones that sold
+          const held = isRefusal(out) ? 0 : out.fills.reduce((q, f) => q + (f.side === "buy" ? f.qty : -f.qty), 0);
+          desk = isRefusal(out) ? { error: out.message } : { netUsd: r2(out.metrics.endUsd - out.metrics.startUsd), netPct: Number(out.metrics.returnPct.toFixed(4)), trades: out.trips?.length ?? 0, fills: out.metrics.fills, ...(Math.abs(held) > 1e-9 ? { open: true } : {}) };
+        } catch (err) {
+          desk = { error: String((err as Error)?.message ?? err).slice(0, 200) };
+        } finally {
+          rmSync(work, { recursive: true, force: true });
+        }
+      }
+      s.score = { ...(s.score ?? this.practiceScoreOf(s)), desk };
+      writeSession(this.opts.home, s);
+      appendPractice(this.opts.home, { kind: "session", id: s.id, n: s.n, window: s.window, day: s.day, coin: s.coin, scale: s.scale, hours: s.hours, cashUsd: s.cashUsd, from: new Date(s.from).toISOString(), to: new Date(s.to).toISOString(), startedAt: s.startedAt, endedAt: s.endedAt ?? this.now(), end: s.end ?? "bell", endedAtPractice: new Date(s.clock.at).toISOString(), score: s.score }, Date.parse(this.now()));
+    })();
+    this.practiceDeskRun = run.finally(() => {
+      this.practiceDeskRun = undefined;
+    });
+    return this.practiceDeskRun;
+  }
+
+  /** THE SIMULATOR AS THE PAGE READS IT (GET /api/account/practice): the session on — its clock, its minutes closed by it after `since`, the
+   * quote now, and once it has ended its score and the day, the coin and the factor — with the sessions ended, newest first, and the days
+   * left to practise on and to sit as exams. The practice account is looked at first: what its clock reached is judged, its bell rung */
+  async practice(o: { since?: number | undefined }): Promise<PracticeView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const look = this.paperLooks.get(PRACTICE_VENUE);
+    if (look && this.practiceSession && !this.practiceSession.endedAt) {
+      if (await look().catch(() => false)) {
+        this.marketReads.drop(PRACTICE_VENUE, true);
+        this.adapters.get(PRACTICE_VENUE)?.wake?.();
+        this.account.trade.dueNow(PRACTICE_VENUE);
+      }
+    }
+    await this.practiceTick();
+    const home = this.opts.home;
+    const nowMs = Date.parse(this.now());
+    const record = readPractice(home);
+    const used = practiceUsed(record.rows);
+    const holdout = readHoldout(home, nowMs);
+    const start = isRefusal(holdout) ? undefined : holdoutStartMs(holdout);
+    const left = start === undefined ? undefined : { train: practiceDays({ holdoutStart: start, now: nowMs, exam: false, used: used.days }).length, exam: practiceDays({ holdoutStart: start, now: nowMs, exam: true, used: used.days }).length };
+    const sessions = record.rows.filter((r): r is Extract<PracticeRow, { kind: "session" }> => r.kind === "session").reverse().slice(0, PRACTICE_LISTED);
+    const s = this.practiceSession;
+    const m = s && this.practiceMarket?.symbol === s.symbol ? this.practiceMarket : undefined;
+    const now = this.practiceNow();
+    const iso = (ms: number): string => new Date(ms).toISOString();
+    let session: PracticeView["session"];
+    let bars: Candle[] | undefined;
+    let quote: PracticeView["quote"];
+    if (s) {
+      const ended = !!s.endedAt;
+      session = { id: s.id, n: s.n, window: s.window, symbol: s.symbol, name: m?.name ?? s.symbol, hours: s.hours, cashUsd: s.cashUsd, from: iso(s.from), to: iso(s.to), now: iso(now), running: s.clock.running && !ended, speed: s.clock.speed, minute: Math.round((now - s.from) / MINUTE_MS), minutes: Math.round((s.to - s.from) / MINUTE_MS), startedAt: s.startedAt, ...(ended ? { endedAt: s.endedAt, end: s.end, ...(s.score ? { score: { ...s.score, words: scoreWords(s.score) } } : {}) } : {}) };
+      if (m) {
+        const since = o.since ?? Number.NEGATIVE_INFINITY;
+        bars = m.bars.filter((b) => b.t > since && b.t + MINUTE_MS <= now && b.t < s.to).slice(-PRACTICE_BARS_MOST);
+        const under = m.bars.find((b) => b.t <= now && now < b.t + MINUTE_MS);
+        if (under && !ended) {
+          const half = (under.o * PRACTICE_COSTS.halfSpreadBps) / 10_000;
+          quote = { price: under.o, bid: Number((under.o - half).toFixed(6)), ask: Number((under.o + half).toFixed(6)) };
+        }
+      }
+    }
+    const account = s ? await this.practiceAccount(s) : undefined;
+    return {
+      connected: !!this.liveVenues.get(PRACTICE_VENUE),
+      venue: PRACTICE_VENUE,
+      ...(session ? { session } : {}),
+      ...(bars ? { bars } : {}),
+      ...(quote ? { quote } : {}),
+      ...(account ? { account } : {}),
+      sessions: sessions.map((r) => ({ id: r.id, n: r.n, window: r.window, day: r.day, coin: r.coin, hours: r.hours, cashUsd: r.cashUsd, endedAt: r.endedAt, end: r.end, score: { ...r.score, words: scoreWords(r.score) } })),
+      record: { rows: record.rows.length, intact: record.intact, ...(record.why ? { why: record.why } : {}) },
+      ...(left ? { left } : {}),
+      ...(start !== undefined ? { holdout: iso(start).slice(0, 10) } : {}),
+      asks: { coins: PRACTICE_COINS, coinsDefault: PRACTICE_COINS_DEFAULT, speeds: PRACTICE_SPEEDS, cashDefault: PRACTICE_CASH_DEFAULT, hoursMost: 24 },
+    };
   }
 
   backtests(limit = 50): (ReturnType<typeof labList> & { catalog: Record<string, unknown> }) | Refusal {
@@ -2081,7 +2452,7 @@ export class PortfolioService {
   private liveDeps(): LiveDeps {
     // made once: the chain clients and the price cache are kept between connections
     // a paper account prices itself at the same public sources Markets reads (live/paper.ts), through the service's own keeping of them
-    return (this.liveMade ??= { home: this.opts.home, http: realHttp, clock: Date.now, mm: realMm(this.opts.mm?.bin, this.opts.mm?.timeoutMs), chain: this.opts.liveDeps?.chain ?? publicChain(), price: this.opts.liveDeps?.price ?? publicPrices({ open: this.opts.liveDeps?.openExchange, clock: this.opts.liveDeps?.clock }), signIn: (kind) => this.signIn(kind), publicSources: () => this.publicMarkets(), streams: () => this.hub, ...this.opts.liveDeps, proofs: this.proofs });
+    return (this.liveMade ??= { home: this.opts.home, http: realHttp, clock: Date.now, mm: realMm(this.opts.mm?.bin, this.opts.mm?.timeoutMs), chain: this.opts.liveDeps?.chain ?? publicChain(), price: this.opts.liveDeps?.price ?? publicPrices({ open: this.opts.liveDeps?.openExchange, clock: this.opts.liveDeps?.clock }), signIn: (kind) => this.signIn(kind), publicSources: () => this.publicMarkets(), streams: () => this.hub, ...this.opts.liveDeps, proofs: this.proofs, practice: { source: () => this.practiceSource, clock: () => this.practiceNow() } });
   }
   private liveMade: LiveDeps | undefined;
 
@@ -2473,6 +2844,7 @@ export class PortfolioService {
         }
         await this.account?.settle().catch(() => undefined);
       }
+      await this.practiceTick();
       return changed;
     } finally {
       this.paperLooking = false;
@@ -2746,8 +3118,10 @@ export class PortfolioService {
     const kept = !opened && t.openClientId ? this.ownPlansBefore.get(t.openClientId) : undefined;
     const plan = opened?.authority === "owner" ? opened.plan : kept;
     const closedBy: TradeHand = t.end === "closed" ? handOf(orderOf(t.closeClientId)) : { who: "venue" };
+    // a trade of the simulator's: its session (account/practice.ts), its times the practice calendar's
+    const s = venue === PRACTICE_VENUE ? this.practiceSession : undefined;
     try {
-      appendTrade(this.opts.home, { ...t, venue, venueName: this.nameOf(venue), paper: true, by: kept ? { who: "owner" } : handOf(opened), closedBy, ...(lead ? { lead } : {}), ...(plan ? { plan } : {}) }, Date.parse(this.now()));
+      appendTrade(this.opts.home, { ...t, venue, venueName: this.nameOf(venue), paper: true, by: kept ? { who: "owner" } : handOf(opened), closedBy, ...(lead ? { lead } : {}), ...(plan ? { plan } : {}), ...(s ? { practice: { session: s.id, n: s.n } } : {}) }, Date.parse(this.now()));
     } catch (err) {
       console.error(`the journal could not take ${t.symbol}'s trade at ${venue}: ${String((err as Error)?.message ?? err).slice(0, 200)}`);
     }
@@ -2786,7 +3160,7 @@ export class PortfolioService {
   private entriesToday(nowMs: number): number {
     const at = new Map(this.ownEntriesBefore.map((e) => [e.clientId, e.at]));
     for (const o of this.account?.orders ?? []) {
-      if (!o.entry || o.authority !== "owner") continue;
+      if (!o.entry || o.authority !== "owner" || o.venue === PRACTICE_VENUE) continue;
       if (o.status === "canceled" && !(o.filledQty > 0)) at.delete(o.clientId);
       else at.set(o.clientId, o.at);
     }
@@ -2801,7 +3175,9 @@ export class PortfolioService {
    * paper trades in the journal and their entries today. `planned` undefined: asked before a plan could be signed (the order prepared). The
    * limits hold by the account's clock, as they were signed (the ledger's); the trades and entries are read on the clock that stamped them,
    * the venues' (realNow) — one clock but in a test */
-  private selfHeld(o: { planned?: boolean | undefined }): { why: string; until?: string | undefined } | undefined {
+  private selfHeld(o: { planned?: boolean | undefined; venue?: string | undefined }): { why: string; until?: string | undefined } | undefined {
+    // the practice account: none of the owner's own limits — its trades are the simulator's — and every entry there with its plan
+    if (o.venue === PRACTICE_VENUE) return o.planned === false ? { why: PRACTICE_PLAN_FIRST } : undefined;
     this.selfState = selfAt(this.selfState, Date.parse(this.now()));
     const l = this.selfState.now;
     if (!l) return undefined;
@@ -2819,7 +3195,7 @@ export class PortfolioService {
     }
     const kept = this.ownTradesKept;
     if (kept && kept.size === st.size && kept.mtimeMs === st.mtimeMs) return kept.trades;
-    const trades = readJournal(this.opts.home).rows.filter((r) => r.by.who === "owner").map((r) => ({ openedAt: r.openedAt, closedAt: r.closedAt, netUsd: r.netUsd }));
+    const trades = readJournal(this.opts.home).rows.filter((r) => r.by.who === "owner" && !r.practice).map((r) => ({ openedAt: r.openedAt, closedAt: r.closedAt, netUsd: r.netUsd }));
     this.ownTradesKept = { size: st.size, mtimeMs: st.mtimeMs, trades };
     return trades;
   }
@@ -3062,13 +3438,13 @@ export class PortfolioService {
     const paperStart = src.paper && typeof native?.startCashUsd === "number" && native.startCashUsd > 0 ? native.startCashUsd : undefined;
     // and the paper money its owner added since (topUpPaper), which is put in and not made
     const paperAdded = src.paperBook?.summary().addedUsd;
-    Object.assign(adapter.account, { ...(proven ? { proven } : {}), ...(src.writer ? { liveCan: src.writer.can } : {}), ...(src.noTradeBecause ? { noTradeBecause: src.noTradeBecause } : {}), ...(src.readOnlyBecause ? { readOnlyBecause: src.readOnlyBecause } : {}), ...(src.paper ? { paper: true as const, ...(paperStart ? { paperStartUsd: paperStart } : {}), ...(paperAdded ? { paperAddedUsd: paperAdded } : {}) } : {}) });
+    Object.assign(adapter.account, { ...(proven ? { proven } : {}), ...(src.writer ? { liveCan: src.writer.can } : {}), ...(src.noTradeBecause ? { noTradeBecause: src.noTradeBecause } : {}), ...(src.readOnlyBecause ? { readOnlyBecause: src.readOnlyBecause } : {}), ...(src.paper ? { paper: true as const, ...(paperStart ? { paperStartUsd: paperStart } : {}), ...(paperAdded ? { paperAddedUsd: paperAdded } : {}) } : {}), ...(src.practice ? { practice: true as const } : {}) });
     // what the key may do is read from the trader each time: a venue can say it only after connecting (Kalshi's key scopes)
     const trader = src.trader;
     // the kinds of market its trader offers, where it says them itself (the mm trader: tokens, event contracts, perpetuals); the page falls
     // back to the connector's own (accounts.ts tradeKinds) where it does not
     if (trader) Object.defineProperty(adapter.account, "liveTrade", { get: () => ({ can: trader.can, what: trader.what, ...(trader.kinds ? { kinds: [...trader.kinds] } : {}), positions: !!trader.positions, amend: !!trader.amend, leverage: !!trader.setLeverage, close: !!trader.close }), enumerable: true, configurable: true });
-    this.liveVenues.set(venue, { id: venue, name: adapter.account.name, kind: adapter.account.kind, ...(src.address ? { address: src.address } : {}), ...(proven ? { proven } : {}), ...(src.writer ? { writer: src.writer } : {}), ...(src.readOnlyBecause ? { readOnlyBecause: src.readOnlyBecause } : {}), ...(src.trader ? { trader: src.trader } : {}), ...(src.noTradeBecause ? { noTradeBecause: src.noTradeBecause } : {}), ...(src.paper ? { paper: true as const } : {}), via: src.via });
+    this.liveVenues.set(venue, { id: venue, name: adapter.account.name, kind: adapter.account.kind, ...(src.address ? { address: src.address } : {}), ...(proven ? { proven } : {}), ...(src.writer ? { writer: src.writer } : {}), ...(src.readOnlyBecause ? { readOnlyBecause: src.readOnlyBecause } : {}), ...(src.trader ? { trader: src.trader } : {}), ...(src.noTradeBecause ? { noTradeBecause: src.noTradeBecause } : {}), ...(src.paper ? { paper: true as const } : {}), ...(src.practice ? { practice: true as const } : {}), via: src.via });
     // a paper account the account keeps itself is looked at between the page's reads (watchPaper): its stops, its days, its funding; its
     // owner starts it again or adds paper money through its book's own controls (paperControl)
     if (src.settle) this.paperLooks.set(venue, src.settle);
@@ -3348,6 +3724,8 @@ export class PortfolioService {
     // the `mm` reads stand in for two simulated accounts; a real service has none to stand in for (MetaMask is connected like any account)
     const live = opts.live && !opts.real ? { metamask: await metamaskLiveAccount(opts.mm), polymarket: await polymarketLiveAccount(opts.mm) } : undefined;
     const svc = new PortfolioService(opts, seeds, live);
+    // the simulator's session before the venues: the practice account opens on its clock
+    if (opts.real && svc.account) svc.practiceLoad();
     if (opts.real && svc.account && !opts.freshLedger) await svc.continueRuns();
     return svc;
   }

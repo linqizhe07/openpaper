@@ -154,7 +154,7 @@ export interface AutonomyHook {
  * or adds to a position (opens), never of a close. Their words go back to the owner as the refusal's (E_ACCOUNT_LIMIT) */
 export interface PlanHook {
   takePlan?(venue: string, symbol: string, side: string, keep?: boolean): TradePlan | undefined;
-  selfBlock?(o: { planned?: boolean | undefined }): { why: string; until?: string | undefined } | undefined;
+  selfBlock?(o: { planned?: boolean | undefined; venue?: string | undefined }): { why: string; until?: string | undefined } | undefined;
 }
 
 /** what this door uses of the engine, besides what the money door uses */
@@ -574,7 +574,7 @@ export class LiveOrders {
     // the owner's own limits that pass with time (a day's loss, a streak's pause, the entries a day), said before anything is signed: a plan
     // is signed with the order, after this
     if (await this.opens(p)) {
-      const held = this.e.host.selfBlock?.({});
+      const held = this.e.host.selfBlock?.({ venue: p.v.id });
       if (held) return no("E_ACCOUNT_LIMIT", { venue: p.v.id, message: held.why, detail: { self: true, ...(held.until ? { until: held.until } : {}) } });
     }
     // a buy signs the most it may cost; a sell signs what it is worth now, and a market sell may then fetch at most 2% less
@@ -631,7 +631,7 @@ export class LiveOrders {
     const entry = await this.opens(p);
     const plan = entry ? this.e.host.takePlan?.(p.v.id, p.m.symbol, p.side, true) : undefined;
     if (entry) {
-      const held = this.e.host.selfBlock?.({ planned: plan !== undefined });
+      const held = this.e.host.selfBlock?.({ planned: plan !== undefined, venue: p.v.id });
       if (held) return no("E_ACCOUNT_LIMIT", { venue: p.v.id, message: held.why, detail: { self: true, ...(held.until ? { until: held.until } : {}) } });
       this.e.host.takePlan?.(p.v.id, p.m.symbol, p.side);
     }
@@ -667,6 +667,9 @@ export class LiveOrders {
    * same limit, the ledger's row saying so */
   async agent(a: AgentLiveOrderAction, who: { signer: string; envelope: Envelope; hash: Hex; agent: AgentKey }): Promise<Outcome> {
     const now = Date.parse(this.e.host.now());
+    // the practice account is the owner's own: what is traded there is the owner's record, so no agent's order goes there, limit or not
+    const practice = this.money()?.venue(text(a.venue));
+    if (practice?.practice) return no("E_ACCOUNT_BAD_ACTION", { venue: practice.id, message: `${practice.name} is the owner's practice account: no agent trades there` });
     const spend = await this.limit(who.signer, text(a.venue));
     if (isRefusal(spend)) return spend;
     const p = await this.plan(fieldsOf(a));

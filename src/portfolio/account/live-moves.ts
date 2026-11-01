@@ -56,6 +56,8 @@ export interface LiveVenue {
   /** a PAPER account (live/types.ts LiveSource.paper): no real money there, so the server's real-money cap does not bound an order at it;
    * the owner's signature, an agent's limit and the mode bound it as at any venue */
   paper?: true | undefined;
+  /** THE PRACTICE ACCOUNT (live/types.ts LiveSource.practice): the owner's alone, every entry with a plan */
+  practice?: true | undefined;
   via: string;
 }
 

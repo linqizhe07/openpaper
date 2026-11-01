@@ -78,6 +78,9 @@ export interface LiveSource {
    * takes no row's price from it, the comparison leaves it out), and its orders are rehearsals: held to the owner's signature or an agent's
    * limit and to the owner's mode as every order is, and not to the server's real-money cap */
   paper?: true | undefined;
+  /** THE PRACTICE ACCOUNT (account/practice.ts): a paper account on a clock of its own, trading a past day played back blind — the owner's
+   * alone (no agent's order, no limit of the owner's own counts it), every entry there with a plan */
+  practice?: true | undefined;
   /** a paper account the account keeps itself: one look at its book between the page's reads — resting orders judged, stops watched, a
    * day's orders ended, funding paid — true when the book changed (service.ts watches every paper account so, every few seconds) */
   settle?: (() => Promise<boolean>) | undefined;
