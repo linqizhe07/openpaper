@@ -191,6 +191,11 @@
  *                                                        signed setPractice
  *   POST /api/account/practice/clock {run, speed}        the session's clock started, stopped or set to 10, 20, 30 or 50 times the
  *                                                        account's own: unsigned, since it moves no money and spends no day
+ *   GET  /api/account/license                            THE LICENSE (account/license.ts): what the owner's record in the simulator lets one
+ *                                                        real order of their own be worth — practice and the exam read apart, each with its
+ *                                                        trades, edge, chance, plans kept and calibration; the level the record shows and
+ *                                                        what the next one needs; the ladder; and, where the owner's own limits hold their
+ *                                                        real entries to it (a signed setPolicy self), the level held and the cap now
  *   GET  /api/account/book?venue=&symbol=&depth=20       one market's order book, best first (a market whose source has no book: its best
  *                                                        bid and ask only, depth "top"); kept a second and a half
  *   GET  /api/account/trades?venue=&symbol=&limit=30      one market's latest trades, newest first; kept three seconds (a source that
@@ -961,6 +966,10 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const since = q.since === "" ? undefined : Number(q.since);
     if (since !== undefined && !Number.isFinite(since)) return void bad(res, "since is the start of the last bar the page has, in ms");
     answerOf(res, await svc.practice({ ...(since !== undefined ? { since } : {}) }));
+  }));
+  app.get("/api/account/license", wrap(async (_req, res) => {
+    if (!mounted(res)) return;
+    answerOf(res, svc.license());
   }));
   app.post("/api/account/practice/clock", wrap(async (req, res) => {
     if (!mounted(res)) return;

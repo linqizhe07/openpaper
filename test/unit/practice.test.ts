@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import type { Outcome } from "../../src/portfolio/account/exchange.ts";
 import { readJournal } from "../../src/portfolio/account/journal.ts";
-import { appendPractice, chanceOf, clockAt, clockMoved, holdOf, parsePracticeAsk, pickPractice, PRACTICE_EPOCH, practiceDayStart, practiceDays, practiceLedgerPath, practiceMarket, practiceUsed, readPractice, readSession, scoreWords, youOf } from "../../src/portfolio/account/practice.ts";
+import { appendPractice, chanceOf, clockAt, clockMoved, holdOf, parsePracticeAsk, pickPractice, PRACTICE_EPOCH, practiceDayStart, practiceDays, practiceLedgerPath, practiceMarket, practiceUsed, readPractice, readSession, readTries, scoreWords, triesHash, youOf, type PracticeRow } from "../../src/portfolio/account/practice.ts";
 import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
 import type { HistorySources } from "../../src/portfolio/backtest/data.ts";
 import type { LiveDeps } from "../../src/portfolio/live/index.ts";
@@ -281,6 +281,14 @@ describe("THE SIMULATOR AT THE SERVICE: the practice account, the door, the jour
     const record = readPractice(home);
     expect(record.intact).toBe(true);
     expect(record.rows.map((r) => r.kind)).toEqual(["start", "session"]);
+    // chance's tries, kept for the license under the hash the session's row carries: one net a trade for each of the thousand
+    const kept = (record.rows[1] as Extract<PracticeRow, { kind: "session" }>).score.chance!.kept!;
+    const tries = readTries(home, s.id, kept);
+    if (typeof tries === "string") throw new Error(tries);
+    expect([tries.id, tries.trades, tries.means.length, tries.ownPct]).toEqual([s.id, 1, 1_000, score.chance!.ownPct]);
+    expect(triesHash(tries)).toBe(kept);
+    expect(readTries(home, s.id, "0".repeat(64))).toBe("changed");
+    expect(readTries(home, "../../journal/trades", kept)).toBe("missing");
     expect(end.sessions).toHaveLength(1);
     expect(end.sessions[0]).toMatchObject({ n: 1, day: s.day, coin: "BTC", end: "bell" });
     expect(end.left).toEqual({ train: 729, exam: 90 });

@@ -87,7 +87,7 @@
   "capUsd": 100,
   "cardMinutes": 30,
   "tests": {
-    "files": 191,
+    "files": 192,
     "attackFiles": 31
   },
   "strip": [

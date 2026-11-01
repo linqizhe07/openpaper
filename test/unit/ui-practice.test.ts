@@ -179,3 +179,97 @@ describe("the practice pane", () => {
     expect(p.run<string>("dbEmptyHtml()")).toContain("No practice trade yet");
   });
 });
+
+/* the account's license (service.ts license): practice passing, the exam short of level 2 — as GET /api/account/license answers */
+const check = (ok: boolean, words: string) => ({ ok, words });
+const BOOK = (window: string, o: Record<string, unknown> = {}) => ({ window, sessions: 10, trades: 100, edge: check(true, "+0.230% a trade after costs; its 95% range +0.150% to +0.310%, all of it above zero"), chance: { ...check(true, "100 trades beat 100% of 1,000 random records with the same sides and holding times (90% at least)"), judged: 10, left: 0, broken: 0 }, plans: { ...check(true, "100 of 100 trades kept their plan — 100%, 90% at least"), kept: 100, unsaid: 0, pastStop: 0 }, calibration: { ...check(true, "100 trades said how sure: 70% on average, and 70% won — 0.0 points off, band by band (10 at most)"), sure: 100, bands: [] }, ...o });
+const LADDER = [
+  { level: 0, name: "Student", capUsd: 0, needs: {}, words: "no real order of your own: paper and practice only" },
+  { level: 1, name: "Learner", capUsd: 25, needs: { train: 100 }, words: "up to $25.00 an order — practice: 100 trades, every check passed" },
+  { level: 2, name: "Licensed", capUsd: 100, needs: { train: 100, exam: 50 }, words: "up to $100.00 an order — practice: 100 trades, and the exam: 50 trades, every check passed" },
+  { level: 3, name: "Senior", capUsd: null, needs: { train: 300, exam: 100 }, words: "up to the server's own cap — practice: 300 trades, and the exam: 100 trades, every check passed" },
+];
+const LICENSE = {
+  ok: true,
+  level: 1,
+  name: "Learner",
+  books: { train: BOOK("train"), exam: BOOK("exam", { sessions: 2, trades: 12, calibration: { ...check(false, "12 trades said how sure they were: 30 at least are needed to judge it — say it under the plan's How sure"), sure: 12, bands: [] } }) },
+  next: { level: 2, name: "Licensed", missing: ["50 trades in the exam (12 so far)", "calibration in the exam: 12 trades said how sure they were: 30 at least are needed to judge it — say it under the plan's How sure"] },
+  serverCapUsd: 100,
+  ladder: LADDER,
+  self: { entriesToday: 0 },
+};
+
+describe("your license, on the practice pane", () => {
+  it("not held: the ladder with the record's level, the two windows' checks — passed or not, in a glyph and a word — what the next level needs, that it does not bind, and the owner's Hold…", () => {
+    const p = page();
+    p.set("L", LICENSE);
+    const html = p.run<string>("prLicenseHtml(L)");
+    expect(html).toContain('<h2 class="h2" id="pr-l-h">Your license</h2><span class="chip">Level 1 · Learner</span>');
+    expect(html).toContain('<li class="done"><span class="pr-rung"><b>0 · Student</b></span>');
+    expect(html).toContain('<li class="at"><span class="pr-rung"><b>1 · Learner</b> <span class="tag up">Your record</span></span><span class="small">up to $25.00 an order — practice: 100 trades, every check passed</span></li>');
+    expect(html).toContain("up to the server&#39;s own cap — practice: 300 trades, and the exam: 100 trades, every check passed ($100.00 now)");
+    // each window: its trades against what level 2 needs of it, and the checks
+    expect(html).toContain('<h3>Practice</h3><ul class="pr-checks"><li class="ok"><span class="pr-mark" aria-hidden="true">✓</span><span><b>Trades</b> 100 trades in 10 sessions — level 2 needs 100</span></li>');
+    expect(html).toContain('<h3>The exam</h3><ul class="pr-checks"><li class="no"><span class="pr-mark" aria-hidden="true">✗</span><span><b>Trades</b> 12 trades in 2 sessions — level 2 needs 50</span></li>');
+    expect(html).toContain('<li class="no"><span class="pr-mark" aria-hidden="true">✗</span><span><b>Calibration</b><span class="sr"> not yet:</span> 12 trades said how sure they were');
+    expect(html).toContain('<b>Edge after costs</b><span class="sr"> passed:</span> +0.230% a trade after costs');
+    // what level 2 needs, each from a capital
+    expect(html).toContain("<h3>Level 2 · Licensed needs</h3><ul><li>50 trades in the exam (12 so far)</li><li>Calibration in the exam: 12 trades said how sure");
+    expect(html).toContain("It does not bind now: your own real orders are held by the server's cap alone ($100.00 an order).");
+    expect(html).toContain('data-pr="lic-hold">Hold my real orders to it…</button>');
+    expect(html).not.toContain('data-pr="lic-off"');
+  });
+
+  it("held: what one real entry of the owner's own may be worth now and why — a record under what was signed said — a step up where the record shows more, a loosening waiting, Stop…; and level 0's none", () => {
+    const p = page();
+    p.set("L", { ...LICENSE, signed: 2, held: 1, capUsd: 25, self: { now: { license: 2, liftHours: 24 }, entriesToday: 0 } });
+    const held = p.run<string>("prLicenseHtml(L)");
+    expect(held).toContain("Your own real entries: up to <b>$25.00</b> an order — level 1 (Learner): you signed up to level 2, and your record shows level 1 now. A close always goes.");
+    expect(held).toContain('<b>1 · Learner</b> <span class="tag up">Your record</span> <span class="tag">Held</span>');
+    expect(held).not.toContain('data-pr="lic-up"');
+    expect(held).toContain('data-pr="lic-off">Stop holding them to it…</button>');
+    p.set("L", { ...LICENSE, level: 2, name: "Licensed", next: { level: 3, name: "Senior", missing: ["300 trades in practice (100 so far)"] }, signed: 1, held: 1, capUsd: 25, self: { now: { license: 1, liftHours: 24 }, pending: { to: { license: 2, liftHours: 24 }, signedAt: "2026-10-31T15:00:00.000Z", from: "2026-11-01T15:00:00.000Z" }, entriesToday: 0 } });
+    const up = p.run<string>("prLicenseHtml(L)");
+    expect(up).toContain('data-pr="lic-up">Step up to level 2…</button>');
+    expect(up).toMatch(/<span class="tag warn">Waiting<\/span> level 2 from Sun 1 Nov 1\d:00 New York\./);
+    p.set("L", { ...LICENSE, level: 0, name: "Student", signed: 0, held: 0, capUsd: 0, self: { now: { license: 0, liftHours: 24 }, entriesToday: 0 } });
+    expect(p.run<string>("prLicenseHtml(L)")).toContain("<b>No real entry of your own</b>: paper and practice only — level 0 (Student). A close always goes.");
+    expect(p.run<string>("prLicenseHtml(null)")).toBe("");
+    // a server started read-only places no real order: nothing to hold, nothing to sign
+    p.set("L", { ...LICENSE, readOnly: true, serverCapUsd: 0 });
+    const ro = p.run<string>("prLicenseHtml(L)");
+    expect(ro).toContain("This server was started read-only: it places no real order, so the license has nothing to hold here.");
+    expect(ro).not.toContain("data-pr=\"lic-");
+    expect(ro).not.toContain("now)</span>");
+  });
+
+  it("the owner's word on it: own limits signed again with the license in them — the ones in force kept — after a yes that says what it does; a step up says it waits; let go of, the license alone takes them all away", async () => {
+    const p = page();
+    p.run("LIC_SENT = []; LIC_ASKED = []; confirmSheet = async (m, o) => { LIC_ASKED.push([o.title, m]); return true; }; own = async (d) => { LIC_SENT.push(d); return { status: 200, body: { ok: true } }; }");
+    const sent = () => p.run<Array<{ type: string; change: string; value: string }>>("LIC_SENT").map((d) => ({ ...d, value: d.value ? JSON.parse(d.value) : "" }));
+    p.set("PR.license", { ...LICENSE, self: { now: { maxEntries: 5, liftHours: 48, words: "5 entries a day at most — loosened only 48 h after it is signed" }, entriesToday: 0 } });
+    await p.run<Promise<void>>('prLicenseAct("lic-hold")');
+    expect(p.run("LIC_ASKED")).toEqual([["Hold your real orders to your license", "From now on a real order of your own that opens or adds to a position may be worth up to $25.00 — level 1 (Learner), what your record shows now — and less at once if your record falls. A close always goes; an agent keeps to its own limits. Letting go of it later waits 48 h, as your own limits say."]]);
+    expect(sent()).toEqual([{ type: "setPolicy", change: "self", value: { maxEntries: 5, license: 1, liftHours: 48 } }]);
+    p.run("LIC_SENT = []; LIC_ASKED = []");
+    p.set("PR.license", { ...LICENSE, level: 2, name: "Licensed", signed: 1, held: 1, capUsd: 25, self: { now: { maxEntries: 5, license: 1, liftHours: 48 }, entriesToday: 0 } });
+    await p.run<Promise<void>>('prLicenseAct("lic-up")');
+    expect(p.run("LIC_ASKED")).toEqual([["Step up to level 2", "Level 2 (Licensed): a real order of your own may be worth up to $100.00. A loosening, so it holds 48 h after you sign — and only as far as your record still shows then."]]);
+    expect(sent()).toEqual([{ type: "setPolicy", change: "self", value: { maxEntries: 5, license: 2, liftHours: 48 } }]);
+    p.run("LIC_SENT = []; LIC_ASKED = []");
+    await p.run<Promise<void>>('prLicenseAct("lic-off")');
+    expect(p.run<Array<[string, string]>>("LIC_ASKED")[0]![1]).toBe("48 h from now, as your own limits say, your real orders are held by the server's cap alone ($100.00 an order); until then your license holds. Your other own limits stay as they are.");
+    expect(sent()).toEqual([{ type: "setPolicy", change: "self", value: { maxEntries: 5, liftHours: 48 } }]);
+    p.run("LIC_SENT = []");
+    p.set("PR.license", { ...LICENSE, signed: 1, held: 1, capUsd: 25, self: { now: { license: 1, liftHours: 0 }, entriesToday: 0 } });
+    await p.run<Promise<void>>('prLicenseAct("lic-off")');
+    expect(sent()).toEqual([{ type: "setPolicy", change: "self", value: "" }]);
+    // a viewer signs nothing; the license is read from the account
+    p.run('Owner.role = "viewer"; LIC_SENT = []');
+    await p.run<Promise<void>>('prLicenseAct("lic-hold")');
+    expect(p.run("LIC_SENT")).toEqual([]);
+    p.run("prLicense()");
+    expect(p.asked[p.asked.length - 1]).toBe("/api/account/license");
+  });
+});

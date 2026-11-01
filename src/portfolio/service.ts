@@ -117,7 +117,8 @@ import { labWalkForward, WALK_COMBOS_MOST, WALK_FOLDS, WALK_RUNS_MOST, walkAskOf
 import { askOf, DESK_INTERVALS, deskAskOf, holdoutStartMs, labCatalog, labEvaluate, labList, labRead, labRun, labScreen, outcomeSummary, readHoldout, readTrials, screenAskOf, screenSummary, setHoldout, WINDOW_DEFAULT_DAYS, type LabDeps, type TrialRow } from "./backtest/lab.ts";
 import { DESK_NAME, DESK_PARAMS, deskParams, deskParamWords, DESK_WORDS } from "./backtest/desk-params.ts";
 import { historySource, type BacktestMarket } from "./backtest/source.ts";
-import { appendPractice, chanceOf, clockAt, clockMoved, holdOf, parsePracticeAsk, pickPractice, PRACTICE_CASH_DEFAULT, PRACTICE_COINS, PRACTICE_COINS_DEFAULT, PRACTICE_CONTEXT_DAYS, PRACTICE_COSTS, PRACTICE_DESK_MINUTES, PRACTICE_EPOCH, PRACTICE_SPEEDS, PRACTICE_VENUE, practiceDays, practiceId, practiceMarket, practiceUsed, readBars, readPractice, readSession, scoreWords, writeBars, writeSession, youOf, type PracticeAsk, type PracticeRow, type PracticeScore, type PracticeSession } from "./account/practice.ts";
+import { appendPractice, chanceKept, clockAt, clockMoved, holdOf, parsePracticeAsk, pickPractice, PRACTICE_CASH_DEFAULT, PRACTICE_COINS, PRACTICE_COINS_DEFAULT, PRACTICE_CONTEXT_DAYS, PRACTICE_COSTS, PRACTICE_DESK_MINUTES, PRACTICE_EPOCH, PRACTICE_SPEEDS, PRACTICE_VENUE, practiceDays, practiceId, practiceLedgerPath, practiceMarket, practiceUsed, readBars, readPractice, readSession, readTries, scoreWords, writeBars, writeSession, writeTries, youOf, type PracticeAsk, type PracticeRow, type PracticeScore, type PracticeSession, type PracticeWindow } from "./account/practice.ts";
+import { bookOf, licenseHeld, licenseView, nextWords, type LicenseBooks, type LicenseView, type SessionTries } from "./account/license.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** the most work a backtest the service is asked for may take, in steps times markets: 200,000 is two years of hourly bars on ten markets
@@ -439,6 +440,8 @@ export class PortfolioService {
   private ownPlansBefore = new Map<string, TradePlan>();
   /** the owner's closed paper trades as their own limits read them, kept until the journal changes (the page asks every few seconds) */
   private ownTradesKept: { size: number; mtimeMs: number; trades: OwnTrade[] } | undefined;
+  /** THE LICENSE's record (account/license.ts): the simulator's two books, kept until the journal or the practice record changes */
+  private licenseKept: { key: string; books: LicenseBooks } | undefined;
   /** THE SIMULATOR (account/practice.ts): the session on, or the last — its market and the source the practice account prices at — kept in
    * the home (practice/session.json, practice/bars.json) and brought back, its clock stopped, after a restart */
   private practiceSession: PracticeSession | undefined;
@@ -589,6 +592,12 @@ export class PortfolioService {
           // limits in force say — said in the summary, and on the ledger's note
           const limits = parseSelfLimits(value);
           if (typeof limits === "string") return no("E_ACCOUNT_BAD_ACTION", { message: limits });
+          // the license (account/license.ts): a level above the one in force is signed only once the record in the simulator shows it
+          if (limits?.license !== undefined) {
+            const cur = selfAt(this.selfState, Date.parse(this.now())).now?.license;
+            const v = this.licenseView();
+            if ((cur === undefined || limits.license > cur) && limits.license > v.level) return no("E_ACCOUNT_LIMIT", { message: `Your record in the simulator shows level ${v.level} (${v.name}) now, and a license is signed no higher than the record shows.${nextWords(v) ? ` ${nextWords(v)}` : ""}`, detail: { license: v.level } });
+          }
           const now = this.now();
           const { state, from } = signSelf(this.selfState, limits, now);
           this.selfState = state;
@@ -724,6 +733,8 @@ export class PortfolioService {
       plan: (action) => this.planSigned(action),
       takePlan: (venue, symbol, side, keep) => this.planFor(venue, symbol, side, keep),
       selfBlock: (o) => this.selfHeld(o),
+      // the owner's license, where their own limits hold their real entries to it (account/license.ts)
+      licenseBlock: (usd) => this.licenseBlock(usd),
       // a paper account the account keeps itself, as its owner runs it (live/paper.ts): started again, or paper money added
       paper: (action) => this.paperControl(action),
       paperWords: (action) => this.paperControlWords(action),
@@ -2257,13 +2268,15 @@ export class PortfolioService {
     return { cashUsd: controls.summary().cashUsd, ...(position ? { position } : {}), orders, trades };
   }
 
-  /** your side of the score, holding the market and chance, from the journal's trades of the session (account/practice.ts) */
+  /** your side of the score, holding the market and chance, from the journal's trades of the session (account/practice.ts) — chance's
+   * tries kept for the license, under the hash the score carries */
   private practiceScoreOf(s: PracticeSession): PracticeScore {
     const rows = readJournal(this.opts.home).rows.filter((r) => r.practice?.session === s.id);
     const m = this.practiceMarket && this.practiceMarket.symbol === s.symbol ? this.practiceMarket : undefined;
     const until = Math.min(s.to, s.clock.at);
-    const chance = m ? chanceOf(m, s.from, until, rows, s.id) : undefined;
-    return { you: youOf(rows, s.cashUsd), ...(chance ? { chance } : {}), hold: m ? holdOf(m, s.from, until, s.cashUsd) : { netUsd: 0, netPct: 0 }, reveal: { day: s.day, coin: s.coin, scale: s.scale, window: s.window } };
+    const kept = m ? chanceKept(m, s.from, until, rows, s.id) : undefined;
+    if (kept) writeTries(this.opts.home, kept.tries);
+    return { you: youOf(rows, s.cashUsd), ...(kept ? { chance: kept.chance } : {}), hold: m ? holdOf(m, s.from, until, s.cashUsd) : { netUsd: 0, netPct: 0 }, reveal: { day: s.day, coin: s.coin, scale: s.scale, window: s.window } };
   }
 
   /** THE DESK OVER THE SESSION'S DAY (backtest/desk.ts), after its bell: the momentum script on five-minute bars folded from the session's
@@ -3207,6 +3220,70 @@ export class PortfolioService {
     const { now, pending } = this.selfState;
     const held = this.selfHeld({});
     return { ...(now ? { now: { ...now, words: selfWords(now) } } : {}), ...(pending ? { pending: { ...pending, to: pending.to ? { ...pending.to, words: selfWords(pending.to) } : null } } : {}), ...(held ? { held } : {}), entriesToday: this.entriesToday(this.realNow()) };
+  }
+
+  /** THE LICENSE'S RECORD (account/license.ts): the owner's trades at the practice account of the sessions that have ended, read apart by
+   * the session's window (its row in the practice record), each window's sessions with the tries their bells kept — read again only once
+   * the journal or the practice record has changed. A session's tries are pooled only where the file is what its row's hash says; a
+   * session from before a bell kept them is left out */
+  private licenseBooks(): LicenseBooks {
+    const home = this.opts.home;
+    const stamp = (f: string): string => {
+      try {
+        const st = statSync(f);
+        return `${st.size}:${st.mtimeMs}`;
+      } catch {
+        return "-";
+      }
+    };
+    const key = `${stamp(journalPath(home))}|${stamp(practiceLedgerPath(home))}`;
+    if (this.licenseKept?.key === key) return this.licenseKept.books;
+    const ended = readPractice(home).rows.filter((r): r is Extract<PracticeRow, { kind: "session" }> => r.kind === "session");
+    const trades = readJournal(home).rows.filter((r) => r.practice !== undefined && r.by.who === "owner");
+    const books = {} as LicenseBooks;
+    for (const w of ["train", "exam"] as PracticeWindow[]) {
+      const sessions = ended.filter((r) => r.window === w);
+      const ids = new Set(sessions.map((r) => r.id));
+      const tries: SessionTries[] = [];
+      let left = 0;
+      let broken = 0;
+      for (const r of sessions) {
+        const c = r.score.chance;
+        if (!c || !(c.trades > 0)) continue;
+        if (c.kept === undefined) {
+          left++;
+          continue;
+        }
+        const t = readTries(home, r.id, c.kept);
+        if (typeof t === "string") broken++;
+        else tries.push({ trades: t.trades, ownPct: t.ownPct, means: t.means });
+      }
+      books[w] = bookOf(w, { trades: trades.filter((t) => ids.has(t.practice!.session)), sessions: sessions.length, tries, left, broken });
+    }
+    this.licenseKept = { key, books };
+    return books;
+  }
+
+  /** THE LICENSE AS IT STANDS (account/license.ts): the record's level, and — where the owner's own limits name it — the level held and what
+   * one real entry of theirs may be worth now, under the server's own cap */
+  licenseView(): LicenseView {
+    this.selfState = selfAt(this.selfState, Date.parse(this.now()));
+    return { ...licenseView({ books: this.licenseBooks(), signed: this.selfState.now?.license, serverCapUsd: this.capUsd }), ...(this.opts.liveWrites === undefined ? { readOnly: true } : {}) };
+  }
+
+  /** THE LICENSE AS THE PAGE READS IT (GET /api/account/license): the view, and the owner's own limits it is signed into */
+  license(): { ok: true; self: ReturnType<PortfolioService["selfView"]> } & LicenseView {
+    return { ok: true, ...this.licenseView(), self: this.selfView() };
+  }
+
+  /** WHAT HOLDS THE OWNER'S REAL ENTRY BACK, worth `usd`, where their own limits hold them to their license: its words, the level held and
+   * what an order may be worth there — nothing where it fits, or where the license does not bind them */
+  private licenseBlock(usd: number): { why: string; level: number; capUsd: number } | undefined {
+    this.selfState = selfAt(this.selfState, Date.parse(this.now()));
+    if (this.selfState.now?.license === undefined) return undefined;
+    const v = this.licenseView();
+    const why = licenseHeld(v, usd);
+    return why !== undefined ? { why, level: v.held!, capUsd: v.capUsd! } : undefined;
   }
 
   /** WHAT THE LEDGER TOOK, told to the pages (the push channel; every row passes here as it is written): a statement line (`statement`,

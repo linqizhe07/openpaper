@@ -8,21 +8,25 @@
  * kept: the planned trades beside the unplanned, the result in R, the stops not kept, the winners closed before their target.
  *
  * YOUR OWN LIMITS (setPolicy change "self", signed while calm — the door holds them when it is not). They stop NEW entries at a paper
- * account only, never a close, so no limit ever keeps a position open:
+ * account — and, the license, the owner's own real entries past what it allows — never a close, so no limit ever keeps a position open:
  *
  *   dayLossUsd   the day's loss (New York) at which new entries stop until the next day: the owner's paper trades closed that day
  *   streak       after `losses` losing trades in a row, no new entry until `coolMin` minutes after the last of them closed
  *   maxEntries   the most entries a day (New York)
  *   planFirst    no entry without a plan signed for it first
+ *   license      the owner's own REAL entries held to their license (account/license.ts), up to this level, 0 to 3: what their record in the
+ *                simulator lets one of them be worth. A level above the one in force is signed only once the record shows it
  *   liftHours    how long a loosening waits before it holds: 0 to 168 hours, 24 where not said
  *
- * A tightening holds at once. A LOOSENING — a number raised, a limit taken away, every limit taken away, liftHours lowered — waits the
+ * A tightening holds at once. A LOOSENING — a number raised (the license's level too), a limit taken away, every limit taken away,
+ * liftHours lowered — waits the
  * liftHours of the limits in force when it was signed, and holds from then, so what the owner signs wanting to trade more is what they
  * decided when they were calm. A later signature replaces a loosening still waiting. The account says what holds now and what will hold
  * from when.
  *
  * Nothing here reads a file or a clock: the service keeps the state, rebuilt at a restart from the ledger's signed rows in their order. */
 import { et, fromEt } from "./calendar.ts";
+import { LICENSE_TOP, licenseName } from "./license.ts";
 
 export interface TradePlan {
   why: string;
@@ -86,6 +90,7 @@ export interface SelfLimits {
   streak?: { losses: number; coolMin: number } | undefined;
   maxEntries?: number | undefined;
   planFirst?: boolean | undefined;
+  license?: number | undefined;
   liftHours: number;
 }
 /** the limits in force, and a loosening signed and waiting: what holds from `from` (null: none of them) */
@@ -95,8 +100,8 @@ export interface SelfState {
 }
 
 export const LIFT_HOURS_DEFAULT = 24;
-const SELF_FIELDS = ["dayLossUsd", "streak", "maxEntries", "planFirst", "liftHours"] as const;
-const BOUNDS = { dayLossUsd: [1, 10_000_000], losses: [2, 20], coolMin: [5, 1_440], maxEntries: [1, 200], liftHours: [0, 168] } as const;
+const SELF_FIELDS = ["dayLossUsd", "streak", "maxEntries", "planFirst", "license", "liftHours"] as const;
+const BOUNDS = { dayLossUsd: [1, 10_000_000], losses: [2, 20], coolMin: [5, 1_440], maxEntries: [1, 200], license: [0, LICENSE_TOP], liftHours: [0, 168] } as const;
 const HOUR = 3_600_000;
 
 /** YOUR OWN LIMITS, read strictly: JSON of their fields and no other, each in its bounds, one limit at least — or "" for none at all (taking
@@ -123,6 +128,7 @@ export function parseSelfLimits(value: string): SelfLimits | null | string {
   };
   const dayLossUsd = num(r.dayLossUsd, "dayLossUsd");
   const maxEntries = num(r.maxEntries, "maxEntries", true);
+  const license = num(r.license, "license", true);
   const liftHours = num(r.liftHours, "liftHours");
   let streak: SelfLimits["streak"];
   if (r.streak !== undefined && r.streak !== null) {
@@ -137,10 +143,10 @@ export function parseSelfLimits(value: string): SelfLimits | null | string {
     if (losses === undefined || coolMin === undefined) return "streak names both: how many losses in a row, and the minutes to cool";
     streak = { losses, coolMin };
   }
-  for (const x of [dayLossUsd, maxEntries, liftHours]) if (typeof x === "string") return x;
+  for (const x of [dayLossUsd, maxEntries, license, liftHours]) if (typeof x === "string") return x;
   if (r.planFirst !== undefined && typeof r.planFirst !== "boolean") return "planFirst is true or false";
-  const out: SelfLimits = { ...(dayLossUsd !== undefined ? { dayLossUsd: dayLossUsd as number } : {}), ...(streak ? { streak } : {}), ...(maxEntries !== undefined ? { maxEntries: maxEntries as number } : {}), ...(r.planFirst === true ? { planFirst: true } : {}), liftHours: (liftHours as number | undefined) ?? LIFT_HOURS_DEFAULT };
-  if (out.dayLossUsd === undefined && !out.streak && out.maxEntries === undefined && !out.planFirst) return "your own limits name one at least: a day's loss, a losing streak's cooling, the most entries a day, a plan first — or nothing, to take them all away";
+  const out: SelfLimits = { ...(dayLossUsd !== undefined ? { dayLossUsd: dayLossUsd as number } : {}), ...(streak ? { streak } : {}), ...(maxEntries !== undefined ? { maxEntries: maxEntries as number } : {}), ...(r.planFirst === true ? { planFirst: true } : {}), ...(license !== undefined ? { license: license as number } : {}), liftHours: (liftHours as number | undefined) ?? LIFT_HOURS_DEFAULT };
+  if (out.dayLossUsd === undefined && !out.streak && out.maxEntries === undefined && !out.planFirst && out.license === undefined) return "your own limits name one at least: a day's loss, a losing streak's cooling, the most entries a day, a plan first, your license — or nothing, to take them all away";
   return out;
 }
 
@@ -151,6 +157,7 @@ export function tighter(cur: SelfLimits, next: SelfLimits | null): boolean {
   if (cur.streak && !(next.streak && next.streak.losses <= cur.streak.losses && next.streak.coolMin >= cur.streak.coolMin)) return false;
   if (cur.maxEntries !== undefined && !(next.maxEntries !== undefined && next.maxEntries <= cur.maxEntries)) return false;
   if (cur.planFirst && !next.planFirst) return false;
+  if (cur.license !== undefined && !(next.license !== undefined && next.license <= cur.license)) return false;
   return next.liftHours >= cur.liftHours;
 }
 
@@ -191,6 +198,7 @@ export function selfWords(l: SelfLimits): string {
     l.streak ? `${l.streak.coolMin} minutes' pause after ${l.streak.losses} losses in a row` : "",
     l.maxEntries !== undefined ? `${l.maxEntries} entr${l.maxEntries === 1 ? "y" : "ies"} a day at most` : "",
     l.planFirst ? "a plan before every entry" : "",
+    l.license !== undefined ? `your own real entries held to your license, up to level ${l.license} (${licenseName(l.license)})` : "",
   ].filter(Boolean);
   return `${parts.join(" · ")} — ${l.liftHours === 0 ? "loosened as soon as it is signed" : `loosened only ${l.liftHours} h after it is signed`}`;
 }
