@@ -681,6 +681,21 @@ describe("the setup: what Start the superagent signs, in order", () => {
     expect(p.out("ACTS")).toEqual([]);
     p.run("SG.view = null; SG.started = null");
   });
+
+  it("a seat whose limit counts no more — signed by a browser that signed out — is said first, with whose signature it was; the renewal signs it again, and without the button the way out is a limit under Agents", () => {
+    const why = "it was signed by device 810765ed, which no longer signs for the account";
+    const renewing = { perOrderUsd: 150, leftUsd: 1_850, budgetUsd: 2_000, venues: ["paper-1"], renewHours: 24, renewsAt: iso(NOW + 6 * 3_600_000) };
+    // the desk's view reads no limit from it (desk.ts standing): the Sniper has none, and says why; the Exit and Watch renew
+    const dead = { ...VIEW, seats: VIEW.seats.map((s) => (s.role === "sniper" ? { ...s, status: "ok", limit: undefined, limitVoid: why } : s.role === "exit" || s.role === "watch" ? { ...s, status: "ok", limit: renewing } : s)) };
+    p.run("SG.started = null; SG.params = {}");
+    const note = (v: unknown, owner: boolean) => p.run<string>(`sgNoteHtml(${JSON.stringify(feed())}, ${JSON.stringify(v)}, ${owner}, Date.now())`);
+    expect(note(dead, true)).toBe(`<span class="sg-warn-t">This seat's trading limit counts no more — Sniper: ${why} — so the door refuses its orders until it is signed again. <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button></span>`);
+    expect(p.out<Array<{ say: string }>>(`sgRenewSteps(${JSON.stringify(dead)}, SG.catalog, sgPaperVenues()[0], ${NOW})`).map((x) => x.say)).toEqual(["Sniper's trading limit, renewing"]);
+    expect(note(dead, false)).toBe(`<span class="sg-warn-t">This seat's trading limit counts no more — Sniper: ${why} — so the door refuses its orders until it is signed again (a limit under Agents).</span>`);
+    // two of them: each with its own words
+    const both = { ...dead, seats: dead.seats.map((s) => (s.role === "exit" ? { ...s, limit: undefined, limitVoid: why } : s)) };
+    expect(note(both, true)).toContain(`These seats' trading limits count no more — Sniper: ${why}; Exit: ${why} — so the door refuses their orders until they are signed again. <button`);
+  });
 });
 
 // ---- the controls ----------------------------------------------------------------------------------------------------------------------------

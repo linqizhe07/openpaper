@@ -141,8 +141,11 @@ function renderAgents(L, owner) {
     const where = [t ? `trades at ${t.allow.map(nameOf).join(", ")}` : "", m ? `moves money between ${m.allow.map(nameOf).join(", ")}` : "", t || m ? pays : y ? `pays ${y.allow.includes("*") ? "any payee" : y.allow.join(", ")}` : "", earns].filter(Boolean).join(" · ");
     // a limit given with the owner's words to the agent names them (spend[].intent): it ends with them
     const limit = s ? `${fine(s.spentUsd)} of ${fine(s.budgetUsd)} used · up to ${fine(s.perPaymentUsd)} ${t ? "an order" : m ? "a move" : y ? "a payment" : "each time"}<span class="why">${esc(where)}${s.intent ? ` · for ${esc(s.intent)}` : ""}${s.reservedUsd ? ` · ${fine(s.reservedUsd)} waiting` : ""}${s.expired ? " · limit expired" : ` · until ${nyDay(s.validUntil)}`}</span>` : '<span class="dim">No limit yet: it can do nothing</span>';
+    // a limit whose signature is not an owner's now (a browser that signed out) counts for nothing: said under it, with the way out
+    const dead = [t, m, y, n].filter((x) => x && x.void);
+    const voided = dead.length ? `<span class="why"><span class="warn-t">${esc(dead.map((x) => `${x === t ? "Trading" : x === m ? "Moving money" : x === y ? "Paying" : "Earning"} counts no more: ${x.void}`).join(" · "))}.</span>${owner && k.status === "ok" ? " Give it a limit again below." : ""}</span>` : "";
     const endEarn = n && owner && k.status === "ok" ? ` · <button type="button" class="link dim" data-end-earn="${esc(k.address)}">End earn limit</button>` : "";
-    return `<tr><td>${esc(k.name)}<span class="why"><span class="mono">${esc(short(k.address))}</span>${k.status === "expired" ? " · expired" : ` · until ${nyDay(k.validUntil)}`}</span></td><td>${limit}</td><td class="r"><button type="button" class="link dim" data-memory="${esc(k.address)}">Memory</button>${owner && k.status === "ok" ? ` · <button type="button" class="link dim" data-limit="${esc(k.address)}">Change limit</button>${endEarn} · <button type="button" class="link dim" data-revoke="${esc(k.name)}">Revoke</button>` : ""}</td></tr>`;
+    return `<tr><td>${esc(k.name)}<span class="why"><span class="mono">${esc(short(k.address))}</span>${k.status === "expired" ? " · expired" : ` · until ${nyDay(k.validUntil)}`}</span></td><td>${limit}${voided}</td><td class="r"><button type="button" class="link dim" data-memory="${esc(k.address)}">Memory</button>${owner && k.status === "ok" ? ` · <button type="button" class="link dim" data-limit="${esc(k.address)}">Change limit</button>${endEarn} · <button type="button" class="link dim" data-revoke="${esc(k.name)}">Revoke</button>` : ""}</td></tr>`;
   }).join("");
   const T = L.filter(canTrade);
   const M = L.filter(canMove);
@@ -239,10 +242,17 @@ async function signOutAsk() {
   if (!A || !owns() || busy) return;
   const others = A.signers.owners.filter((o) => o.id !== `device:${Owner.kid}`).length;
   const beast = modeOf(A.mode) === "open";
+  // a limit this browser signed counts no more once it signs out (the door checks every limit against the owners now): each named before
+  // the yes, with who can sign it again — never "the agents keep their limits" while one of them stops
+  const kinds = { trade: "trading limit", venues: "limit to move money", payees: "payment limit", earn: "earn limit" };
+  const lost = A.spend.filter((s) => s.signedBy === `device:${Owner.kid}` && !s.void && !s.expired).map((s) => `${s.agentName}'s ${kinds[s.scope] || "limit"}`);
+  const limits = lost.length
+    ? `<p><b>${lost.length === 1 ? "A limit this browser signed stops counting" : `${lost.length} limits this browser signed stop counting`}:</b> ${esc(lost.join(", "))}. The door refuses what ${lost.length === 1 ? "it covers" : "they cover"} until ${others ? "one of your other devices signs" : "the next browser you pair signs"} ${lost.length === 1 ? "it" : "them"} again.</p>`
+    : "";
   const next = others
     ? `Your ${plural(others, "other device")} ${others === 1 ? "keeps" : "keep"} signing.`
     : 'No browser will sign for the account until one pairs again, with a new pairing code: the terminal the account runs in shows it, or <span class="mono">npm run account:service -- code</span> when it runs in the background. The code from before no longer works.';
-  const ask = await asking(`<form method="dialog" class="ask-f"><h2 id="ask-title">Sign out of this browser?</h2><p>The account stops taking this browser's signature, and its signing key is deleted here: nothing in this browser can sign again — not this page, another tab or a script.</p><p>${next}</p><p class="dim small">You can still look at the account here. Agents keep the limits you signed.</p>${beast ? '<p><label class="chk1"><input type="checkbox" name="so-guard" checked /> Switch to Guard first: whatever an agent asks for waits for a signature</label></p>' : ""}<div class="end"><button type="submit" value="" class="btn">Cancel</button><button type="submit" value="yes" class="btn btn-danger">Sign out</button></div></form>`, (v) => (v === "yes" ? { guard: beast && !!$("ask").querySelector('input[name="so-guard"]:checked') } : null));
+  const ask = await asking(`<form method="dialog" class="ask-f"><h2 id="ask-title">Sign out of this browser?</h2><p>The account stops taking this browser's signature, and its signing key is deleted here: nothing in this browser can sign again — not this page, another tab or a script.</p><p>${next}</p>${limits}<p class="dim small">You can still look at the account here.${lost.length || !A.spend.some((s) => !s.expired && !s.void) ? "" : " The agents' limits were not signed by this browser: they keep counting."}</p>${beast ? '<p><label class="chk1"><input type="checkbox" name="so-guard" checked /> Switch to Guard first: whatever an agent asks for waits for a signature</label></p>' : ""}<div class="end"><button type="submit" value="" class="btn">Cancel</button><button type="submit" value="yes" class="btn btn-danger">Sign out</button></div></form>`, (v) => (v === "yes" ? { guard: beast && !!$("ask").querySelector('input[name="so-guard"]:checked') } : null));
   if (!ask || busy) return;
   busy = true;
   document.body.classList.add("busy");

@@ -543,7 +543,8 @@ export class LiveOrders {
     const now = Date.parse(this.e.host.now());
     const found = spendFor(this.e.state, signer, "trade", now);
     if (isRefusal(found)) return found;
-    if (!(await this.e.stillSigned(found))) return no("E_ACCOUNT_BAD_SIGNATURE", { message: "the trading limit's own signature no longer checks out against the account's owners", detail: { approval: found.id } });
+    const gone = await this.e.voided(found, "the trading limit");
+    if (gone) return gone;
     // a budget that renews (renewHours, signed with the limit): once its window has passed it is counted afresh, from what its orders still
     // open hold — and written down, so a restart picks up from there (patchSpend's spend row)
     const renewed = renewSpend(found, now, this.heldOn(found.id));

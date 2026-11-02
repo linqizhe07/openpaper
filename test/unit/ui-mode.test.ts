@@ -263,6 +263,35 @@ describe("signing out of this browser", () => {
     expect(p.out<string[]>("ASKED")[0]).toContain("<p>Your 1 other device keeps signing.</p>");
   });
 
+  it("names the limits this browser signed before the yes — they count no more once it signs out — and never says the agents keep their limits while one of them stops", async () => {
+    const p = page({ fetch: async () => ({ status: 200, ok: true, json: async () => ({ ok: true }) }) });
+    p.run(OWNER);
+    p.run(ME);
+    const limit = (agentName: string, scope: string, signedBy: string, more: Record<string, unknown> = {}) => ({ id: `spend-${agentName}`, agent: "0x1", agentName, scope, allow: ["ex"], perPaymentUsd: 100, budgetUsd: 1000, spentUsd: 0, reservedUsd: 0, windowHours: 0, validUntil: "2026-11-12T00:00:00.000Z", expired: false, payTo: {}, signedBy, ...more });
+    // the Sniper's and the Exit's limits are this browser's; Claude Code's was signed by the owner's wallet key; an old one counts already for nothing
+    const spend = [limit("Desk Sniper", "trade", `device:${KID}`), limit("Desk Exit", "trade", `device:${KID}`), limit("Claude Code", "venues", "0xabc"), limit("Codex", "trade", `device:${KID}`, { void: "it was signed by device 99999999, which no longer signs for the account" })];
+    p.set("A", account({ signers: signers(1), spend }));
+    asked(p, "");
+    await p.run<Promise<void>>("signOutAsk()");
+    let dialog = p.out<string[]>("ASKED")[0]!;
+    expect(dialog).toContain("<p><b>2 limits this browser signed stop counting:</b> Desk Sniper&#39;s trading limit, Desk Exit&#39;s trading limit. The door refuses what they cover until one of your other devices signs them again.</p>");
+    expect(dialog).toContain('<p class="dim small">You can still look at the account here.</p>');
+    expect(dialog).not.toContain("keep the limits");
+    // the last browser: the next one paired signs it again
+    p.set("A", account({ signers: signers(0), spend: spend.slice(0, 1) }));
+    asked(p, "");
+    await p.run<Promise<void>>("signOutAsk()");
+    dialog = p.out<string[]>("ASKED")[0]!;
+    expect(dialog).toContain("<p><b>A limit this browser signed stops counting:</b> Desk Sniper&#39;s trading limit. The door refuses what it covers until the next browser you pair signs it again.</p>");
+    // none of the limits is this browser's: they keep counting, and it says so
+    p.set("A", account({ signers: signers(1), spend: spend.slice(2, 3) }));
+    asked(p, "");
+    await p.run<Promise<void>>("signOutAsk()");
+    dialog = p.out<string[]>("ASKED")[0]!;
+    expect(dialog).not.toContain("stop counting");
+    expect(dialog).toContain(`<p class="dim small">You can still look at the account here. The agents' limits were not signed by this browser: they keep counting.</p>`);
+  });
+
   it("in Beast, switching to Guard first is offered, ticked — Guard a free POST before the sign-out, the sign-out only if it was taken; unticked, the agents run on; a refused sign-out leaves this browser signing and says why", async () => {
     const posts: Array<{ path: string; body: unknown }> = [];
     let guard = { status: 200, body: { ok: true, mode: "guard" } };

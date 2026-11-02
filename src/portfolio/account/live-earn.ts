@@ -269,7 +269,8 @@ export class LiveEarns {
     const now = Date.parse(this.e.host.now());
     const spend = spendFor(this.e.state, signer, "earn", now);
     if (isRefusal(spend)) return spend;
-    if (!(await this.e.stillSigned(spend))) return no("E_ACCOUNT_BAD_SIGNATURE", { message: "the earn limit's own signature no longer checks out against the account's owners", detail: { approval: spend.id } });
+    const gone = await this.e.voided(spend, "the earn limit");
+    if (gone) return gone;
     const narrow = `${venue}:${product}`;
     const target = spend.allow.includes(narrow) ? narrow : venue;
     if (!spend.allow.includes(target)) return covers(spend, narrow, 0, now)!;

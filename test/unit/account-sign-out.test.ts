@@ -12,7 +12,7 @@ import { createContext, runInContext, Script } from "node:vm";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { isRefusal, type Refusal } from "../../src/core/errors.ts";
 import type { Outcome } from "../../src/portfolio/account/exchange.ts";
-import { SIGN_OUT_TTL_MS, signDevice, signOwner, simKey, type OwnerAction, type SimKey } from "../../src/portfolio/account/sign.ts";
+import { SIGN_OUT_TTL_MS, signAgent, signDevice, signOwner, simKey, type OwnerAction, type SimKey } from "../../src/portfolio/account/sign.ts";
 import type { LiveDeps } from "../../src/portfolio/live/index.ts";
 import { startPortfolioServer } from "../../src/portfolio/server.ts";
 import { PortfolioService } from "../../src/portfolio/service.ts";
@@ -140,6 +140,37 @@ describe("signing out: a browser's last signature, taken at the door", () => {
     expect(owners(three)).toEqual([`device:${c.kid}`]);
     expect(code(await three.by(a, watch))).toBe("E_ACCOUNT_BAD_SIGNATURE");
     expect(code(await three.by(c, watch))).toBe("account");
+  });
+
+  it("A LIMIT the browser signed counts no more once it signs out: the sign-out names it, the page shows it beside the limit with whose signature it was, the door's refusal says why — and a browser that signs now signs it again", async () => {
+    const x = await run(fresh());
+    const a = simKey("device:limits-a");
+    const b = simKey("device:limits-b");
+    const agent = simKey("agent:limits");
+    expect(x.engine.pairDevice(a.jwk, "this browser", CODE)).toMatchObject({ role: "owner" });
+    expect(x.engine.pairDevice(b.jwk, "the laptop")).toMatchObject({ role: "pending" });
+    expect(code(await x.by(a, { type: "convertToMultiSigUser", signers: JSON.stringify({ authorizedUsers: [`device:${a.kid}`, `device:${b.kid}`].sort(), threshold: 1 }) }))).toBe("account");
+    expect(code(await x.by(a, { type: "approveAgent", agentAddress: agent.address, agentName: "Claude Code", validUntil: START + 30 * 24 * HOUR }))).toBe("account");
+    const limit = { type: "approveSpend", agent: agent.address, scope: "trade", allow: "ex", perPayment: "10", budget: "100", windowHours: 0, validUntil: START + 7 * 24 * HOUR } as const;
+    expect(code(await x.by(a, limit))).toBe("account");
+    let spend = (await x.engine.view()).spend;
+    expect(spend).toEqual([expect.objectContaining({ agentName: "Claude Code", scope: "trade", signedBy: `device:${a.kid}` })]);
+    expect(spend[0]!.void).toBeUndefined();
+    // `a` signs out: the limit it signed is named in the sign-out's own words; `b` signs on, so no new pairing code is needed
+    expect(await x.by(a, { type: "signOut", device: `device:${a.kid}` })).toMatchObject({ ok: true, summary: `signed out: device ${a.kid.slice(0, 8)} no longer signs for the account · a limit it signed counts no more until an owner signs it again: Claude Code's trading limit` });
+    spend = (await x.engine.view()).spend;
+    const why = `it was signed by device ${a.kid.slice(0, 8)}, which no longer signs for the account`;
+    expect(spend[0]).toMatchObject({ signedBy: `device:${a.kid}`, void: why });
+    // the agent's order stops at its limit, saying why and what makes it count again — before any venue is asked
+    const order = { type: "agentLiveOrder", venue: "ex", symbol: "BTC/USDT", side: "buy", orderType: "market", qty: "", usd: "10", limitPrice: "" } as const;
+    expect(refusal(await x.svc.exchange(await signAgent(agent, { ...order, nonce: x.nonce() })))).toMatchObject({ code: "E_ACCOUNT_BAD_SIGNATURE", message: `the trading limit's own signature no longer checks out against the account's owners: ${why} — it counts again once an owner signs it again` });
+    // `b`, which signs now, signs the same limit again: it replaces the dead one and counts — the order gets past its limit, to the venue
+    // this account does not have
+    expect(code(await x.by(b, limit))).toBe("account");
+    spend = (await x.engine.view()).spend;
+    expect(spend).toEqual([expect.objectContaining({ signedBy: `device:${b.kid}` })]);
+    expect(spend[0]!.void).toBeUndefined();
+    expect(code(await x.svc.exchange(await signAgent(agent, { ...order, nonce: x.nonce() })))).not.toBe("E_ACCOUNT_BAD_SIGNATURE");
   });
 });
 

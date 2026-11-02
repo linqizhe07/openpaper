@@ -236,7 +236,8 @@ export class RealPayer implements Payer {
     // 1 · the approval. Nothing is sent to a host the owner did not name (or to any host, when the owner signed every one)
     const spend = spendFor(e.state, who.signer, "payees", Date.parse(e.host.now()));
     if (isRefusal(spend)) return spend;
-    if (!(await e.stillSigned(spend))) return no("E_ACCOUNT_BAD_SIGNATURE", { message: "the spending approval's own signature no longer checks out against the account's owners", detail: { approval: spend.id } });
+    const gone = await e.voided(spend, "the spending approval");
+    if (gone) return gone;
     if (!spend.allow.includes(url.host) && !spend.allow.includes("*")) return no("E_MANDATE_RECIPIENT", { venue: url.host, message: `"${url.host}" is not a payee the owner approved (${spend.allow.join(", ")}): nothing was sent to it`, detail: { approval: spend.id, allow: spend.allow, host: url.host } });
     if (isExpired(e.host.now(), e.host.policy().sessionExpiresAt)) return no("E_WALLET_SESSION_EXPIRED", { message: "the agents' session has ended: every write stops, reads continue" });
     // 2 · the source: an agent wallet of this agent's
