@@ -1,7 +1,14 @@
 {
-  "asOf": "2026-11-01",
+  "asOf": "2026-11-03",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 57,
+      "title": "A limit whose signer signed out: said at the door, on the page and before the sign-out, and a desk that scans nothing the door would refuse",
+      "mergedAt": "2026-11-03T01:13:35Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/57",
+      "branch": "fix/limit-signer-gone"
+    },
     {
       "number": 56,
       "title": "The license: what your record in the simulator lets one real order of your own be worth",
