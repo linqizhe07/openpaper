@@ -194,6 +194,7 @@ function orderDoor(trader: LiveTrader, o: { mode?: "open" | "guard"; windowHours
     nextPaymentId: () => "pay-0001",
     state: { agents: [{ address: AGENT, name: "Claude Code", code: "CC" }], spends: [spend] },
     stillSigned: async () => true,
+    voided: async () => undefined,
     patchSpend(id: string, f: (s: SpendApproval) => SpendApproval) {
       const i = e.state.spends.findIndex((s) => s.id === id);
       e.state.spends[i] = f(e.state.spends[i]!);
@@ -547,6 +548,7 @@ function earnDoor(earner: LiveEarner) {
     nextPaymentId: () => "pay-0001",
     state: { agents: [{ address: AGENT, name: "Claude Code", code: "CC" }], spends: [spend] },
     stillSigned: async () => true,
+    voided: async () => undefined,
     patchSpend(id: string, f: (s: SpendApproval) => SpendApproval) {
       const i = e.state.spends.findIndex((s) => s.id === id);
       e.state.spends[i] = f(e.state.spends[i]!);

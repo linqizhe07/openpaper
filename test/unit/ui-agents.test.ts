@@ -85,6 +85,21 @@ describe("the Agents sheet", () => {
     expect(p.sheet()).not.toContain("data-end-earn");
   });
 
+  it("says under a limit that counts no more — its signature not an owner's now — why, and to the owner that a limit is given again below", () => {
+    const p = page();
+    const why = "it was signed by device 810765ed, which no longer signs for the account";
+    p.set("A", account([{ ...limit(TRADER, "trade", ["ex"], 25, 100), signedBy: "device:810765ed12345678", void: why }, limit(SAVER, "earn", ["ex"], 200, 1000)]));
+    p.run("renderAgents(connected(), true)");
+    const rows = p.sheet().split("<tr>").slice(1);
+    const trader = rows.find((r) => r.includes("Claude Code"))!;
+    expect(trader).toContain(`<span class="why"><span class="warn-t">Trading counts no more: ${why}.</span> Give it a limit again below.</span>`);
+    // a limit that counts says nothing of the kind
+    expect(rows.find((r) => r.includes("Saver"))).not.toContain("counts no more");
+    // a browser that only looks is told why, and offered nothing
+    p.run("renderAgents(connected(), false)");
+    expect(p.sheet()).toContain(`<span class="why"><span class="warn-t">Trading counts no more: ${why}.</span></span>`);
+  });
+
   it("ends only the earn limit, as the account signs it: the same agent, kind and places, a budget of nothing", () => {
     const p = page();
     p.set("A", account([]));

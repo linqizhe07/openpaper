@@ -1323,13 +1323,17 @@ function sgNoteHtml(feed, view, owner, now) {
   // a desk whose trading seats' limits do not renew stops once a budget is spent — and a seat with no limit at all (none signed, or the one
   // signed ran out: its days, or the key it was for) places nothing: each said as it is, with the one way out that keeps the desk (sgRenew),
   // which signs the setup's own renewing limit for every such seat
+  // A seat's limit that counts no more — its signature not an owner's now, a browser that signed out — is said first, with whose signature
+  // it was: the door refuses that seat's every order, and the desk scans nothing for it, until the limit is signed again
   const stale = feed.venue && feed.venue.paper ? sgUnrenewed(view, SG.catalog) : [];
-  if (stale.length) {
-    const renew = owner ? ` <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button>` : "";
+  const voided = ((view && view.seats) || []).filter((x) => x.kind === "house" && x.limitVoid);
+  if (stale.length || voided.length) {
+    const renew = owner && stale.length ? ` <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button>` : "";
     const names = (l) => esc(l.map((x) => sgSpec(x.role, SG.catalog).name).join(", "));
     const once = stale.filter((x) => x.limit);
-    const none = stale.filter((x) => !x.limit);
-    const said = [once.length ? `The seats' trading limits do not renew: once a budget is spent, that seat's orders stop until a new limit is signed (${names(once)}).` : "", none.length ? `${none.length > 1 ? "These seats have" : "This seat has"} no trading limit now — none was signed, or the one signed ran out — so ${none.length > 1 ? "they place" : "it places"} nothing (${names(none)}).` : ""].filter(Boolean).join(" ");
+    const none = stale.filter((x) => !x.limit && !x.limitVoid);
+    const dead = voided.length ? `${voided.length > 1 ? "These seats' trading limits count" : "This seat's trading limit counts"} no more — ${voided.map((x) => `${names([x])}: ${esc(x.limitVoid)}`).join("; ")} — so the door refuses ${voided.length > 1 ? "their" : "its"} orders until ${voided.length > 1 ? "they are" : "it is"} signed again${renew ? "" : " (a limit under Agents)"}.` : "";
+    const said = [dead, once.length ? `The seats' trading limits do not renew: once a budget is spent, that seat's orders stop until a new limit is signed (${names(once)}).` : "", none.length ? `${none.length > 1 ? "These seats have" : "This seat has"} no trading limit now — none was signed, or the one signed ran out — so ${none.length > 1 ? "they place" : "it places"} nothing (${names(none)}).` : ""].filter(Boolean).join(" ");
     out.push(`<span class="sg-warn-t">${said}${renew}</span>`);
   }
   const want = SG.params && SG.params.venue;

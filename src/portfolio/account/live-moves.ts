@@ -96,6 +96,8 @@ export interface LiveEngine {
   };
   /** does a spending approval's own owner signature still check out against the owners now */
   stillSigned(s: SpendApproval): Promise<boolean>;
+  /** the refusal of a limit whose signature is not an owner's now, saying whose it was and what makes it count again; undefined while it counts */
+  voided(s: SpendApproval, what: string): Promise<Refusal | undefined>;
   state: { agents: AgentKey[] } & Parameters<typeof spendFor>[0];
   nextPaymentId(): string;
   patchSpend(id: string, f: (s: import("./state.ts").SpendApproval) => import("./state.ts").SpendApproval): void;
@@ -324,7 +326,8 @@ export class LiveMoves {
     const now = Date.parse(this.e.host.now());
     const spend = spendFor(this.e.state, signer, "venues", now);
     if (isRefusal(spend)) return spend;
-    if (!(await this.e.stillSigned(spend))) return no("E_ACCOUNT_BAD_SIGNATURE", { message: "the spending approval's own signature no longer checks out against the account's owners", detail: { approval: spend.id } });
+    const gone = await this.e.voided(spend, "the spending approval");
+    if (gone) return gone;
     // the dial: the agents' session, and each end switched on for agents
     const o = this.e.host.policy();
     if (isExpired(this.e.host.now(), o.sessionExpiresAt)) return no("E_WALLET_SESSION_EXPIRED", { message: "the agent's session has expired: every write stops, reads continue", detail: { sessionExpiresAt: o.sessionExpiresAt } });

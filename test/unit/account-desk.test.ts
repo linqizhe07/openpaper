@@ -9,7 +9,7 @@ import { keyRejected, rejectedFix } from "../../src/portfolio/account/brain-key.
 import { BRAIN_MODELS, BRAIN_NOT_OBJECT, DECISIONS, deskPath, FIRST_CYCLE_MS, KEY_IN_MODEL, KEY_IN_PROVIDER, nextNyAt, nextNyMidnight, ny, readDesk, readRoom, ROLE_SPECS, ROLES, roomPath, scriptedBrain, type Brain, type BrainAbout, type RoleId } from "../../src/portfolio/account/desk.ts";
 import type { Outcome } from "../../src/portfolio/account/exchange.ts";
 import { appendTrade, type JournalTrade } from "../../src/portfolio/account/journal.ts";
-import { signAgent, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
+import { signAgent, signDevice, signOwner, simKey, type AgentAction, type OwnerAction } from "../../src/portfolio/account/sign.ts";
 import { register, type LiveDeps } from "../../src/portfolio/live/index.ts";
 import { ceilTo, floorTo, type LiveTrader, type Market, type OrderRequest, type OrderState, type OrderType } from "../../src/portfolio/live/trade.ts";
 import { no } from "../../src/portfolio/refuse.ts";
@@ -325,6 +325,45 @@ describe("a cycle", () => {
     // 4% of $5,000 is $200; the Sniper's limit is $100 an order: the brain's $9,999 is held to $100
     expect(seen).toContain("size up to $100.00");
     expect(v.open[0]?.sizeUsd).toBe(100);
+  });
+
+  it("THE SNIPER'S LIMIT SIGNED BY A BROWSER THAT SIGNED OUT counts no more: the cycle scans nothing — no brain is asked for a lead the door would refuse — and says why with the way out; the view and the floor say it beside the seat; signed again, the desk scans and places", async () => {
+    let searched = 0;
+    const brain = brainOf({ search: () => (searched++, { leads: [{ symbol: "BTC/USDT", side: "buy", thesis: "BTC is up 2.5% on $2B of volume", confidence: 0.7 }], note: "" }) });
+    const { svc, desk, hire, own, limit, home } = await boot({ brain });
+    await hire();
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    // a browser signs beside the owner's wallet key, signs the Sniper's limit again, and signs itself out
+    const laptop = simKey("device:desk-laptop");
+    let m = 0;
+    const byLaptop = (a: NoNonce<OwnerAction>) => {
+      const action = { ...a, nonce: START + 500 + ++m } as OwnerAction;
+      return svc.exchange({ action, nonce: action.nonce, signature: signDevice(laptop, action) });
+    };
+    expect(svc.account!.pairDevice(laptop.jwk, "the laptop")).toMatchObject({ role: "pending" });
+    expect(code(await own({ type: "convertToMultiSigUser", signers: JSON.stringify({ authorizedUsers: [owner.address, `device:${laptop.kid}`].sort(), threshold: 1 }) }))).toBe("account");
+    const sniper = desk.seatKeyOf("sniper");
+    if (isRefusal(sniper)) throw new Error(sniper.message);
+    expect(code(await byLaptop({ type: "approveSpend", agent: sniper.address as `0x${string}`, scope: "trade", allow: "ex", perPayment: "100", budget: "500", windowHours: 0, validUntil: START + 7 * DAY }))).toBe("account");
+    expect(code(await byLaptop({ type: "signOut", device: `device:${laptop.kid}` }))).toBe("account");
+    await desk.cycle("test");
+    expect(searched).toBe(0);
+    const why = `it was signed by device ${laptop.kid.slice(0, 8)}, which no longer signs for the account`;
+    expect(readRoom(home).at(-1)?.text).toBe(`Cycle 1 (test): the Sniper's trading limit counts no more — ${why} — so the door would refuse its orders, and nothing is scanned. Sign it again: Renew the seats' limits on the Superagent page, or give it a limit under Agents.`);
+    let v = (await desk.view())!;
+    expect(v.seats.find((s) => s.role === "sniper")).toMatchObject({ status: "ok", limitVoid: why });
+    expect(v.seats.find((s) => s.role === "sniper")?.limit).toBeUndefined();
+    // the Exit's limit is the owner's wallet key's, which signs now: it counts
+    expect(v.seats.find((s) => s.role === "exit")).toMatchObject({ limit: { perOrderUsd: 100 } });
+    expect(v.seats.find((s) => s.role === "exit")?.limitVoid).toBeUndefined();
+    expect((await desk.feed(0))!.seats.find((s) => s.role === "sniper")).toMatchObject({ status: "ok", limitVoid: why });
+    // the wallet key signs the Sniper's limit again: the next cycle asks the brain, and the lead is placed
+    await limit("sniper");
+    await desk.cycle("test");
+    expect(searched).toBe(1);
+    v = (await desk.view())!;
+    expect(v.seats.find((s) => s.role === "sniper")?.limitVoid).toBeUndefined();
+    expect(v.open.map((l) => [l.id, l.state])).toEqual([["L-0001", "executed"]]);
   });
 });
 

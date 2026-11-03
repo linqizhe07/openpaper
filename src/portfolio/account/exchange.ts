@@ -954,6 +954,16 @@ export class AccountEngine {
     return { ok: true, kind: "account", summary };
   }
 
+  /** the limits standing that `device` signed (a browser, `device:<kid>`), each by its agent and kind ("Desk Sniper's trading limit"):
+   * what its sign-out leaves counting for nothing until an owner signs them again */
+  limitsSignedBy(device: string): string[] {
+    const now = this.nowMs();
+    const kind = { trade: "trading limit", venues: "limit to move money", payees: "payment limit", earn: "earn limit" } as const;
+    return this.state.spends
+      .filter((s) => s.revokedAt === undefined && now < s.validUntil && isDeviceSig(s.envelope.signature) && `device:${s.envelope.signature.kid}` === device)
+      .map((s) => `${this.state.agents.find((k) => k.address === s.agent)?.name ?? s.agent}'s ${kind[s.scope]}`);
+  }
+
   private summary(a: OwnerAction): string {
     switch (a.type) {
       case "approveAgent":
@@ -973,8 +983,12 @@ export class AccountEngine {
         return `sub-account "${a.name}" created with a float of up to $${a.float}`;
       case "userSetAbstraction":
         return `account type → ${a.abstraction === "unifiedAccount" ? "Unified" : "Separate"}`;
-      case "signOut":
-        return `signed out: device ${a.device.slice("device:".length, "device:".length + 8)} no longer signs for the account${this.state.owners.length ? "" : " · no browser signs for it now: the next one pairs with a new pairing code"}`;
+      case "signOut": {
+        // the limits this browser signed count no more (limitSigner): named here, so a sign-out never leaves an agent's limit dead unsaid
+        const lost = this.limitsSignedBy(a.device);
+        const limits = lost.length ? ` · ${lost.length === 1 ? "a limit it signed counts" : `${lost.length} limits it signed count`} no more until an owner signs ${lost.length === 1 ? "it" : "them"} again: ${lost.join(", ")}` : "";
+        return `signed out: device ${a.device.slice("device:".length, "device:".length + 8)} no longer signs for the account${limits}${this.state.owners.length ? "" : " · no browser signs for it now: the next one pairs with a new pairing code"}`;
+      }
       case "convertToMultiSigUser":
         return `signers changed: ${(JSON.parse(a.signers) as { threshold: number; authorizedUsers: string[] }).threshold} of ${(JSON.parse(a.signers) as { authorizedUsers: string[] }).authorizedUsers.length}`;
       case "setDestination":
@@ -1207,7 +1221,8 @@ export class AccountEngine {
     if (who.authority === "agent") {
       const s = spendFor(this.state, who.signer, "venues", now);
       if (isRefusal(s)) return s;
-      if (!(await this.stillSigned(s))) return no("E_ACCOUNT_BAD_SIGNATURE", { message: "the spending approval's own signature no longer checks out against the account's owners", detail: { approval: s.id } });
+      const gone = await this.voided(s, "the spending approval");
+      if (gone) return gone;
       spend = s;
     }
     const resolved = await this.resolve(action, who.authority, spend);
@@ -1308,11 +1323,42 @@ export class AccountEngine {
 
   /** is the approval still the owner's? Its own signed envelope is checked against the account's CURRENT owners, every time it is used */
   async stillSigned(s: SpendApproval): Promise<boolean> {
-    const a = s.envelope.action;
-    if (a.type !== "approveSpend" || a.agent.toLowerCase() !== s.agent || micro(a.budget) !== s.budgetMicro || micro(a.perPayment) !== s.perPaymentMicro || a.validUntil !== s.validUntil) return false;
-    const signer = await signerOf(a, s.envelope.signature, deviceKeys(this.state));
-    return signer !== null && isOwner(this.state, signer);
+    return (await this.limitSigner(s)).void === undefined;
   }
+
+  /** the refusal of a limit that counts no more, in the words of what it is (`the trading limit`) and why — or undefined while it counts */
+  async voided(s: SpendApproval, what: string): Promise<Refusal | undefined> {
+    const why = (await this.limitSigner(s)).void;
+    return why === undefined ? undefined : no("E_ACCOUNT_BAD_SIGNATURE", { message: `${what}'s own signature no longer checks out against the account's owners: ${why} — it counts again once an owner signs it again`, detail: { approval: s.id } });
+  }
+
+  /** WHO SIGNED A LIMIT, and why it counts no more where it does not (`void`; absent while it counts). A limit counts while its figures are
+   * the ones its envelope signs and its signature is an owner's NOW: a browser that signed out, or a signer the owners were changed without,
+   * leaves every limit it signed counting for nothing until an owner signs it again — said, with who signed it: a browser by the first
+   * characters of its key (as a sign-out names it), a wallet key by its address. Remembered for the owners as they stand: a change of owners
+   * asks again */
+  async limitSigner(s: SpendApproval): Promise<{ by?: string | undefined; void?: string | undefined }> {
+    const key = `${s.id}|${this.state.owners.map((o) => o.id).join(",")}`;
+    const seen = this.signersSeen.get(key);
+    if (seen) return seen;
+    const a = s.envelope.action;
+    const sig = s.envelope.signature;
+    const device = isDeviceSig(sig) ? `device:${sig.kid}` : undefined;
+    let out: { by?: string | undefined; void?: string | undefined };
+    if (a.type !== "approveSpend" || a.agent.toLowerCase() !== s.agent || micro(a.budget) !== s.budgetMicro || micro(a.perPayment) !== s.perPaymentMicro || a.validUntil !== s.validUntil) out = { by: device, void: "its figures are not the ones its signature covers" };
+    else {
+      const signer = await signerOf(a, sig, deviceKeys(this.state));
+      const by = signer ?? device;
+      if (signer !== null && isOwner(this.state, signer)) out = { by };
+      else if (device && !isOwner(this.state, device)) out = { by, void: `it was signed by device ${device.slice("device:".length, "device:".length + 8)}, which no longer signs for the account` };
+      else if (signer !== null && !device) out = { by, void: `it was signed by ${signer}, which is no longer one of the account's owners` };
+      else out = { by, void: "its signature does not check out" };
+    }
+    if (this.signersSeen.size >= 500) this.signersSeen.clear();
+    this.signersSeen.set(key, out);
+    return out;
+  }
+  private readonly signersSeen = new Map<string, { by?: string | undefined; void?: string | undefined }>();
 
   /** Unified: among the venues the approval names, the one whose money lands soonest, then for the least */
   private pickSource(views: VenueView[], target: string, to: string, usd: number, spend: SpendApproval, now: number): Route | Refusal {
@@ -1365,7 +1411,8 @@ export class AccountEngine {
     if (who.authority === "agent") {
       const s = spendFor(this.state, who.signer, "venues", now);
       if (isRefusal(s)) return s;
-      if (!(await this.stillSigned(s))) return no("E_ACCOUNT_BAD_SIGNATURE", { message: "the spending approval's own signature no longer checks out against the account's owners", detail: { approval: s.id } });
+      const gone = await this.voided(s, "the spending approval");
+      if (gone) return gone;
       // the venue has to be named, the amount inside the per-payment line, and the budget has to hold it: a swap is the agent using the user's money
       const limit = covers(s, venue, amountMicro, now);
       if (limit) return limit;
@@ -1578,6 +1625,11 @@ export class AccountEngine {
       return { id: v.id, name: v.name, ...(v.connector ? { connector: v.connector } : {}), frontLine: d.frontLine, usd: r2(v.holdings.reduce((s, h) => s + h.usd, 0)), cashUsd: r2(v.holdings.filter((h) => stable(h) && !h.inTransit).reduce((s, h) => s + h.usd, 0)), holdings: v.holdings.map((h) => { const logo = holdingIcon(h, v.connector); return { asset: h.asset, amount: h.amount, usd: h.usd, class: h.class, note: h.note, inTransit: h.inTransit === true, ...(h.freeUsd !== undefined ? { freeUsd: h.freeUsd } : {}), ...(h.freeAmount !== undefined ? { freeAmount: h.freeAmount } : {}), ...(logo ? { icon: logo } : {}) }; }), ...(d.restricted ? { restricted: d.restricted } : {}), ...(v.plugged ? { plugged: true, via: v.watchOnly ? `${v.provider} · ${v.scope.limits[0] ?? ""}` : v.connector === "wallet" ? "plugged in by address" : `plugged in · ${v.scope.limits[0] ?? ""}` } : {}), ...(v.watchOnly ? { live: true as const, watchOnly: v.watchOnly, ...(v.paper ? { paper: true as const, ...(v.paperStartUsd ? { paperStartUsd: v.paperStartUsd } : {}), ...(v.paperAddedUsd ? { paperAddedUsd: v.paperAddedUsd } : {}) } : {}), ...(v.asOf ? { asOf: v.asOf } : {}), ...(v.stale ? { stale: v.stale } : {}), ...(v.proven ? { proven: v.proven } : {}), ...(v.liveCan ? { liveCan: v.liveCan } : {}), ...(v.liveTrade ? { trade: { ...v.liveTrade, kinds: v.liveTrade.kinds ?? tradeKinds(v.connector, v.liveTrade.what) } } : {}), ...earnOf(v.id), ...(v.noTradeBecause ? { noTradeBecause: v.noTradeBecause } : {}), ...(v.readOnlyBecause ? { readOnlyBecause: v.readOnlyBecause } : {}), ...(v.address ? { address: v.address } : {}) } : v.live ? { live: true as const } : {}), in: label(d.in[0], v.name), out: label(d.out[0], v.name), fiat: (d.in[0] ?? d.out[0])?.chains.length === 0, ledgers: [...new Set(d.inside.flatMap((x) => (x.from === "chain" ? [] : [x.from, x.to])))], swaps: d.swap.map((x) => ({ pair: x.pair, feeBps: x.feeBps, minUsd: x.minUsd, access: x.access })), agentKey: d.agentKey, runways };
     });
     const owners = this.state.owners.map((o) => ({ id: o.id, kind: o.kind, label: o.label }));
+    // who signed each limit standing, and why one counts no more (limitSigner): said beside it, so a limit the door refuses never looks whole
+    const signedBy = new Map(await Promise.all(this.state.spends.filter((s) => s.revokedAt === undefined).map(async (s) => {
+      const w = await this.limitSigner(s);
+      return [s.id, { ...(w.by ? { signedBy: w.by } : {}), ...(w.void ? { void: w.void } : {}) }] as const;
+    })));
     // a paper account's numbers are not money: its row is on the page, nothing of it is in the totals
     const counted = venues.filter((v) => !("paper" in v && v.paper === true));
     return {
@@ -1593,7 +1645,7 @@ export class AccountEngine {
       keys: this.state.agents.map((k) => ({ address: k.address, name: k.name, code: k.code, validUntil: new Date(k.validUntil).toISOString(), approvedAt: k.approvedAt, status: agentStatus(this.state, k.address, now) })),
       requests: this.state.requests,
       // a budget that renews is shown as it stands now: a window that has passed since its last order is counted afresh here too
-      spend: this.state.spends.filter((s) => s.revokedAt === undefined).map((x) => renewSpend(x, now, this.trade.heldOn(x.id))).map((s) => ({ id: s.id, agent: s.agent, agentName: this.state.agents.find((k) => k.address === s.agent)?.name ?? s.agent, scope: s.scope, allow: s.allow, perPaymentUsd: s.perPaymentMicro / 1e6, budgetUsd: s.budgetMicro / 1e6, spentUsd: s.spentMicro / 1e6, reservedUsd: s.reservedMicro / 1e6, windowHours: s.windowHours, validUntil: new Date(s.validUntil).toISOString(), expired: now >= s.validUntil, payTo: s.payTo, ...(s.intent ? { intent: s.intent } : {}), ...(s.renewHours ? { renewHours: s.renewHours, ...(s.renewedAt !== undefined ? { renewsAt: new Date(s.renewedAt + s.renewHours * 3_600_000).toISOString() } : {}) } : {}) })),
+      spend: this.state.spends.filter((s) => s.revokedAt === undefined).map((x) => renewSpend(x, now, this.trade.heldOn(x.id))).map((s) => ({ id: s.id, agent: s.agent, agentName: this.state.agents.find((k) => k.address === s.agent)?.name ?? s.agent, scope: s.scope, allow: s.allow, perPaymentUsd: s.perPaymentMicro / 1e6, budgetUsd: s.budgetMicro / 1e6, spentUsd: s.spentMicro / 1e6, reservedUsd: s.reservedMicro / 1e6, windowHours: s.windowHours, validUntil: new Date(s.validUntil).toISOString(), expired: now >= s.validUntil, payTo: s.payTo, ...(s.intent ? { intent: s.intent } : {}), ...(s.renewHours ? { renewHours: s.renewHours, ...(s.renewedAt !== undefined ? { renewsAt: new Date(s.renewedAt + s.renewHours * 3_600_000).toISOString() } : {}) } : {}), ...signedBy.get(s.id) })),
       fees: this.state.fees.map((f) => ({ builder: f.builder, maxFeeRate: `${r2(f.maxFeeRate * 100)}%` })),
       cards: this.host.cards().filter((c) => c.status === "pending").map((c) => ({ id: c.id, flight: c.flight, usd: c.usd, reason: c.reason, hash: cardHash(c), kind: c.action?.type ?? c.intent.kind, ...(c.signer ? { agent: c.signer, agentName: this.agentName(c.signer) } : {}), ...(c.expiresAt ? { expiresAt: c.expiresAt } : {}), shown: c.action ? [...Object.entries(c.offer ?? {}).map(([name, value]) => ({ name, value: String(value) })), ...Object.entries(c.action).filter(([k]) => k !== "type" && k !== "mandates" && k !== "cnf").map(([name, value]) => ({ name, value: typeof value === "object" ? JSON.stringify(value) : String(value) }))] : [{ name: "account", value: c.account }, { name: "what", value: JSON.stringify(c.intent) }] })),
       pay: this.payer?.view() ?? { payees: [], sessions: [] },
@@ -1793,7 +1845,7 @@ export interface AccountPage {
   keys: Array<{ address: string; name: string; code: string; validUntil: string; approvedAt: string; status: string }>;
   requests: AccountState["requests"];
   /** the standing limits. `intent`: the open intent the owner tied the limit to when signing it (its id), where there is one */
-  spend: Array<{ id: string; agent: string; agentName: string; scope: string; allow: string[]; perPaymentUsd: number; budgetUsd: number; spentUsd: number; reservedUsd: number; windowHours: number; validUntil: string; expired: boolean; payTo: Record<string, string>; intent?: string; /** a trading limit whose entry budget renews (approveSpend renewHours): every how many hours, and when it next does */ renewHours?: number; renewsAt?: string }>;
+  spend: Array<{ id: string; agent: string; agentName: string; scope: string; allow: string[]; perPaymentUsd: number; budgetUsd: number; spentUsd: number; reservedUsd: number; windowHours: number; validUntil: string; expired: boolean; payTo: Record<string, string>; intent?: string; /** a trading limit whose entry budget renews (approveSpend renewHours): every how many hours, and when it next does */ renewHours?: number; renewsAt?: string; /** who signed it: `device:<kid>` for a browser, a wallet key's address */ signedBy?: string; /** why it counts no more — its signature is not an owner's now (a browser that signed out) — in words; absent while it counts (AccountEngine.limitSigner) */ void?: string }>;
   fees: Array<{ builder: string; maxFeeRate: string }>;
   /** cards waiting for the owner. `kind`: the agent's instruction type (agentLiveOrder, agentLiveMove …); a card the older write path raised
    * names its intent's kind (trade, move …). `agent`: the key that asked, and its name on the account */

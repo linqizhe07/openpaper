@@ -441,6 +441,16 @@ export interface SeatLimit {
   renewsAt?: string | undefined;
 }
 
+/** a seat's standing at the door: its key let in or not, its trading limit, its cards waiting — and, where the limit signed for it counts
+ * no more (its signature is not an owner's now: a browser that signed out), why, with no limit read from it: the door refuses whatever it
+ * would place, so the desk never takes that limit for one */
+export interface SeatStanding {
+  status: "ok" | "not let in" | "expired" | "revoked";
+  limit?: SeatLimit | undefined;
+  cards: number;
+  limitVoid?: string | undefined;
+}
+
 /** The floor's read (GET /api/account/desk/feed?since=<seq>), asked every second while the floor shows: the room's lines after `since`, who
  * is working, the brain calls under way, the last scan, the autonomy, the session, the venue, the equity's last points, the target, the
  * funnel, the day, the last leads, the next cycle, the brain's standing and spend. Everything in it is the desk's own record or the
@@ -474,7 +484,7 @@ export interface DeskFeed {
    * have, in percent */
   name: string;
   objective: DeskObjective;
-  seats: Array<{ role: RoleId; kind: "house" | "outside"; name: string; status: "ok" | "not let in" | "expired" | "revoked"; limit?: SeatLimit | undefined }>;
+  seats: Array<{ role: RoleId; kind: "house" | "outside"; name: string; status: SeatStanding["status"]; limit?: SeatLimit | undefined; limitVoid?: string | undefined }>;
   hard: { maxSpreadPct: number };
 }
 
@@ -1076,7 +1086,7 @@ export interface DeskView {
   autonomy?: DeskAutonomy | undefined;
   /** what Search scanned last */
   lastScan?: DeskScan | undefined;
-  seats: Array<DeskSeat & { status: "ok" | "not let in" | "expired" | "revoked"; limit?: SeatLimit | undefined; cards: number }>;
+  seats: Array<DeskSeat & SeatStanding>;
   session?: (DeskSession & { state: "live" | "paused" | "halted" | "ended"; elapsedMs: number; remainingMs: number }) | undefined;
   equity: { nowUsd: number; startUsd: number; changeUsd: number; changePct: number; mult: number; points: Array<[number, number]> };
   target: { pct: number; progressPct: number; reachedUsd: number; targetUsd: number };
@@ -2170,6 +2180,11 @@ export class Desk {
       this.room("head", "cycle", `Cycle ${n} (${why}): the Sniper seat is ${sniper ? sniper.status : "empty"}: nothing would be placed, so nothing is scanned. Let it in under Agents.`);
       return;
     }
+    // a limit that counts no more is said as what it is, with the way out: the page's renewal signs the seats' limits again in one go
+    if (sniper.limitVoid !== undefined) {
+      this.room("head", "cycle", `Cycle ${n} (${why}): the Sniper's trading limit counts no more — ${sniper.limitVoid} — so the door would refuse its orders, and nothing is scanned. Sign it again: Renew the seats' limits on the Superagent page, or give it a limit under Agents.`);
+      return;
+    }
     if (!sniper.limit || !sniper.limit.venues.includes(venue.id)) {
       this.room("head", "cycle", `Cycle ${n} (${why}): the Sniper has no trading limit at ${venue.name}: the door would refuse its orders, so nothing is scanned. Give it one under Agents.`);
       return;
@@ -2204,15 +2219,17 @@ export class Desk {
   }
 
   /** each seat's standing on the account: let in, its trading limit at the desk's venue, its cards waiting */
-  private standing(page: AccountPage): Map<RoleId, { status: "ok" | "not let in" | "expired" | "revoked"; limit?: SeatLimit | undefined; cards: number }> {
-    const out = new Map<RoleId, { status: "ok" | "not let in" | "expired" | "revoked"; limit?: SeatLimit | undefined; cards: number }>();
+  private standing(page: AccountPage): Map<RoleId, SeatStanding> {
+    const out = new Map<RoleId, SeatStanding>();
     for (const s of this.file?.seats ?? []) {
       const keys = page.keys.filter((k) => k.address === s.address).sort((a, b) => Date.parse(b.approvedAt) - Date.parse(a.approvedAt));
       const key = keys[0];
       const status = !key ? "not let in" : key.status === "ok" ? "ok" : key.status === "expired" ? "expired" : "revoked";
-      const spend = page.spend.find((x) => x.agent === s.address && x.scope === "trade" && !x.expired && x.budgetUsd > 0);
+      const signed = page.spend.find((x) => x.agent === s.address && x.scope === "trade" && !x.expired && x.budgetUsd > 0);
+      // a limit whose signature is not an owner's now is no limit: the door refuses what it would place (AccountEngine.limitSigner)
+      const spend = signed?.void === undefined ? signed : undefined;
       const limit: SeatLimit | undefined = spend ? { perOrderUsd: spend.perPaymentUsd, leftUsd: r2(Math.max(0, spend.budgetUsd - spend.spentUsd - spend.reservedUsd)), budgetUsd: spend.budgetUsd, venues: spend.allow, ...(spend.renewHours ? { renewHours: spend.renewHours, ...(spend.renewsAt ? { renewsAt: spend.renewsAt } : {}) } : {}) } : undefined;
-      out.set(s.role, { status, limit, cards: page.cards.filter((c) => c.agent === s.address).length });
+      out.set(s.role, { status, limit, cards: page.cards.filter((c) => c.agent === s.address).length, ...(signed?.void !== undefined ? { limitVoid: signed.void } : {}) });
     }
     return out;
   }
@@ -2976,7 +2993,7 @@ export class Desk {
     if (!f) return undefined;
     const page = await this.world.page();
     const nowMs = Date.parse(this.world.now());
-    const standing = page ? this.standing(page) : new Map<RoleId, { status: "ok" | "not let in" | "expired" | "revoked"; limit?: SeatLimit | undefined; cards: number }>();
+    const standing = page ? this.standing(page) : new Map<RoleId, SeatStanding>();
     const s = f.session;
     const { state, equity: eq, target, venue, nextCycleAt } = this.figures(nowMs, page);
     const { nowUsd: now, startUsd: start } = eq;
@@ -3001,7 +3018,7 @@ export class Desk {
       brain: { ...brain, provider: f.brain.provider, label: this.brain.label, model: f.brain.model, effort: f.brain.effort, ...(f.brain.price ? { price: f.brain.price } : {}), spend: this.spendNow() },
       ...(f.autonomy ? { autonomy: f.autonomy } : {}),
       ...(f.lastScan ? { lastScan: f.lastScan } : {}),
-      seats: f.seats.map((x) => ({ ...x, status: standing.get(x.role)?.status ?? "not let in", limit: standing.get(x.role)?.limit, cards: standing.get(x.role)?.cards ?? 0 })),
+      seats: f.seats.map((x) => ({ ...x, status: standing.get(x.role)?.status ?? "not let in", limit: standing.get(x.role)?.limit, cards: standing.get(x.role)?.cards ?? 0, ...(standing.get(x.role)?.limitVoid !== undefined ? { limitVoid: standing.get(x.role)!.limitVoid } : {}) })),
       ...(s ? { session: { ...s, state, elapsedMs: Math.max(0, Math.min(nowMs, Date.parse(s.endedAt ?? s.endsAt)) - Date.parse(s.startedAt)), remainingMs: Math.max(0, Date.parse(s.endsAt) - nowMs) } } : {}),
       equity: { ...eq, mult: start ? Number((now / start).toFixed(3)) : 1, points: f.equity },
       target,
@@ -3106,7 +3123,7 @@ export class Desk {
     };
     // the floor's equity is its open leads at the marks its rows show: start, plus what closed since, plus the sum of those leads' results
     const { state, equity, target, venue, nextCycleAt } = this.figures(nowMs, kept, (l) => liveMarked(l).unrealizedUsd);
-    const standing = kept ? this.standing(kept) : new Map<RoleId, { status: "ok" | "not let in" | "expired" | "revoked"; limit?: SeatLimit | undefined; cards: number }>();
+    const standing = kept ? this.standing(kept) : new Map<RoleId, SeatStanding>();
     const s = f.session;
     const brain = this.standingOf();
     return {
@@ -3153,7 +3170,7 @@ export class Desk {
       brain: { ok: brain.ok, ...(brain.ok || !brain.why ? {} : { why: brain.why }), ...(brain.ok || !brain.fix ? {} : { fix: brain.fix }), provider: f.brain.provider, label: this.brain.label, model: f.brain.model, spend: this.spendNow() },
       name: f.name,
       objective: { ...f.objective },
-      seats: f.seats.map((x) => ({ role: x.role, kind: x.kind, name: x.name, status: standing.get(x.role)?.status ?? "not let in", ...(standing.get(x.role)?.limit ? { limit: standing.get(x.role)!.limit } : {}) })),
+      seats: f.seats.map((x) => ({ role: x.role, kind: x.kind, name: x.name, status: standing.get(x.role)?.status ?? "not let in", ...(standing.get(x.role)?.limit ? { limit: standing.get(x.role)!.limit } : {}), ...(standing.get(x.role)?.limitVoid !== undefined ? { limitVoid: standing.get(x.role)!.limitVoid } : {}) })),
       hard: { maxSpreadPct: MAX_SPREAD_PCT },
     };
   }
