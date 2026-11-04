@@ -42,6 +42,7 @@ import { nextRegularSession, regularSession } from "../../src/portfolio/account/
 import { no } from "../../src/portfolio/refuse.ts";
 import { register } from "../../src/portfolio/live/index.ts";
 import { isExcludedCategory, RWA_CATEGORY } from "../../src/portfolio/live/categories.ts";
+import type { EventContract, Strike } from "../../src/portfolio/live/event-structure.ts";
 import type { EarnPosition, EarnProduct, EarnState, LiveEarner } from "../../src/portfolio/live/earn.ts";
 import { CHAINS, type ChainName, type ChainReader, type ChainSender } from "../../src/portfolio/live/chain.ts";
 import { impliedUsd, PRE_IPO_CATEGORY, PRE_IPO_ISSUERS, PRE_IPO_PER_POINT } from "../../src/portfolio/live/preipo.ts";
@@ -634,6 +635,45 @@ export interface EventSpec {
   change: number;
   volume: number;
   vol?: number | undefined;
+  /** THE RULE STRUCTURE the stand-in's events show (live/event-structure.ts, standinContracts): the event several markets belong to (one
+   * id they share), whether at most one of them resolves YES, the rule that decides the market in the stand-in's own words, its strike
+   * where it is a number, and who settles it — made up, so the scan has something to catalogue and to flag on a page */
+  eventId?: string | undefined;
+  exclusive?: boolean | undefined;
+  rules?: string | undefined;
+  strike?: Strike | undefined;
+  sources?: string[] | undefined;
+}
+
+/** the stand-in's event contracts with their rules, as the structure scan reads a venue's (PublicSource.contracts): every open event of a
+ * book that carries a rule, its YES leg at the book's bid and ask now, a Kalshi-like fee of 7% × p × (1 − p) */
+export function standinContracts(book: EventBook, v: { venue: string; venueName: string; connector: string }): EventContract[] {
+  const now = w().clock();
+  return book.events
+    .filter((e) => e.rules && now < e.closeAt)
+    .map((e): EventContract => {
+      const m = book.market(`${e.id}:YES`);
+      return {
+        venue: v.venue,
+        venueName: v.venueName,
+        connector: v.connector,
+        symbol: `${e.id}:YES`,
+        id: e.id,
+        event: { id: e.eventId ?? e.id, title: e.event?.title ?? e.title, exclusive: e.exclusive === true },
+        question: e.title,
+        words: e.event?.market ?? e.title,
+        rules: e.rules!,
+        ...(e.strike ? { strike: e.strike } : {}),
+        closeTime: new Date(e.closeAt).toISOString(),
+        settles: { sources: e.sources ?? [], at: new Date(e.closeAt).toISOString() },
+        ...(m?.bid !== undefined ? { bid: m.bid } : {}),
+        ...(m?.ask !== undefined ? { ask: m.ask } : {}),
+        tick: 0.01,
+        fee: { kind: "quadratic", rate: 0.07, maker: 0, rounding: "up-cent", words: `${v.venueName}: 7% × p × (1 − p) a contract, rounded up to the cent on each order (a stand-in)` },
+        open: true,
+        category: e.category,
+      };
+    });
 }
 
 const ROLL_MS = 15 * MINUTE;
@@ -1118,13 +1158,28 @@ function curves(prices: PriceBook, t0: number): { events: EventSpec[]; publicEve
     // an IPO question, under the venue's own word for it (categories.ts isIpoCategory): it stays in Predictions beside the busiest few, and
     // the Pre-IPO company drawer names it
     { id: "SI-IPO-ANTHROPIC", title: "Will Anthropic IPO before January 1, 2027?", category: "IPO", closeAt: t0 + 86 * D + 5 * H, yes: 0.64, change: 0.03, volume: 215_000, vol: 0.5 },
+    // THE RULE STRUCTURE (live/event-structure.ts): the same question the public exchange asks below, priced ten cents apart — a "same"
+    // relation across the two venues, flagged; too thin to be one of the busiest few, so the rolling bitcoin market keeps its place among them
+    { id: "SI-FEDCUT-BY-DEC9", title: "Will the Fed cut rates by December 9, 2026?", category: "Economics", closeAt: t0 + 9 * D + 3 * H, yes: 0.6, change: 0.02, volume: 12_000, vol: 0.3, rules: "If the Federal Reserve lowers the target range for the federal funds rate by December 9, 2026, then the market resolves to Yes.", sources: ["Federal Reserve"] },
   ];
   // the public event exchange's events carry tags as Gamma's do: the Sports one is there to be LEFT OUT of the public listing (categories.ts),
   // and the housekeeping tags ("Hide From New", "Recurring") are never the category shown
   const publicEvents: EventSpec[] = [
     { id: "SX-JOBS-NEXT", title: "Will the unemployment rate be 4.5% or higher in the next jobs report?", category: "Economics", tags: ["Jobs Report", "Economy", "Recurring"], event: { title: "Unemployment in the next jobs report?", market: "4.5% or higher" }, closeAt: t0 + 6 * D + 2 * H, yes: 0.27, change: 0.02, volume: 530_000 },
     { id: "SX-OPENER-OT", title: "Will the season opener go to overtime?", category: "Sports", tags: ["Games", "Sports", "NFL (All)"], closeAt: t0 + 11 * H, yes: 0.18, change: -0.01, volume: 150_000, vol: 0.7 },
-    { id: "SX-YIELD-FRI", title: "Will the 10-year Treasury yield close above 4.25% on Friday?", category: "Financials", tags: ["Hide From New", "Treasuries", "Finance"], event: { title: "10-year Treasury yield on Friday?", market: "Above 4.25%" }, closeAt: t0 + 2 * D + 2 * H, yes: 0.47, change: 0.03, volume: 380_000 },
+    { id: "SX-YIELD-FRI", title: "Will the 10-year Treasury yield close above 4.25% on Friday?", category: "Financials", tags: ["Hide From New", "Treasuries", "Finance"], event: { title: "10-year Treasury yield on Friday?", market: "Above 4.25%" }, closeAt: t0 + 2 * D + 2 * H, yes: 0.47, change: 0.03, volume: 380_000, eventId: "SX-YIELD-FRI-EV", rules: "This market will settle to Yes if the 10-year Treasury yield closes above 4.25% on Friday, as the Federal Reserve's H.15 release reports it. Outcome sourced from the Federal Reserve.", sources: ["the Federal Reserve"] },
+    // THE RULE STRUCTURE (live/event-structure.ts): a ladder of thresholds in that yield event, priced in order (no deviation); a set of
+    // CPI ranges that exclude each other and tile the line, whose bids add up to more than a dollar (flagged); a chain of dates whose
+    // middle link is priced above its later one (flagged); and the Fed question the connected Stand-in Predictions asks too
+    { id: "SX-YIELD-FRI-450", title: "Will the 10-year Treasury yield close above 4.50% on Friday?", category: "Financials", tags: ["Treasuries", "Finance"], event: { title: "10-year Treasury yield on Friday?", market: "Above 4.50%" }, closeAt: t0 + 2 * D + 2 * H, yes: 0.2, change: 0.01, volume: 90_000, eventId: "SX-YIELD-FRI-EV", rules: "This market will settle to Yes if the 10-year Treasury yield closes above 4.50% on Friday, as the Federal Reserve's H.15 release reports it. Outcome sourced from the Federal Reserve.", sources: ["the Federal Reserve"] },
+    { id: "SX-YIELD-FRI-400", title: "Will the 10-year Treasury yield close above 4.00% on Friday?", category: "Financials", tags: ["Treasuries", "Finance"], event: { title: "10-year Treasury yield on Friday?", market: "Above 4.00%" }, closeAt: t0 + 2 * D + 2 * H, yes: 0.8, change: 0.01, volume: 60_000, eventId: "SX-YIELD-FRI-EV", rules: "This market will settle to Yes if the 10-year Treasury yield closes above 4.00% on Friday, as the Federal Reserve's H.15 release reports it. Outcome sourced from the Federal Reserve.", sources: ["the Federal Reserve"] },
+    { id: "SX-CPI-OCT-LOW", title: "October CPI, month on month: below 0.2%?", category: "Economics", tags: ["Economy", "Inflation"], event: { title: "October CPI, month on month?", market: "Below 0.2%" }, closeAt: t0 + 6 * D + 4 * H, yes: 0.45, change: 0.02, volume: 140_000, eventId: "SX-CPI-OCT", exclusive: true, rules: "This market will settle to Yes if the Consumer Price Index for October 2026 rises by less than 0.2% from September, as the Bureau of Labor Statistics first reports it. Only one outcome in this market will resolve to Yes. Outcome sourced from the Bureau of Labor Statistics.", sources: ["the Bureau of Labor Statistics"] },
+    { id: "SX-CPI-OCT-MID", title: "October CPI, month on month: 0.2% to 0.3%?", category: "Economics", tags: ["Economy", "Inflation"], event: { title: "October CPI, month on month?", market: "0.2% to 0.3%" }, closeAt: t0 + 6 * D + 4 * H, yes: 0.45, change: -0.01, volume: 150_000, eventId: "SX-CPI-OCT", exclusive: true, rules: "This market will settle to Yes if the Consumer Price Index for October 2026 rises by 0.2% to 0.3% from September, as the Bureau of Labor Statistics first reports it. Only one outcome in this market will resolve to Yes. Outcome sourced from the Bureau of Labor Statistics.", sources: ["the Bureau of Labor Statistics"] },
+    { id: "SX-CPI-OCT-HIGH", title: "October CPI, month on month: above 0.3%?", category: "Economics", tags: ["Economy", "Inflation"], event: { title: "October CPI, month on month?", market: "Above 0.3%" }, closeAt: t0 + 6 * D + 4 * H, yes: 0.3, change: 0.01, volume: 110_000, eventId: "SX-CPI-OCT", exclusive: true, rules: "This market will settle to Yes if the Consumer Price Index for October 2026 rises by more than 0.3% from September, as the Bureau of Labor Statistics first reports it. Only one outcome in this market will resolve to Yes. Outcome sourced from the Bureau of Labor Statistics.", sources: ["the Bureau of Labor Statistics"] },
+    { id: "SX-OPUS-NOV20", title: "Claude Opus 5.6 released by November 20, 2026?", category: "Technology", tags: ["Tech", "AI"], event: { title: "Claude Opus 5.6 released?", market: "By November 20, 2026" }, closeAt: t0 + 16 * D + 6 * H, yes: 0.62, change: 0.03, volume: 95_000, eventId: "SX-OPUS", rules: "This market will settle to Yes if Anthropic releases a Claude model labeled Opus and numbered 5.6 or greater by November 20, 2026, 11:59 PM ET. Outcome sourced from Anthropic.", sources: ["Anthropic"] },
+    { id: "SX-OPUS-NOV30", title: "Claude Opus 5.6 released by November 30, 2026?", category: "Technology", tags: ["Tech", "AI"], event: { title: "Claude Opus 5.6 released?", market: "By November 30, 2026" }, closeAt: t0 + 26 * D + 6 * H, yes: 0.5, change: -0.04, volume: 70_000, eventId: "SX-OPUS", rules: "This market will settle to Yes if Anthropic releases a Claude model labeled Opus and numbered 5.6 or greater by November 30, 2026, 11:59 PM ET. Outcome sourced from Anthropic.", sources: ["Anthropic"] },
+    { id: "SX-OPUS-DEC31", title: "Claude Opus 5.6 released by December 31, 2026?", category: "Technology", tags: ["Tech", "AI"], event: { title: "Claude Opus 5.6 released?", market: "By December 31, 2026" }, closeAt: t0 + 57 * D + 6 * H, yes: 0.7, change: 0.01, volume: 50_000, eventId: "SX-OPUS", rules: "This market will settle to Yes if Anthropic releases a Claude model labeled Opus and numbered 5.6 or greater by December 31, 2026, 11:59 PM ET. Outcome sourced from Anthropic.", sources: ["Anthropic"] },
+    { id: "SX-FEDCUT-BY-DEC9", title: "Fed rate cut by December 9, 2026?", category: "Economics", tags: ["Economy", "Fed"], event: { title: "Fed rate cut by December 9, 2026?", market: "Cut" }, closeAt: t0 + 9 * D + 3 * H, yes: 0.48, change: -0.01, volume: 120_000, rules: "This market will settle to Yes if the Federal Reserve lowers the target range for the federal funds rate by December 9, 2026, 11:59 PM ET. Outcome sourced from the Federal Reserve's statement, and failing it Bloomberg.", sources: ["the Federal Reserve's statement, and failing it Bloomberg"] },
   ];
   for (const e of [...events, ...publicEvents]) prices.add(`ev:${e.id}`, { price: e.yes, change24h: e.change, vol: e.vol, event: true });
   return { events, publicEvents };
@@ -1543,6 +1598,20 @@ export function publicSources(): PublicSource[] {
     events: async (o) => publicLegs(w().pubevents.eventsList(o)),
     candles: async (symbol, interval, win) => w().pubevents.candles("standin-pubevents-public", symbol, interval, win),
     notes: () => ["Stand-in Event Exchange: its busiest events, without sports (a stand-in: nothing here is real)."],
+    // its contracts with their rules, for the structure scan (the exclusive CPI set, the yield ladder, the Opus dates, the Fed question)
+    contracts: async () => standinContracts(w().pubevents, { venue: "standin-pubevents", venueName: w().pubevents.name, connector: "live:standin-pubevents" }),
+  };
+  // the connected Stand-in Predictions' contracts with their rules, for the structure scan, as the keyless Kalshi read is the public side
+  // of a connected Kalshi: a source of the same connection that lists nothing of its own (the connected venue speaks for its markets) and
+  // offers its contracts, so the scan sets the Fed question here beside the public exchange's
+  const predictRules: PublicSource = {
+    id: "standin-events-public",
+    name: "Stand-in Predictions",
+    kind: "events",
+    connectTo: "predict",
+    connector: "live:standin-events",
+    listings: async () => [],
+    contracts: async () => standinContracts(w().predict, { venue: "predict", venueName: w().predict.name, connector: "live:standin-events" }),
   };
   // how much of the token list a listing with nothing searched for shows, for the sentence under it
   let shownTokens: { of: number; total: number } | undefined;
@@ -1595,7 +1664,7 @@ export function publicSources(): PublicSource[] {
     listings: async () => no("E_VENUE_GEOBLOCKED", { venue: "standin-geo", message: "Stand-in Geo Exchange does not serve this location: that is its own rule, and the account does not look for a way around it", native: { status: 451, said: '{"code":0,"msg":"Service unavailable from a restricted location (stand-in)."}' } }),
   };
   // the stocks before the tokens, as the real list is: a paper account's "NVDA" is the share, not the token
-  return [pubex, pubevents, pubperps, pubstocks, tokens, geo];
+  return [pubex, pubevents, predictRules, pubperps, pubstocks, tokens, geo];
 }
 
 // ---- the network, the chain and the payees, as the stand-in answers them: nothing leaves the process -------------------------------------

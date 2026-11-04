@@ -65,6 +65,10 @@
  *                                                        what closes soon and what trades most; `key`, a row's own exactly as `items`
  *                                                        names it (coin:BTC, kalshi:<market ticker>), keeps only that row, before the
  *                                                        cut to `limit` (at most 200 characters; `q` still narrows what is read)
+ *   GET  /api/account/structure?all=&limit=&minNet=      THE RULE STRUCTURE of the event contracts (live/event-structure.ts): which markets
+ *                                                        at Kalshi and Polymarket US imply, exclude or repeat one another by their own
+ *                                                        rules, and where the books break it net of fees; the flagged first (all=1: every
+ *                                                        relation; minNet: the net that flags one, dollars a contract, else one tick)
  *   GET  /api/account/holdings?cost=1                    Portfolio: what is held by asset across every venue, the dollars that are ready,
  *                                                        the last 24 hours; `cost=1` adds what was paid; `paper=1` the paper accounts'
  *                                                        instead (the Paper lens), summed as paper money
@@ -785,6 +789,18 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     if (!q) return;
     if (q.limit && !/^\d{1,3}$/.test(q.limit)) return void bad(res, "limit is a count of markets, 1 to 200, in digits");
     answerOf(res, await svc.explore({ tab: q.tab, q: q.q, key: q.key, sort: q.sort, ...(q.limit ? { limit: Number(q.limit) } : {}) }));
+  }));
+
+  // THE RULE STRUCTURE of the event contracts (live/event-structure.ts): what the venues' own rules bind together — one event's markets,
+  // ladders and chains, the same question at two venues — and where the books break it, net of fees. all=1 lists every relation, not
+  // only the flagged; minNet is the net that flags one, dollars a contract, a plain number; a limit is a plain count
+  app.get("/api/account/structure", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { all: 5, limit: 6, minNet: 12 });
+    if (!q) return;
+    if (q.limit && !/^\d{1,3}$/.test(q.limit)) return void bad(res, "limit is a count of relations, 1 to 500, in digits");
+    if (q.minNet && !/^\d{0,2}(\.\d{1,6})?$/.test(q.minNet)) return void bad(res, "minNet is dollars a contract, as a plain number");
+    answerOf(res, await svc.structure({ all: q.all === "1", ...(q.limit ? { limit: Number(q.limit) } : {}), ...(q.minNet ? { minNet: Number(q.minNet) } : {}) }));
   }));
 
   // PORTFOLIO: what is held, by asset across every venue, the dollars that are ready, the last 24 hours; `cost=1` adds what was paid

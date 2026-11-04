@@ -212,7 +212,8 @@ import { isRefusal, type Refusal } from "../../core/errors.ts";
 import { no } from "../refuse.ts";
 import { categoryOf, isExcludedCategory, isIpoCategory, KALSHI_SERIES, normalWords } from "./categories.ts";
 import { exchangeSaidNo, openExchange, type ExchangeClient, type OpenExchange } from "./exchange.ts";
-import { PMUS_CATEGORIES, PMUS_GATEWAY, PMUS_PER_CATEGORY, pmusBusiest, pmusCandles, pmusLegs, pmusSearch, type PmusGet } from "./polymarket-us.ts";
+import { kalshiContracts, PMUS_STRUCTURE_SEARCHES, pmusContracts, type EventContract } from "./event-structure.ts";
+import { PMUS_CATEGORIES, PMUS_GATEWAY, PMUS_PER_CATEGORY, pmusBusiest, pmusCandles, pmusEvents, pmusLegs, pmusSearch, type PmusGet } from "./polymarket-us.ts";
 import { kalshiPage, kalshiSpans, PERIOD_MIN } from "./kalshi.ts";
 import { impliedUsd, PRE_IPO_NAMES, preIpoOf, type PreIpoMark } from "./preipo.ts";
 import { keylessExchange, PUBLIC_EXCHANGES } from "./prices.ts";
@@ -305,6 +306,11 @@ export interface PublicSource {
   historyApart?: true | undefined;
   /** an event market's settlement, asked of the venue keyless (see the top of this file): `symbol` as its listing names it */
   settlement?(symbol: string): Promise<Settlement | Refusal>;
+  /** THE VENUE'S OPEN EVENT CONTRACTS WITH THEIR RULES, keyless, for the structure scan (live/event-structure.ts): each market's YES leg
+   * with its event, its rules in the venue's words, its strike, its settlement sources, its book and its fee model. Only the event venues
+   * the scan trades on paper offer it — Kalshi (the series of KALSHI_SERIES) and Polymarket US (its busiest, and what its search finds for
+   * those series' questions); polymarket.com does not, and a source without it is not scanned */
+  contracts?(): Promise<EventContract[] | Refusal>;
   /** A PERPETUAL'S PAST FUNDING, hour by hour, where the source publishes it (Hyperliquid's fundingHistory, keyless): each hour paid (the
    * top of the hour, ms) and its rate, for the hours from `from` to `to` (ms), oldest first — an hour not paid yet is not in it. A paper
    * account settles a position's hours at these rates (live/paper.ts); a source without it, at the rate its quote carries */
@@ -1199,10 +1205,14 @@ export function kalshiPublic(deps: PublicDeps = {}): PublicSource {
   const get = getter(fixedHosts(deps.http ?? realHttp, PUBLIC_HOSTS, deps.timeoutMs ?? TIMEOUT_MS), id, name, clock);
   const bookGet = getter(fixedHosts(deps.http ?? realHttp, PUBLIC_HOSTS, deps.timeoutMs ?? TIMEOUT_MS), id, name, clock, BOOK_MS);
   const tapeGet = getter(fixedHosts(deps.http ?? realHttp, PUBLIC_HOSTS, deps.timeoutMs ?? TIMEOUT_MS), id, name, clock, TRADES_MS);
+  /** a series itself (GET /series/{ticker}: its fee type and multiplier, its settlement sources), kept as long as a venue's list of what it
+   * trades is: a series changes rarely */
+  const seriesGet = getter(fixedHosts(deps.http ?? realHttp, PUBLIC_HOSTS, deps.timeoutMs ?? TIMEOUT_MS), id, name, clock, LIST_MS);
+  const eventsUrl = (s: string): string => `${KALSHI}/events?series_ticker=${encodeURIComponent(s)}&status=open&with_nested_markets=true&limit=${SERIES_EVENTS}`;
   /** every series' open events with their markets, from the kept bodies: one small request a series, kept KEEP_MS. A series that refuses
    * is left out while the others answer; only when every one refuses is the refusal the answer */
   const load = async (): Promise<{ events: KalshiOpenEvent[]; refused?: Refusal | undefined }> => {
-    const bodies = await Promise.all(KALSHI_SERIES.map((s) => get(`${KALSHI}/events?series_ticker=${encodeURIComponent(s.ticker)}&status=open&with_nested_markets=true&limit=${SERIES_EVENTS}`)));
+    const bodies = await Promise.all(KALSHI_SERIES.map((s) => get(eventsUrl(s.ticker))));
     const events: KalshiOpenEvent[] = [];
     let refused: Refusal | undefined;
     bodies.forEach((body, i) => {
@@ -1248,12 +1258,32 @@ export function kalshiPublic(deps: PublicDeps = {}): PublicSource {
       get.clear();
       bookGet.clear();
       tapeGet.clear();
+      seriesGet.clear();
     },
     kind: "events",
     connectTo: "kalshi",
     connector: "live:kalshi",
     listings: (o) => read(o),
     events: (o) => read(o),
+    /** the open contracts of the series in KALSHI_SERIES with their rules (the same event bodies the listing reads, whole: the event's
+     * exclusivity, strike date and settlement sources, each market's rules_primary, strike and book) and each series' fee type and
+     * multiplier (GET /series/{ticker}), as the structure scan reads them (live/event-structure.ts kalshiContracts). A series whose events
+     * or whose own record refuse is left out while the others answer; only when every one refuses is the refusal the answer */
+    async contracts() {
+      const [events, series] = await Promise.all([Promise.all(KALSHI_SERIES.map((s) => get(eventsUrl(s.ticker)))), Promise.all(KALSHI_SERIES.map((s) => seriesGet(`${KALSHI}/series/${encodeURIComponent(s.ticker)}`)))]);
+      const bySeries = new Map<string, Rec>();
+      series.forEach((body, i) => {
+        if (!isRefusal(body) && isRec(rec(body).series)) bySeries.set(KALSHI_SERIES[i]!.ticker, rec(body).series as Rec);
+      });
+      let refused: Refusal | undefined;
+      const raw: Rec[] = [];
+      for (const body of events) {
+        if (isRefusal(body)) refused ??= body;
+        else raw.push(...list(rec(body).events).filter(isRec));
+      }
+      if (!raw.length && refused) return refused;
+      return kalshiContracts(raw, (ticker) => bySeries.get(ticker.toUpperCase()), { venue: "kalshi", venueName: name, connector: "live:kalshi", now: clock() });
+    },
     /** a leg's book, keyless (see the top of this file): Kalshi's book holds bids only — the YES bids and the NO bids — and a bid on one
      * outcome is an offer of the other at 1 − its price. So a YES leg's bids are the YES bids and its asks the NO bids at 1 − their price;
      * a NO leg's bids are the NO bids and its asks the YES bids so. The sizes are contracts */
@@ -1727,6 +1757,25 @@ export function polymarketUsPublic(deps: PublicDeps = {}): PublicSource {
     connector: "live:polymarket-us",
     listings: (o) => read(o),
     events: (o) => read(o),
+    /** its open contracts with their rules, as the structure scan reads them (live/event-structure.ts pmusContracts): the events its own
+     * search finds for the questions Kalshi's short list is about (PMUS_STRUCTURE_SEARCHES: each event whole, every market of it, so a set
+     * of ranges is read as the set it is) and the most traded open markets of each of its categories (pmusBusiest), one event each where
+     * the search did not bring theirs. A search that refuses is left out while the others answer; only when every read refuses is the
+     * refusal the answer */
+    async contracts() {
+      const [searched, busy] = await Promise.all([Promise.all(PMUS_STRUCTURE_SEARCHES.map((q) => pmusEvents(gw, q))), pmusBusiest(gw, { perCategory: PMUS_PER_CATEGORY })]);
+      let refused: Refusal | undefined;
+      const events = new Map<string, Rec>();
+      for (const found of searched) {
+        if (isRefusal(found)) refused ??= found;
+        else for (const ev of found) if (str(ev.slug) && !events.has(str(ev.slug)!)) events.set(str(ev.slug)!, ev);
+      }
+      const seen = new Set([...events.values()].flatMap((ev) => list(ev.markets).filter(isRec).map((m) => String(m.slug ?? "").toLowerCase())));
+      if (isRefusal(busy)) refused ??= busy;
+      else for (const m of busy) if (!seen.has(String(m.slug ?? "").toLowerCase())) events.set(`market:${String(m.slug ?? "")}`, { slug: String(m.slug ?? ""), title: str(m.question) ?? str(m.title) ?? "", category: m.category, markets: [m] });
+      if (!events.size && refused) return refused;
+      return pmusContracts([...events.values()], { venue: "polymarket-us", venueName: name, connector: "live:polymarket-us", now: clock() });
+    },
     /** a leg's book, keyless (see the top of this file): the gateway's book is the YES contract's, best first. Only YES trades there; NO is
      * the other side of it, so a NO leg's bids are the YES offers at 1 − their price and its asks the YES bids so. The sizes are contracts */
     async book(symbol, depth) {

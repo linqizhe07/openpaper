@@ -8,7 +8,7 @@
  *
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
- * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
+ * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_structure · portfolio_holdings · portfolio_history · portfolio_asset ·
  * portfolio_candles · portfolio_book · portfolio_financials · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
@@ -854,6 +854,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ tab, q, sort, limit }) => read(`/api/account/explore?${new URLSearchParams({ ...(tab ? { tab } : {}), ...(q ? { q } : {}), ...(sort ? { sort } : {}), limit: String(limit ?? 30) })}`),
+);
+
+server.registerTool(
+  "portfolio_structure",
+  {
+    description:
+      "THE RULE STRUCTURE of the event contracts at Kalshi and Polymarket US (never polymarket.com), read keyless from their open markets' own rules: which markets IMPLY others (an IPO confirmed before Dec 1 is one confirmed before Jan 1; the S&P above 7,400 is it above 7,375), which EXCLUDE each other (one event's price ranges; the Fed's one decision), and which are the SAME question twice (one at each venue, settled by different rules and sources). Each relation: `kind` (implies: legs[0] implies legs[1], so P(0) ≤ P(1); exclusive: the whole set, at most one resolves YES, `exhaustive` when exactly one must; same: P(0) = P(1)), `how` it was read (event · ladder · dates · shape), its `legs` (venue, the YES `symbol` to send to portfolio_live_order there, `connected`, bid, ask, tick, closeTime, who settles it and when, its fee in words), `rulesDiff` (where the two rules differ, in the venues' words), `settles`, and `deviation`: what hitting both books now would leave a contract — `gross` the constraint's overshoot (negative while the books honour it), `fees` the venues' taker fees at those prices, `net`, `flagged` when net is at least one tick (or `minNet` dollars), `trade` the orders in words. Flagged relations come first, by net; `all: true` lists the rest too; `counts` and `venues` say what was read. Deterministic only: nothing is estimated or judged; a brain's pairings, where a desk brings one, are `candidate: true` with no deviation. A read: nothing is ordered. Paper first: take a flagged relation at a paper account before anything real.",
+    inputSchema: { all: z.boolean().optional().describe("every relation, not only the flagged (default false)"), limit: z.number().int().min(1).max(500).optional().describe("relations in `relations` (default 60)"), minNet: z.number().min(0).max(1).optional().describe("the net a deviation must reach to be flagged, dollars a contract (default: one tick of its legs)") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ all, limit, minNet }) => read(`/api/account/structure?${new URLSearchParams({ ...(all ? { all: "1" } : {}), ...(limit !== undefined ? { limit: String(limit) } : {}), ...(minNet !== undefined ? { minNet: String(minNet) } : {}) })}`),
 );
 
 server.registerTool(

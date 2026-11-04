@@ -163,6 +163,8 @@ Markets 只管看和挑，不管账户：接上、拔掉、对 agent 开关、�
 
 agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是 all · crypto · stocks · rwas · perps · preipo · predictions；pre-IPO 的行带 `implied`）、`portfolio_candles {venue, symbol, interval, range}`（`range` 是 1D · 5D · 1M · 3M · 6M · YTD · 1Y · 5Y · MAX，不写周期就用这个范围自己的；往前翻一页是 `{before, limit}`，答复的 `more` 说还有没有更早的，`ends` 说历史在哪里断、为什么）、`portfolio_book {venue, symbol, depth}`（盘口和最新成交，Trade 中间那栏）。
 
+- **Rule structure**（Predictions 的卡片下面那一块，没搜索时）：Kalshi 和 Polymarket US 的事件合约按各自的规则原文互相**蕴含**（IPO 在 12 月 1 日前确认，就一定在 1 月 1 日前确认；S&P 收在 7,400 以上就一定在 7,375 以上）、**互斥**（一个事件的价格区间只有一个会成 Yes；Fed 一次会议只有一个决定）、**同题**（两家问同一个问题，结算规则和来源不同）的目录，和盘口对这些约束的偏离：两边都吃单、扣掉两家各自的 taker 费（Kalshi 7% × p × (1 − p)，Polymarket US 0.0695 × p × (1 − p)）后每张合约剩多少，够一个 tick 的标出来，右边是 net / gross / fees，折叠里是要下的单、两边规则差在哪、谁结算。只读 Kalshi 名单上的 series 和 Polymarket US 搜到的事件，不读 polymarket.com；一切是确定性的读法，不估、不判，brain 的配对（默认不开）只会是候选。接上的场所那条腿有 Buy Yes / Sell Yes（开 Trade 的票），只有公开行情的是 Connect to trade；先在纸上账户试。agent 读 `portfolio_structure {all?, limit?, minNet?}`。
+
 ## 3 · 让一个 agent 进来，给它交易额度
 
 agent 先敲门：

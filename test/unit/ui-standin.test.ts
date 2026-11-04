@@ -153,6 +153,38 @@ describe("the stand-in account", () => {
     expect(e.missing).toEqual([expect.objectContaining({ venue: "standin-geo", code: "E_VENUE_GEOBLOCKED", said: "Service unavailable from a restricted location (stand-in)." })]);
   });
 
+  it("the rule structure under Predictions: the stand-in venues' contracts with their rules, the relations their rules make, the books that break one flagged first", async () => {
+    const { status, body: s } = await get("/api/account/structure?all=1&limit=200");
+    expect(status).toBe(200);
+    expect(s.ok).toBe(true);
+    // the connected Stand-in Predictions under its own id, the public event exchange under the venue to connect
+    expect(s.venues).toEqual(expect.arrayContaining([expect.objectContaining({ venue: "predict", venueName: "Stand-in Predictions", connected: true, contracts: 1 }), expect.objectContaining({ venue: "standin-pubevents", venueName: "Stand-in Event Exchange", connected: false, contracts: 10 })]));
+    expect(s.counts).toEqual({ same: 1, implies: 4, exclusive: 1, candidates: 0 });
+    const by = (kind: string, ...ids: string[]) => s.relations.find((r: { kind: string; legs: Array<{ id: string }> }) => r.kind === kind && ids.every((id, i) => r.legs[i]?.id === id));
+    // the CPI ranges: one set that tiles the line, its bids adding up to more than a dollar
+    const cpi = by("exclusive", "SX-CPI-OCT-LOW", "SX-CPI-OCT-MID", "SX-CPI-OCT-HIGH");
+    expect(cpi).toMatchObject({ how: "event", exhaustive: true, deviation: { flagged: true, trade: expect.stringMatching(/^sell all 3 at their bids/) } });
+    expect(cpi.deviation.net).toBeGreaterThan(0.05);
+    // the Fed question at both venues, ten cents apart: sell the connected venue's bid, buy the public exchange's ask
+    const fed = by("same", "SI-FEDCUT-BY-DEC9", "SX-FEDCUT-BY-DEC9");
+    expect(fed).toMatchObject({ how: "shape", legs: [expect.objectContaining({ venue: "predict", connected: true, symbol: "SI-FEDCUT-BY-DEC9:YES" }), expect.objectContaining({ venue: "standin-pubevents", connected: false, connector: "live:standin-pubevents" })], deviation: { flagged: true, trade: "sell SI-FEDCUT-BY-DEC9:YES at 0.59 · buy SX-FEDCUT-BY-DEC9:YES at 0.49" } });
+    expect(fed.rulesDiff).toContain("Stand-in Event Exchange says:");
+    expect(fed.settles).toContain("Stand-in Predictions: Federal Reserve");
+    // the Opus dates: by November 20 priced above by November 30 (flagged), November 30 under December 31 (not)
+    expect(by("implies", "SX-OPUS-NOV20", "SX-OPUS-NOV30")).toMatchObject({ how: "dates", deviation: { flagged: true } });
+    expect(by("implies", "SX-OPUS-NOV30", "SX-OPUS-DEC31")).toMatchObject({ how: "dates", deviation: { flagged: false } });
+    // the yield ladder, priced in order
+    expect(by("implies", "SX-YIELD-FRI-450", "SX-YIELD-FRI")).toMatchObject({ how: "ladder", deviation: { flagged: false } });
+    expect(by("implies", "SX-YIELD-FRI", "SX-YIELD-FRI-400")).toMatchObject({ how: "ladder" });
+    expect(s.flagged).toBe(3);
+    // the flagged come first, by what they leave; without all=1 they are all there is
+    expect(s.relations.slice(0, 3).every((r: { deviation: { flagged: boolean } }) => r.deviation.flagged)).toBe(true);
+    const few = (await get("/api/account/structure")).body;
+    expect(few.relations.map((r: { id: string }) => r.id)).toEqual(s.relations.slice(0, 3).map((r: { id: string }) => r.id));
+    expect(few.flagged).toBe(3);
+    expect(few.notes).toContain("A deviation is what hitting both books now would leave a contract, after each venue's own taker fee at those prices; flagged at one tick or more.");
+  });
+
   it("Portfolio by asset once the venues are read again: coins at two venues, the RWA, the event contract, the dollars", async () => {
     // a venue's balances are read again after thirty seconds on the account's clock
     clockMs += 31_000;

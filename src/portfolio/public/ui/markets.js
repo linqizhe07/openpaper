@@ -15,7 +15,7 @@
 
 /* what the pane holds between draws: the shell's last ctx; each explore read by its path ({ at, body, good, pending }); the rows drawn, by
    their data-i; fresh prices by "venue|symbol"; the cards in view; the market in the drawer; whether the footer is unfolded */
-const MKT = { ctx: null, got: new Map(), good: null, reg: [], quotes: new Map(), seen: new Set(), io: null, watched: new Set(), poll: 0, tick: 0, el: null, open: null, drawerWired: false, footOpen: false, closes: null, closeGen: -1, pricesDue: false, drawSoon: false };
+const MKT = { ctx: null, got: new Map(), good: null, reg: [], quotes: new Map(), seen: new Set(), io: null, watched: new Set(), poll: 0, tick: 0, el: null, open: null, drawerWired: false, footOpen: false, closes: null, closeGen: -1, pricesDue: false, drawSoon: false, structure: null };
 /* an explore read is asked again after this long, when the pane is drawn (the account keeps the same answer thirty seconds) */
 const MKT_TTL = 20_000;
 /* how often the cards in view, and the market in the drawer, ask for a fresh price; how long one is shown as fresh */
@@ -560,11 +560,76 @@ function mkListHtml(p, body, lens) {
   const sorted = mkSortRows(items, p.sort);
   const sorts = [["volume", "Most traded"], ["movers", "Biggest moves"], ...(items.some((x) => x.closeTime) || p.tab === "predictions" ? [["closing", "Closing soonest"]] : [])];
   const head = `<div class="mk-bar">${p.q ? `<p class="mk-q">${plural(items.length, "market")} for “${esc(p.q)}” <button type="button" class="link dim" data-act="clear-q" data-fk="clear-q">Clear</button></p>` : "<span></span>"}${items.length > 1 ? mkSeg(sorts, p.sort || "volume", "sort", "Sort by") : ""}</div>`;
-  if (!items.length) return `${head}<p class="empty">${p.q ? `Nothing matches “${esc(p.q)}” at your venues or in the public listings.` : "Nothing here right now."}</p>`;
+  // under Predictions, when nothing is searched for: the rule structure of the event contracts, and where the books break it
+  const structure = p.tab === "predictions" && !p.q ? mkStructureHtml() : "";
+  if (!items.length) return `${head}<p class="empty">${p.q ? `Nothing matches “${esc(p.q)}” at your venues or in the public listings.` : "Nothing here right now."}</p>${structure}`;
   if (p.tab === "all") return `${head}<section class="sec" aria-label="Markets">${mkTable(sorted, "")}</section>`;
   const events = sorted.filter((x) => x.kind === "event");
   const rest = sorted.filter((x) => x.kind !== "event");
-  return `${head}${events.length ? `<section class="mk-block" aria-label="Predictions">${mkCards(events, { lean: p.tab === "predictions" })}</section>` : ""}${rest.length ? `<section class="sec" aria-label="Markets">${mkTable(rest, "")}</section>` : ""}`;
+  return `${head}${events.length ? `<section class="mk-block" aria-label="Predictions">${mkCards(events, { lean: p.tab === "predictions" })}</section>` : ""}${structure}${rest.length ? `<section class="sec" aria-label="Markets">${mkTable(rest, "")}</section>` : ""}`;
+}
+
+/* THE RULE STRUCTURE under Predictions (GET /api/account/structure, live/event-structure.ts): the relations the venues' own rules make
+   among their event contracts — one event's exclusive sets, ladders of thresholds, chains of dates, the same question at two venues — and
+   the books that break one by a tick or more after fees, flagged, what taking both sides now leaves beside each. Read like an explore read
+   (kept MKT_TTL) and drawn when it arrives; a failure keeps what was drawn */
+function mkStructureFetch() {
+  const s = MKT.structure;
+  if (s && (s.pending || Date.now() - (s.at || 0) < MKT_TTL)) return;
+  MKT.structure = { ...(s || {}), pending: true };
+  api("/api/account/structure").then((body) => {
+    const ok = !!body && body.ok !== false && Array.isArray(body.relations);
+    MKT.structure = { at: Date.now(), body, good: ok ? body : s && s.good };
+    if (A && ROUTE.tab === "markets" && MKT.ctx) paneLater("markets", mkRedrawShown);
+  });
+}
+const MK_RELATION_WORDS = { same: "Same question", implies: "Implies", exclusive: "Exclusive" };
+/* cents with a sign, for what a relation leaves a contract: +6.6¢ · −2.1¢ · +17¢ */
+function mkSignedCents(x) {
+  if (typeof x !== "number" || !Number.isFinite(x)) return "—";
+  const c = x * 100;
+  return `${c > 0 ? "+" : c < 0 ? "−" : ""}${Math.abs(c) >= 10 ? Math.abs(c).toFixed(0) : Math.abs(c).toFixed(1)}¢`;
+}
+/* one leg of a relation: its market's own words (the whole question in the title), its venue and its book, and what the owner can do with
+   it — the ticket at a connected venue, the connection where only public prices list it */
+function mkStructLeg(l) {
+  const acts = l.connected
+    ? ["buy", "sell"].map((side) => `<button type="button" class="link small" data-act="struct-trade" data-venue="${esc(l.venue)}" data-symbol="${esc(l.symbol)}" data-side="${side}" data-fk="struct:${esc(l.venue)}:${esc(l.symbol)}:${side}">${side === "buy" ? "Buy Yes" : "Sell Yes"}</button>`).join("")
+    : l.connector
+      ? `<button type="button" class="link small" data-act="connect" data-connector="${esc(l.connector)}" data-name="${esc(l.venueName)}" data-fk="struct-connect:${esc(l.venue)}">Connect to trade</button>`
+      : "";
+  const book = `${l.bid !== undefined ? mkCents(l.bid) : "—"} / ${l.ask !== undefined ? mkCents(l.ask) : "—"}`;
+  return `<span class="mk-struct-leg" title="${esc(l.question)}"><b>${esc(l.words || l.question)}</b><span class="dim">${esc(l.venueName)} · ${esc(book)}</span>${acts}</span>`;
+}
+/* one relation: its kind, its legs in constraint order, what taking both sides now leaves; the trade in words, where the two rules differ
+   and who settles each leg folded under it */
+function mkRelationHtml(r) {
+  const d = r.deviation;
+  const legs = r.kind === "exclusive" ? r.legs.slice(0, 4) : r.legs;
+  const what = r.kind === "implies" ? `${mkStructLeg(r.legs[0])}<span class="dim">implies</span>${mkStructLeg(r.legs[1])}` : r.kind === "same" ? `${mkStructLeg(r.legs[0])}<span class="dim">is</span>${mkStructLeg(r.legs[1])}` : `${legs.map(mkStructLeg).join("")}${r.legs.length > legs.length ? `<span class="dim">… ${r.legs.length} markets of one event</span>` : ""}`;
+  const more = `<details class="mk-struct-more"><summary>${esc(d.trade)}</summary><p>${esc(r.rulesDiff)}</p><p>Settles — ${esc(r.settles)}</p></details>`;
+  return `<li class="mk-li mk-struct-li" data-rel="${esc(r.id)}"><div class="mk-struct-main"><span class="tag warn">${esc(MK_RELATION_WORDS[r.kind] || r.kind)}</span>${what}${more}</div><span class="mk-li-r"><b>${esc(mkSignedCents(d.net))} net</b><span class="mk-li-px">${esc(mkSignedCents(d.gross))} gross · ${esc(mkSignedCents(d.fees))} fees · a contract</span></span></li>`;
+}
+function mkStructureHtml() {
+  mkStructureFetch();
+  const s = MKT.structure;
+  const b = s && s.good;
+  const h = '<div class="mk-list-h"><h2 class="h2">Rule structure</h2>';
+  if (!b) {
+    const why = s && s.body && s.body.ok === false ? (s.body.refusal && s.body.refusal.message) || s.body.error || "The account could not read the venues' rules." : "Reading the venues' rules…";
+    return `<section class="mk-block mk-struct" aria-label="Rule structure">${h}</div><p class="dim small">${esc(why)}</p></section>`;
+  }
+  const venues = (b.venues || []).map((v) => `${v.venueName} (${v.contracts})`).join(", ");
+  const c = b.counts || {};
+  const head = `${b.contracts} contracts at ${venues || "no venue"} · ${c.implies || 0} implications · ${c.exclusive || 0} exclusive sets · ${c.same || 0} asked twice · ${b.flagged ? `${b.flagged} flagged` : "none flagged"}`;
+  const rows = (b.relations || []).filter((r) => r.deviation && r.deviation.flagged);
+  const list = rows.length ? `<ol class="mk-li-list">${rows.map(mkRelationHtml).join("")}</ol>` : `<p class="empty">${b.contracts ? "No book breaks a rule by a tick or more after fees right now." : "No venue's rules were read."}</p>`;
+  const notes = (b.notes || []).filter((n) => typeof n === "string" && n.trim()).map((n) => `<p class="mk-struct-note">${esc(n.trim())}</p>`).join("");
+  return `<section class="mk-block mk-struct" aria-label="Rule structure">${h}<span class="dim small">${esc(head)}</span></div>${list}${notes}</section>`;
+}
+/* Buy Yes / Sell Yes on a relation's leg: the Trade pane's ticket at that venue, on that market, that side — signed there as any order */
+function mkStructTrade(ds) {
+  if (typeof openTicket === "function") openTicket({ kind: "predictions", venue: ds.venue, symbol: ds.symbol, side: ds.side, outcome: "Yes" });
 }
 /* the one line under a list, folded: what the account says of the list itself (how it was chosen, where the rest is), the venues that did
    not answer in their own words, a read-only server. Nothing stands open; nothing is lost. Left as the owner last left it (MKT.footOpen) */
@@ -914,6 +979,7 @@ function mkPaneClick(e) {
     case "retry": for (const g of MKT.got.values()) g.at = 0; return void mkRedraw();
     case "connect": return void connectVia(b.dataset.connector, { name: b.dataset.name });
     case "alert-off": return void mkAlertOff(b.dataset.id);
+    case "struct-trade": return void mkStructTrade(b.dataset);
     default: return void (item && mkAct(b, item));
   }
 }

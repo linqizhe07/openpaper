@@ -339,6 +339,14 @@ export async function pmusSearch(get: PmusGet, q: string, events = 10): Promise<
   return [...out.values()];
 }
 
+/** the same search as its EVENTS, each with every market it holds (settled ones too: the structure scan reads an event whole, and leaves
+ * out what does not trade itself) — for live/event-structure.ts, which reads an event's markets together */
+export async function pmusEvents(get: PmusGet, q: string, events = 10): Promise<Rec[] | Refusal> {
+  const body = await get(`/v1/search?query=${enc(q.trim().slice(0, 60))}&limit=${Math.min(20, Math.max(1, Math.floor(events)))}`);
+  if (isRefusal(body)) return body;
+  return list(rec(body).events).filter(isRec).filter((ev) => list(ev.markets).some(isRec));
+}
+
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
