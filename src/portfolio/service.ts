@@ -70,6 +70,7 @@ import type { ClosedTrip } from "./live/trips.ts";
 import type { LiveEarn } from "./account/live-earn.ts";
 import type { Payment } from "./account/payments.ts";
 import { exploreAcross, type Exploration, type ExploreSort, type ExploreVenue } from "./live/explore.ts";
+import { scanStructure, type EventContract, type StructureScan } from "./live/event-structure.ts";
 import { fixedHosts, holdBackMs, KEEP_MS as LISTING_KEEP_MS, publicSources, type PublicSource } from "./live/public-markets.ts";
 import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Company, type Financials } from "./live/edgar.ts";
 import { TABS, type TabId } from "./live/categories.ts";
@@ -944,6 +945,8 @@ export class PortfolioService {
       ...s,
       listings: (o) => read(`public-listings|${ns}|${(o.q ?? "").trim().toUpperCase()}|${o.limit}`, PUBLIC_KEEP_MS, () => s.listings(o), search),
       ...(s.stats ? { stats: (symbols?: string[]) => read(`public-stats|${ns}|${symbols ? [...symbols].sort().join(",") : ""}`, PUBLIC_KEEP_MS, () => s.stats!(symbols), search) } : {}),
+      // its open contracts with their rules, for the structure scan: a catalogue, not a price feed — kept longer than a listing
+      ...(s.contracts ? { contracts: () => read(`public-contracts|${ns}`, STRUCTURE_KEEP_MS, () => s.contracts!(), search) } : {}),
       ...(s.events ? { events: (o: { category?: string | undefined; closingWithinMs?: number | undefined; limit: number }) => read(`public-events|${ns}|${o.category ?? ""}|${o.closingWithinMs ?? ""}|${o.limit}`, PUBLIC_KEEP_MS, () => s.events!(o), search) } : {}),
       // one market's line asked alone (a paper account pricing a share it knows: the US stocks line), kept a few seconds — the prices under it
       // are the background reader's (s.feed) — and held back apart from the listings, so a search's refusal (a 429 after a wide search) holds
@@ -1096,6 +1099,38 @@ export class PortfolioService {
         return via ? { ...s, connectTo: via.connectTo, connector: via.connector } : s;
       });
       return exploreAcross({ connected: placed, public: routed }, { q, ...(key ? { key } : {}), limit, clock: () => this.realNow(), serves, ...(tab ? { tab: tab as TabId } : {}), ...(sort ? { sort: sort as ExploreSort } : {}) });
+    });
+  }
+
+  /** THE RULE STRUCTURE of the event contracts (live/event-structure.ts): what the venues' own rules bind together — one event's markets,
+   * ladders of thresholds, chains of dates, the same question at two venues — and where the books break it, net of each venue's taker
+   * fee. Read keyless from the public event sources that offer their contracts (Kalshi and Polymarket US; polymarket.com never),
+   * whether or not the venue is connected: a leg names the venue the owner connected where there is one, so an order goes there, and
+   * says `connected`. A source that refuses or does not answer is named in `notes`, and the rest is scanned. The same question is answered
+   * from what was found for two minutes; nothing is ordered or signed, and no brain is asked */
+  async structure(o: { all?: boolean | undefined; limit?: number | undefined; minNet?: number | undefined } = {}): Promise<StructureScan | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const limit = o.limit === undefined ? 60 : Math.floor(o.limit);
+    if (!(limit >= 1 && limit <= 500)) return no("E_ACCOUNT_BAD_ACTION", { message: "a limit is 1 to 500 relations" });
+    if (o.minNet !== undefined && !(Number.isFinite(o.minNet) && o.minNet >= 0 && o.minNet < 1)) return no("E_ACCOUNT_BAD_ACTION", { message: "minNet is dollars a contract, 0 up to 1" });
+    const all = o.all === true;
+    return this.marketReads.get(`structure|${all ? 1 : 0}|${limit}|${o.minNet ?? ""}`, STRUCTURE_KEEP_MS, async () => {
+      const sources = this.publicMarkets().filter((s) => s.kind === "events" && s.contracts);
+      // the venue the owner connected for each source's exchange, where there is one: its legs are ordered there, under its id
+      const connected = this.tradingVenues().filter((v) => !v.paper).map((v) => ({ id: v.id, connector: this.adapters.get(v.id)?.account.connector }));
+      const answers = await Promise.all(sources.map(async (s) => ({ s, got: await s.contracts!().catch((err: unknown) => thrownBy(s.id, s.name, err)) })));
+      const contracts: EventContract[] = [];
+      const notes: string[] = [];
+      for (const { s, got } of answers) {
+        if (isRefusal(got)) {
+          notes.push(`${s.name} was not read: ${got.message}`);
+          continue;
+        }
+        const mine = connected.find((v) => v.id === s.connectTo || (v.connector !== undefined && v.connector === s.connector));
+        for (const c of got) contracts.push({ ...c, venue: mine?.id ?? c.venue, connected: mine !== undefined });
+      }
+      const scan = scanStructure(contracts, { now: this.realNow(), all, limit, ...(o.minNet !== undefined ? { minNet: o.minNet } : {}) });
+      return { ...scan, notes: [...scan.notes, ...notes] };
     });
   }
 
@@ -5195,6 +5230,8 @@ export function venueCatalog(options: Array<{ kind?: string; needs: VenueHere["n
 const FAIL_KEEP_MS = 20_000;
 /** how long a public source's listings, tickers and events are kept here (its own keeping of the bodies it downloads sits under it) */
 const PUBLIC_KEEP_MS = 20_000;
+/** how long the structure scan's catalogue, and each source's contracts under it, are kept: a catalogue of rules, not a price feed */
+const STRUCTURE_KEEP_MS = 120_000;
 /** how old a listing's quote that carries no time of its own may be when a book here shows it: the source keeps the quote LISTING_KEEP_MS
  * from when it read it, and this service keeps the listing PUBLIC_KEEP_MS from when it asked — asked just before the source's keep ran
  * out, it is the old quote that is kept the twenty seconds more */
