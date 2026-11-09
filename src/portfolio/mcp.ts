@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -992,6 +992,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ kind, from, to, symbol, limit }) => read(`/api/account/calendar?${new URLSearchParams({ ...(kind ? { kind } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), ...(symbol ? { symbol } : {}), ...(limit ? { limit: String(limit) } : {}) })}`),
+);
+
+server.registerTool(
+  "portfolio_world",
+  {
+    description:
+      "THE WORLD'S MARKETS on one screen, read without a key, each figure with whose it is: `indices` — the S&P 500, Nasdaq-100, Dow (Cboe's DJX times a hundred), Russell 2000, S&P 100, MSCI EAFE and Emerging Markets, the VIX, VXN and VVIX, the US 10-year yield — from Cboe's delayed quotes, FIFTEEN MINUTES BEHIND; `rates` — the US Treasury's own par yield curve for the newest day with the curves a week, a month and a year before it and the 2s10s, 3m10y and 5s30s spreads, published once a day; `fx` — Kraken's live spot for nine pairs (EUR/USD, GBP/USD, USD/JPY, USD/CHF, USD/CAD, AUD/USD, EUR/GBP, EUR/JPY, EUR/CHF: bid, ask, last, the day's change) and the ECB's euro reference rates crossed to the dollar for twenty more (a fixing, not a live price); `commodities` — gold, silver, platinum, palladium, copper, WTI, Brent, natural gas as the oracle prices of Hyperliquid's xyz perpetuals, around the clock (the reference the dex marks each contract to, not the commodity's own exchange). `sources` says what answered and `missing` what did not, in its words; a late source's last answer stands in. Nothing is estimated. A read.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => read("/api/account/world"),
 );
 
 server.registerTool(

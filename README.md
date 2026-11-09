@@ -13,9 +13,10 @@ openpaper runs on your own computer. It puts your exchanges, brokers, wallets an
 - **Markets.** The day in six figures and the US session clock, every market at every venue that serves your network, ★ to watch and 🔔 to be told when a price crosses a line, a command line (⌘K: `AAPL DES`, `BTC GP`, `MOST`, `HELP`), and a US company's financials as it filed them with the SEC.
 - **News.** The headlines the publishers themselves put out in their feeds — the Federal Reserve, the ECB and the SEC; CNBC, MarketWatch, the Wall Street Journal, the BBC and Nasdaq; CoinDesk, Cointelegraph, The Block and Decrypt — the day's list, a topic's, or a share's own (`NVDA CN`): a title, a link to the publisher's page and a time, nothing more, and no article read.
 - **The calendar.** What Nasdaq's own pages schedule, a day at a time: the economic releases with their New York time, the consensus and what came out; who reports earnings, before the open or after the close, with the EPS the analysts expect; the shares going ex-dividend; the splits; the month's IPOs by stage (`ECO`, `ERN`, `DVD`, `SPLT`, `IPO`).
+- **The world.** The four boards a terminal keeps on one screen, each from a public source read without a key and each figure said with whose it is: the equity indices (Cboe's quotes, fifteen minutes behind), the US Treasury's own yield curve beside the curves a week, a month and a year before with its spreads, the currencies (Kraken's live pairs, the ECB's fixing for the rest) and the commodities as the oracle prices of Hyperliquid's xyz perpetuals (`WEI`, `GC`, `FXC`, `GLCO`).
 - **A trading terminal.** Its own candle chart with years of history, an order book and a trades tape fed by the venues' streams, and the account's own lines — entries, stops, resting orders — drawn on the chart.
 - **The superagent.** A desk of AI agents that trades the paper account by itself and plays each step as it happens, on a key from any of thirteen model providers, or a model running on your machine.
-- **Your own agent over MCP.** Forty-three tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
+- **Your own agent over MCP.** Forty-four tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
 - **You sign what matters.** Every order, movement and limit is signed by a key your browser cannot export; Guard holds each request for your yes, Beast lets agents act inside their limits; a cap on every order; a hash-chained log of everything.
 - **Nothing in the middle.** No server, no account to create, no analytics: your computer reads public prices and talks to venues directly, so your own network decides what you see.
 
@@ -109,6 +110,10 @@ Where each price comes from, and how fresh it is:
 | Financials | SEC EDGAR, with `SEC_CONTACT` as the reader's name | Kept 12 hours | — |
 | News | The publishers' own feeds: the Federal Reserve, the ECB, the SEC (with `SEC_CONTACT`), CNBC, MarketWatch, the WSJ, the BBC, Nasdaq, CoinDesk, Cointelegraph, The Block, Decrypt, PR Newswire — titles, links and times only | Each kept 5 minutes; a late feed's last answer stands in | — |
 | Calendars | Nasdaq's own calendar pages: economic releases, earnings, dividends, splits, IPOs — the consensus and the figures as Nasdaq writes them | A day kept 15 minutes, a past day a day | — |
+| World indices | Cboe's delayed index quotes: S&P 500, Nasdaq-100, Dow (Cboe's DJX times a hundred), Russell 2000, S&P 100, MSCI EAFE and Emerging Markets, VIX, VXN, VVIX, the US 10-year yield | 15 minutes behind, kept a minute | — |
+| Yield curve | The US Treasury's own par yield curve, this year's and last year's files, with the 2s10s, 3m10y and 5s30s spreads read off it | Published once a day after the close; kept an hour | — |
+| Currencies | Kraken's public tickers for nine fiat pairs, live; the ECB's euro reference rates crossed to the dollar for twenty more, said as the day's fixing | Kraken kept 10 s; the ECB's fixing an hour | — |
+| Commodities | The oracle prices of Hyperliquid's xyz perpetuals — gold, silver, platinum, palladium, copper, WTI, Brent, natural gas — said as a perpetual's oracle, not the commodity's own exchange | Live, kept 20 s | — |
 | Price alerts | The market's source above | Judged every 30 s while the account runs, page open or not | — |
 
 Where no source answers, that market has no price: a paper market order is refused and a limit order waits, and the page says why.
@@ -180,7 +185,7 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
   backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
                        desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
-  mcp.ts               the MCP server an agent's seat runs (43 tools)
+  mcp.ts               the MCP server an agent's seat runs (44 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only
 src/core/ src/agent/   shared: the hash-chained ledger (agent/ledger.ts), refusal codes, hashing, jsonl

@@ -143,6 +143,13 @@
  *                                                        (the month's deals by stage) — from `from` (today unless said) to `to`, seven days
  *                                                        at most, one share alone with `symbol`; each day kept a quarter hour, a past day a
  *                                                        day. Nothing is estimated. The Calendar page, and the agents' portfolio_calendar
+ *   GET  /api/account/world                                THE WORLD'S BOARDS (live/world.ts): the equity indices (Cboe's delayed quotes, 15
+ *                                                        minutes behind), the US par yield curve with the curves a week, a month and a year
+ *                                                        before and its spreads (the Treasury's own file), the currencies (Kraken's live
+ *                                                        pairs, the ECB's fixing for the rest) and the commodities (the oracle prices of
+ *                                                        Hyperliquid's xyz perpetuals) — each with whose figure it is and how far behind;
+ *                                                        a source late or refusing has its last answer stand in, said in `missing`. The
+ *                                                        World page, and the agents' portfolio_world
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -1010,6 +1017,13 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { topic: 12, q: 60, symbol: 12, limit: 4 });
     if (!q) return;
     answerOf(res, await svc.news({ ...(q.topic ? { topic: q.topic } : {}), ...(q.q ? { q: q.q } : {}), ...(q.symbol ? { symbol: q.symbol } : {}), ...(q.limit ? { limit: Number(q.limit) } : {}) }));
+  }));
+
+  // WORLD: the four boards — indices, the curve, currencies, commodities — each from its public source, said with where it comes from
+  // (service.ts world, live/world.ts). A read; nothing estimated
+  app.get("/api/account/world", wrap(async (_req, res) => {
+    if (!mounted(res)) return;
+    answerOf(res, await svc.world());
   }));
 
   // CALENDAR: what Nasdaq's pages schedule — economic releases, earnings, dividends, splits, IPOs — a day a read, kept a quarter hour
