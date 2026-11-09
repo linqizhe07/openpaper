@@ -67,7 +67,10 @@ function stub(list: Market[]): LiveTrader {
     },
   };
 }
-const bars: Candle[] = Array.from({ length: 24 }, (_, i) => ({ t: Date.UTC(2026, 9, 5, i), o: 60_000 + i, h: 60_050 + i, l: 59_950 + i, c: 60_010 + i, v: 1 }));
+/** the first of 24 hourly bars ending at the hour before now: the service's first view of 1h bars is the last month (live/history.ts), and
+ * bars dated to one day (5 October 2026, as they were) fall out of it a month later — these did on 5 November, and the two tests went red */
+const HOUR_AGO_24 = Math.floor(Date.now() / 3_600_000) * 3_600_000 - 24 * 3_600_000;
+const bars: Candle[] = Array.from({ length: 24 }, (_, i) => ({ t: HOUR_AGO_24 + i * 3_600_000, o: 60_000 + i, h: 60_050 + i, l: 59_950 + i, c: 60_010 + i, v: 1 }));
 /** the keyless public side of an exchange the owner has NOT connected: it lists BTC and publishes its OHLCV, as public-markets.ts's exchange sources do */
 const pubex: PublicSource = {
   id: "pubex",

@@ -1,7 +1,14 @@
 {
-  "asOf": "2026-11-03",
+  "asOf": "2026-11-09",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 60,
+      "title": "Two tests date their stand-in bars from the clock, not from 5 October: a month on, the bars had left the first view and main's suite went red",
+      "mergedAt": "2026-11-09T20:11:06Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/60",
+      "branch": "fix/test-bars-from-clock"
+    },
     {
       "number": 57,
       "title": "A limit whose signer signed out: said at the door, on the page and before the sign-out, and a desk that scans nothing the door would refuse",

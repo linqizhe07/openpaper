@@ -74,7 +74,10 @@ const geo = { stats: 0, listings: 0 };
 const geo2 = { listings: 0 };
 const GEO_SAID = '{"code":0,"msg":"Service unavailable from a restricted location according to \'b. Eligibility\' in https://www.binance.com/en/terms."}';
 const geoNo = (venue: string, name: string): Refusal => no("E_VENUE_GEOBLOCKED", { venue, message: `${name} does not serve this location: that is its own rule, and the account does not look for a way around it`, native: { status: 451, said: GEO_SAID } });
-const BARS: Candle[] = Array.from({ length: 24 }, (_, i) => ({ t: Date.UTC(2026, 9, 5, i), o: 60_000 + i, h: 60_050 + i, l: 59_950 + i, c: 60_010 + i, v: 1 }));
+/** the first of 24 hourly bars ending at the hour before now: the service's first view of 1h bars is the last month (live/history.ts), and
+ * bars dated to one day (5 October 2026, as they were) fall out of it a month later — these did on 5 November, and the two tests went red */
+const HOUR_AGO_24 = Math.floor(Date.now() / 3_600_000) * 3_600_000 - 24 * 3_600_000;
+const BARS: Candle[] = Array.from({ length: 24 }, (_, i) => ({ t: HOUR_AGO_24 + i * 3_600_000, o: 60_000 + i, h: 60_050 + i, l: 59_950 + i, c: 60_010 + i, v: 1 }));
 /** every call the tickers answer: which symbols were asked */
 const tickerCalls: string[][] = [];
 const publicMarkets: PublicSource[] = [
