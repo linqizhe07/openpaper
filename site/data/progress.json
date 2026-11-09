@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 66,
+      "title": "A share's page: what Nasdaq's own pages say of one US share, as written — company, figures, analysts, earnings, dividends, short interest, holders",
+      "mergedAt": "2026-11-09T22:55:05Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/66",
+      "branch": "feat/security"
+    },
+    {
       "number": 65,
       "title": "The Monitor: one screen of tiles the owner composes, each drawn from the read its page already makes",
       "mergedAt": "2026-11-09T22:19:56Z",
