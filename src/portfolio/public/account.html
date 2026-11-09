@@ -26,6 +26,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <link rel="stylesheet" href="/ui/security.css" />
 <link rel="stylesheet" href="/ui/screener.css" />
 <link rel="stylesheet" href="/ui/analytics.css" />
+<link rel="stylesheet" href="/ui/risk.css" />
 <link rel="stylesheet" href="/ui/trade.css" />
 <link rel="stylesheet" href="/ui/terminal.css" />
 <link rel="stylesheet" href="/ui/chart.css" />
@@ -137,7 +138,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
       </div>
     </header>
     <nav class="acct-tabs" data-only="account" aria-label="Account">
-      <div class="seg"><a href="#/portfolio" data-acct="portfolio">Portfolio</a><a href="#/venues" data-acct="venues">Venues</a><a href="#/memory" data-acct="memory">Memory</a></div>
+      <div class="seg"><a href="#/portfolio" data-acct="portfolio">Portfolio</a><a href="#/venues" data-acct="venues">Venues</a><a href="#/memory" data-acct="memory">Memory</a><a href="#/risk" data-acct="risk">Risk</a></div>
       <span class="note-s dim" id="mode-note"></span>
     </nav>
     <!-- the Markets group's own row (core MARKETS_TABS, shell.js marks the one showing): the Overview, and the data pages beside it -->
@@ -164,6 +165,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     <section class="pane" data-pane="screener" aria-labelledby="h-screener" hidden><h1 class="sr" id="h-screener">Screener</h1><div id="pane-screener"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:70%"></span></div></div></section>
     <!-- analytics: a few markets compared, correlated, their volatility, betas and seasons, from the bars the account reads (ui/analytics.js) -->
     <section class="pane" data-pane="analytics" aria-labelledby="h-analytics" hidden><h1 class="sr" id="h-analytics">Analytics</h1><div id="pane-analytics"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:70%"></span></div></div></section>
+    <!-- the risk: the account's own lines weighed and measured — exposure, volatility, value at risk, betas, drawdown, stresses (ui/risk.js) -->
+    <section class="pane" data-pane="risk" aria-labelledby="h-risk" hidden><h1 class="sr" id="h-risk">Risk</h1><div id="pane-risk"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:70%"></span></div></div></section>
     <!-- the options: a listed chain as its venue publishes it and the figures read off it — expiries, the smile, the strikes (ui/options.js) -->
     <section class="pane" data-pane="options" aria-labelledby="h-options" hidden><h1 class="sr" id="h-options">Options</h1><div id="pane-options"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:70%"></span><span class="skel"></span></div></div></section>
     <!-- the monitor: one screen of tiles the owner composes — markets, boards, headlines, the calendar, an option chain (ui/monitor.js) -->
@@ -221,6 +224,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <script defer src="/ui/screener.js"></script>
 <!-- analytics (ui/analytics.js): compare, correlation, volatility, beta and seasonality over the bars the account reads -->
 <script defer src="/ui/analytics.js"></script>
+<!-- the risk (ui/risk.js): the account's lines weighed and measured from its own balances and the bars it reads -->
+<script defer src="/ui/risk.js"></script>
 <script defer src="/ui/trade.js"></script>
 <script defer src="/ui/indicators.js"></script>
 <script defer src="/ui/chart.js"></script>

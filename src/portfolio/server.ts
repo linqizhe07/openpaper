@@ -183,6 +183,14 @@
  *                                                        to the first (BETA); the average return by calendar month and by weekday
  *                                                        (SEAG). Arithmetic over the venues' own bars, nothing read anew, no forecast.
  *                                                        The Analytics page, and the agents' portfolio_analytics
+ *   GET  /api/account/risk                                 PORTFOLIO RISK (live/risk.ts): the account's own lines (the holdings' rows and the
+ *                                                        perpetual positions, a short's dollars negative) with their weights of the gross,
+ *                                                        by class and by venue, the concentration; each priced line's volatility over a
+ *                                                        year of daily bars and its share of the portfolio's; the portfolio's volatility,
+ *                                                        one-day VaR read off its own days (the normal's beside it) and expected
+ *                                                        shortfall; the betas to SPY and BTC; the net worth's drawdown; flat stresses.
+ *                                                        Arithmetic over the account's balances and the venues' bars, no forecast. The
+ *                                                        Risk page under the Account, and the agents' portfolio_risk
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -1075,6 +1083,12 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { symbol: 12 });
     if (!q) return;
     answerOf(res, await svc.security(q.symbol ?? ""));
+  }));
+
+  // RISK: the account's own lines with their weights, volatility, VaR, betas, drawdown and stresses (service.ts risk, live/risk.ts). A read
+  app.get("/api/account/risk", wrap(async (_req, res) => {
+    if (!mounted(res)) return;
+    answerOf(res, await svc.risk());
   }));
 
   // ANALYTICS: a few markets' bars compared, correlated, their volatility, betas and seasonality (service.ts analytics, live/analytics.ts).

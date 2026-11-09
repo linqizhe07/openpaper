@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_security · portfolio_screener · portfolio_analytics · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_security · portfolio_screener · portfolio_analytics · portfolio_risk · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -1047,6 +1047,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ markets, interval, range }) => read(`/api/account/analytics?${new URLSearchParams({ markets, ...(interval ? { interval } : {}), ...(range ? { range } : {}) })}`),
+);
+
+server.registerTool(
+  "portfolio_risk",
+  {
+    description:
+      "PORTFOLIO RISK, as a terminal's PORT risk tab, from the account's own holdings and the bars it already reads: `lines` — every holding and perpetual position with its dollars (a short's negative), its weight of the gross exposure, its venue, its annualised volatility over a year of daily bars, its share of the portfolio's variance and its own one-day 95 % VaR; `byClass` and `byVenue`; `concentration` (the largest line's share, the top three's, the Herfindahl index and the effective number of lines); `unpriced` (cash, stablecoins and lines with no bars, which weigh in the exposure and carry no volatility here); `portfolio` — the days every priced line has in common, the share of the gross that is priced, the annualised volatility, the one-day VaR at 95 % and 99 % read off the history of the portfolio's own daily returns with the normal distribution's figure beside it, the expected shortfall, the worst and best day, the latest ninety days; `benchmarks` — the portfolio's beta and correlation to SPY and to BTC where the account lists them; `drawdown` — the net worth curve's own, from each peak; `stress` — what a flat move of every priced line, or of one class, would be in dollars. Arithmetic over the account's balances and the venues' bars, named in `notes`; nothing is a forecast. A read.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => read("/api/account/risk"),
 );
 
 server.registerTool(

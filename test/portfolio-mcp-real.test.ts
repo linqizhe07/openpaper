@@ -382,6 +382,16 @@ describe("declined asks and price history through the MCP seat", () => {
     expect(an.notes).toHaveLength(3);
     const ah = (await (await fetch(`${server.url}/api/account/analytics?markets=${encodeURIComponent(`ex|${PERP.symbol},ex|NOPE`)}&interval=1h`)).json()) as Record<string, unknown>;
     expect({ ...ah, asOf: "" }).toEqual({ ...(an as unknown as Record<string, unknown>), asOf: "" });
+    // the risk: the tool is there and answers from this account's own lines — the exposure adds up, every line weighed — the same as over HTTP
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_risk");
+    const rk = (await tool("portfolio_risk", {})).body as { ok: boolean; grossUsd: number; lines: Array<{ usd: number; weightPct: number }>; stress: unknown[]; notes: string[] };
+    expect(rk.ok).toBe(true);
+    expect(rk.grossUsd).toBeCloseTo(rk.lines.reduce((a, l) => a + Math.abs(l.usd), 0), 1);
+    expect(rk.lines.every((l) => Math.abs(l.weightPct) <= 100)).toBe(true);
+    expect(rk.stress.length).toBeGreaterThanOrEqual(3);
+    expect(rk.notes).toHaveLength(3);
+    const rh = (await (await fetch(`${server.url}/api/account/risk`)).json()) as Record<string, unknown>;
+    expect({ ...rh, asOf: "" }).toEqual({ ...(rk as unknown as Record<string, unknown>), asOf: "" });
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);
