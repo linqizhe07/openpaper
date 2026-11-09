@@ -109,7 +109,7 @@ describe("the command line", () => {
       expect(["market", "market?", "words", ""], f.code).toContain(f.takes);
     }
     // the terminal's own mnemonics for the same things
-    for (const c of ["DES", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
+    for (const c of ["DES", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "ECO", "ERN", "DVD", "SPLT", "IPO", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
   });
 
   it("asks the search for a function's market alone, for the whole of a function typed alone (a market of that name is offered too), for the words before a function half typed, and for nothing after a function that takes words; the Markets list is never narrowed to a code", () => {
@@ -149,7 +149,7 @@ describe("the command line", () => {
     // a market and a space: its functions, the market said once over them; a market and a function half typed: those it starts
     const aapl = body(stock("AAPL", "Apple Inc. common stock"));
     expect(rows("aapl ", aapl).map((r) => [r.code, r.item, r.lead, r.no])).toEqual([["DES", "stock:AAPL", true, ""], ["GP", "stock:AAPL", true, ""], ["QM", "stock:AAPL", true, ""], ["FA", "stock:AAPL", true, ""], ["CF", "stock:AAPL", true, ""], ["BUY", "stock:AAPL", true, ""]]);
-    expect(rows("aapl d", aapl).map((r) => r.code)).toEqual(["DES"]);
+    expect(rows("aapl d", aapl).map((r) => r.code)).toEqual(["DES", "DVD"]);
     expect(rows("aapl ", null)).toEqual([]);
     expect(rows("apple inc", aapl)).toEqual([]);
     expect(rows("", aapl)).toEqual([]);
@@ -259,7 +259,7 @@ describe("the command line", () => {
     const all = p.run<string>('cmdHelpHtml("")');
     const codes = p.run<string[]>("CMD_FNS.map((f) => f.code)");
     for (const c of codes) expect(all).toContain(`<kbd class="cmd-code">${c}</kbd>`);
-    for (const g of ["A market", "News", "Markets", "Trading and the lab", "Account"]) expect(all).toContain(`<h3 class="label">${g}</h3>`);
+    for (const g of ["A market", "News and the calendar", "Markets", "Trading and the lab", "Account"]) expect(all).toContain(`<h3 class="label">${g}</h3>`);
     expect(all).toContain('<span class="cmd-eg mono">AAPL DES</span>');
     expect(all).toContain("nothing is signed or sent from the box");
     const none = p.run<string>('cmdHelpHtml("<zzz>")');

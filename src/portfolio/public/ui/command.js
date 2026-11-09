@@ -47,6 +47,8 @@ function cmdChart(item) {
 /* a US share's ticker, or the sentence that says why a function that reads the SEC's filings has nothing for this market */
 const cmdFiled = (code) => (item) => (typeof mkTicker === "function" && mkTicker(item) && !(typeof mkIsPreipo === "function" && mkIsPreipo(item)) ? "" : `${code} reads a US company's own filings with the SEC: ${item.name} is not a US share.`);
 const cmdTab = (tab, sort) => () => go("markets", { tab, ...(sort ? { sort } : {}) });
+/* a US share's ticker, or the sentence that says why a function that reads Nasdaq's calendar for a share has nothing for this market */
+const cmdShare = (code) => (item) => (typeof mkTicker === "function" && mkTicker(item) && !(typeof mkIsPreipo === "function" && mkIsPreipo(item)) ? "" : `${code} reads Nasdaq's calendar for a US share: ${item.name} is not one.`);
 
 /* every function, in the groups HELP shows them in. `only(item)`: a sentence when the function has nothing for that market, else "" */
 const CMD_GROUPS = [
@@ -67,10 +69,15 @@ const CMD_GROUPS = [
     ],
   },
   {
-    group: "News",
+    group: "News and the calendar",
     fns: [
       { code: "TOP", name: "Top news", takes: "", what: "The day's headlines from the publishers' own feeds: the markets, the central banks, crypto", eg: "TOP", run: () => go("news") },
       { code: "N", name: "News search", takes: "words", what: "The headlines that carry these words", eg: "N fed rates", run: (c) => go("news", c.tail ? { q: c.tail } : {}) },
+      { code: "ECO", name: "Economic calendar", takes: "", what: "Today's releases with their time, consensus and what came out, from Nasdaq's calendar", eg: "ECO", run: () => go("calendar", { kind: "economic" }) },
+      { code: "ERN", name: "Earnings calendar", takes: "market?", what: "Who reports today, before the open or after the close, and the EPS expected; a share's own week", eg: "AAPL ERN", only: cmdShare("ERN"), run: (c) => go("calendar", { kind: "earnings", ...(c.item ? { symbol: mkTicker(c.item) } : {}) }) },
+      { code: "DVD", name: "Dividends", takes: "market?", what: "The shares going ex-dividend today, with the amount and the payment day; a share's own week", eg: "DVD", only: cmdShare("DVD"), run: (c) => go("calendar", { kind: "dividends", ...(c.item ? { symbol: mkTicker(c.item) } : {}) }) },
+      { code: "SPLT", name: "Splits", takes: "", what: "The splits Nasdaq lists around today", eg: "SPLT", run: () => go("calendar", { kind: "splits" }) },
+      { code: "IPO", name: "IPOs", takes: "", what: "The month's IPOs by stage: priced, expected, filed, withdrawn", eg: "IPO", run: () => go("calendar", { kind: "ipos" }) },
     ],
   },
   {

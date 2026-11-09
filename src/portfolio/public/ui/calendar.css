@@ -1,0 +1,26 @@
+/* THE CALENDAR PAGE (ui/calendar.js): the kinds as a seg, a row of the week's days, one day's rows as a table. The page's tokens only */
+.cal { container-type: inline-size; }
+.cal-kinds { margin: 0 0 12px; flex-wrap: wrap; }
+.cal-strip { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 0 0 14px; }
+.cal-strip .icon-btn { width: 36px; height: 36px; font-size: 18px; }
+.cal-day { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 52px; height: 48px; padding: 0 8px; border: 1px solid var(--card-border); border-radius: var(--radius-m); background: var(--surface); color: var(--text); line-height: 1.1; }
+.cal-day:hover { background: var(--hover); }
+.cal-day[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.cal-day .cal-dow { font-size: 11px; color: inherit; opacity: 0.7; }
+.cal-day .cal-dom { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-day.today:not([aria-pressed="true"]) .cal-dom { color: var(--mark); }
+.cal-month { font-weight: 700; min-width: 140px; text-align: center; }
+.cal-strip .btn { margin-left: 8px; }
+.cal-q { margin: 0 0 10px; font-size: 13px; }
+.cal-q .link { margin-left: 8px; }
+.cal-table td { font-size: 13px; }
+.cal-table .cal-t { width: 64px; }
+.cal-name { color: var(--dim); }
+.cal-sym { font-weight: 600; padding: 0; }
+.cal-asof { margin: 12px 0 0; }
+.cal-foot { margin-top: 6px; }
+.cal-foot summary { cursor: pointer; }
+.cal-foot p { margin: 6px 0 0; }
+@container (max-width: 640px) {
+  .cal-table .cal-name { display: none; }
+}

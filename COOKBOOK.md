@@ -185,6 +185,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `ALRT` | 市场，可省 | 这个市场的价格提醒表单；单独打是 Watching 页 |
 | `CN` | 市场 | 抽屉里的 News：这只股票自己的源加提到它的标题（第 2e 条） |
 | `TOP` · `N 词` | — / 词 | News 页：当天的标题 · 只看带这几个词的 |
+| `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN、DVD 可带股票） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
 | `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
 | `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
 | `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
@@ -218,6 +219,31 @@ GET /api/account/news                       当天的总表（公告除外），
 GET /api/account/news?topic=crypto&limit=20 一个主题
 GET /api/account/news?q=fed%20rates         标题里都有这几个词的
 GET /api/account/news?symbol=NVDA           一只美股：它自己的源，加提到它的
+```
+
+## 2f · 日历：Nasdaq 排的事，一天一读
+
+Markets 下的第三页 **Calendar**（命令行 `ECO` · `ERN` · `DVD` · `SPLT` · `IPO`）。读的是 Nasdaq 自己日历页背后的接口，和读它的报价同一台主机、同一个 UA，不带钥匙（`live/calendars.ts`，2026-11-09 逐个验过）。五种：
+
+| 种类 | 一行是什么 | 备注 |
+|---|---|---|
+| Economic | 纽约时间 · 国家 · 事件 · 公布值 · 一致预期 · 前值 | 接口里的字段叫 `gmt`，其实是纽约时间，按纽约读。公布值高于预期绿、低于红，只在两边都是数字时上色 |
+| Earnings | 盘前 / 盘后 · 代码 · 公司 · 市值 · 预期 EPS（几家估计）· 去年同期 · 财季 | 财报季一天两百多行；点代码打开那个市场 |
+| Dividends | 代码 · 公司 · 每股 · 年化 · 除息日 · 支付日 | |
+| Splits | 代码 · 公司 · 比例 · 执行日 | 列的是那天前后公告的拆股 |
+| IPOs | 阶段 · 日期 · 代码 · 公司 · 交易所 · 定价 · 募资 | 按月：priced · upcoming · filed · withdrawn |
+
+- **周条**：周一到周日，今天标着；选哪天读哪天（一天一个请求，1–3 秒），两头翻周；不在今天时多一个 Today。IPO 是月条。
+- **一只股票**：`AAPL ERN` 或 `AAPL DVD`，页面只留它的行；"Every share" 回到全部。
+- **留多久**：今天和以后的 15 分钟，过去的一天；今天的每 5 分钟自己重读。
+- **什么都不估**：一致预期是 Nasdaq 写的数字，公布值是它写的字；读不到的那天在表下面用 Nasdaq 的原话写明。
+- **agent**：`portfolio_calendar {kind, from, to, symbol, limit}`，`from`/`to` 最多七天，答复和页面同一份：`items`、`total`、`days`、`missing`、`notes`。
+
+```
+GET /api/account/calendar                                   今天的经济数据
+GET /api/account/calendar?kind=earnings&from=2026-11-09&to=2026-11-13   一周的财报
+GET /api/account/calendar?kind=earnings&symbol=AAPL&to=2026-11-15       一只股票
+GET /api/account/calendar?kind=ipos&from=2026-11-01                     当月 IPO
 ```
 
 ## 3 · 让一个 agent 进来，给它交易额度
