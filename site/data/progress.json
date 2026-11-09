@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 67,
+      "title": "The screener and the sector map: every US-listed share as Nasdaq lists it, screened by a rule in the address, and the sectors as tiles by market cap",
+      "mergedAt": "2026-11-09T23:31:15Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/67",
+      "branch": "feat/screener"
+    },
+    {
       "number": 66,
       "title": "A share's page: what Nasdaq's own pages say of one US share, as written — company, figures, analysts, earnings, dividends, short interest, holders",
       "mergedAt": "2026-11-09T22:55:05Z",
