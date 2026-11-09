@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 69,
+      "title": "Risk: the account's own lines weighed and measured — exposure, volatility, value at risk, betas, drawdown, stresses — under the Account",
+      "mergedAt": "2026-11-09T23:55:25Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/69",
+      "branch": "feat/risk"
+    },
+    {
       "number": 68,
       "title": "Analytics: a few markets compared, correlated, their volatility, betas and seasons — arithmetic over the bars the account already reads",
       "mergedAt": "2026-11-09T23:44:17Z",
