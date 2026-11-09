@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -1003,6 +1003,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async () => read("/api/account/world"),
+);
+
+server.registerTool(
+  "portfolio_options",
+  {
+    description:
+      "A LISTED OPTION CHAIN and the figures a terminal reads off it, keyless: `symbol` a US share's ticker (AAPL, SPY) or one of Cboe's indices by name (SPX, XSP, NDX, RUT, VIX) — Cboe's delayed quotes, FIFTEEN MINUTES BEHIND, with Cboe's own implied volatility and greeks per contract — or BTC / ETH — Deribit's live summary, its mark IV, prices shown in dollars at the expiry's underlying; Deribit publishes no greeks, so each delta is Black–Scholes's from its mark IV, said so. `expiries` gives every expiry's days, contracts, at-the-money IV, open interest and volume by side with the put/call ratios, max pain, the at-the-money straddle's price and its share of the underlying, and the 25-delta skew; `chain` gives one expiry's rows around the money (the nearest expiry unless `expiry` names a day, YYYY-MM-DD: the first on or after it) — each strike's call and put with bid, ask, last, mark, IV, delta, gamma, theta, vega, open interest, volume — with `smile` (IV and delta by strike) and `underlying` (the share's price and Cboe's 30-day IV, or the coin's index). Everything beyond the venue's figures is arithmetic over them, named in `notes`; nothing is estimated. A read.",
+    inputSchema: { symbol: z.string().min(1).max(12).describe("a US share's ticker, SPX / XSP / NDX / RUT / VIX, or BTC / ETH"), expiry: z.string().max(10).optional().describe("an expiry day, YYYY-MM-DD: the first on or after it is shown; the nearest unless said") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ symbol, expiry }) => read(`/api/account/options?${new URLSearchParams({ symbol, ...(expiry ? { expiry } : {}) })}`),
 );
 
 server.registerTool(

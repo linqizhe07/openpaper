@@ -150,6 +150,13 @@
  *                                                        Hyperliquid's xyz perpetuals) — each with whose figure it is and how far behind;
  *                                                        a source late or refusing has its last answer stand in, said in `missing`. The
  *                                                        World page, and the agents' portfolio_world
+ *   GET  /api/account/options?symbol=&expiry=               OPTIONS (live/options.ts): a US share's or a Cboe index's chain as Cboe publishes
+ *                                                        it (15 minutes behind; SPX, XSP, NDX, RUT, VIX by name) or BTC's and ETH's as
+ *                                                        Deribit does (live) — every expiry's at-the-money IV, put/call by open interest and
+ *                                                        volume, max pain, the at-the-money straddle and the 25-delta skew, read off the
+ *                                                        venue's own IVs and greeks; one expiry's rows around the money (the nearest unless
+ *                                                        `expiry` names a day) and its smile. Nothing is estimated. The Options page, and
+ *                                                        the agents' portfolio_options
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -1024,6 +1031,15 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
   app.get("/api/account/world", wrap(async (_req, res) => {
     if (!mounted(res)) return;
     answerOf(res, await svc.world());
+  }));
+
+  // OPTIONS: a chain as Cboe or Deribit publishes it and the figures read off it — every expiry's ATM IV, put/call, max pain, straddle and
+  // skew, one expiry's rows and smile (service.ts options, live/options.ts). A read; every IV and greek is the venue's own, nothing estimated
+  app.get("/api/account/options", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { symbol: 12, expiry: 10 });
+    if (!q) return;
+    answerOf(res, await svc.options({ symbol: q.symbol ?? "", ...(q.expiry ? { expiry: q.expiry } : {}) }));
   }));
 
   // CALENDAR: what Nasdaq's pages schedule — economic releases, earnings, dividends, splits, IPOs — a day a read, kept a quarter hour

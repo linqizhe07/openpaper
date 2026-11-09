@@ -187,6 +187,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `TOP` · `N 词` | — / 词 | News 页：当天的标题 · 只看带这几个词的 |
 | `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN、DVD 可带股票） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
 | `WEI` · `GC` · `FXC` · `GLCO` | — | World 页：股指 · 收益率曲线 · 外汇 · 商品，各直达一张卡（第 2g 条） |
+| `OMON` · `SKEW` | 市场，可省（美股、BTC、ETH） | Options 页：期权链 · 波动率偏斜；单独打是上一条链（第 2h 条） |
 | `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
 | `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
 | `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
@@ -196,7 +197,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 
 ## 2e · News：出版方自己放出的标题，不读正文
 
-Markets 下面现在有四页：**Overview**（原来的 Markets）、**World**（第 2g 条）、**News** 和 **Calendar**（第 2f 条）。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
+Markets 下面现在有五页：**Overview**（原来的 Markets）、**World**（第 2g 条）、**News**、**Calendar**（第 2f 条）和 **Options**（第 2h 条）。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
 
 News 读的是出版方**自己**放出来的 RSS 源，不带钥匙，和读公开行情一个路子（`live/news.ts` 的 `NEWS_FEEDS`，2026-11-09 逐个验过）：
 
@@ -265,6 +266,33 @@ Markets 下的第二页 **World**（命令行 `WEI` · `GC` · `FXC` · `GLCO`�
 
 ```
 GET /api/account/world
+```
+
+## 2h · Options：期权链，和终端从链上读的数
+
+Markets 下的第五页 **Options**（命令行 `AAPL OMON` 看链、`SPY SKEW` 看偏斜；单独打 `OMON` 回到上一条链）。一条上市期权链照场所发布的样子，加上终端在链上做的算术（`live/options.ts`，2026-11-09 逐个验过）：
+
+| 标的 | 源 | 一张合约是什么 | 备注 |
+|---|---|---|---|
+| 美股和 ETF（AAPL、SPY…） | Cboe 的延迟期权报价 | 买价 · 卖价 · 最新 · 理论价 · IV · delta · gamma · theta · vega · 持仓 · 成交量 | 晚十五分钟，页上写着；IV 和希腊字母都是 Cboe 自己的；标的还带 Cboe 的 30 天 IV |
+| Cboe 指数（SPX · XSP · NDX · RUT · VIX） | 同上，按名字问 | 同上 | SPX 一个文件 14 MB，一分钟读一次 |
+| BTC · ETH | Deribit 的公开汇总，实时 | 买价 · 卖价 · 最新 · 标记价（按该到期日的标的换成美元）· mark IV · delta · 持仓和成交量（以币计） | Deribit 不发布希腊字母：delta 用它的 mark IV 按 Black–Scholes 算，写明是算的 |
+
+页面从上到下：
+
+- **头卡**：符号框和几个常用 chip；标的一行（价格、涨跌、IV30、谁的数、几点的）；到期日条（天数和平值 IV，选中的按下）；选中到期日的八块数——**平值 IV**（标的两侧两档的 IV 插值）、**看跌 / 看涨比**（持仓量一个、成交量一个）、**最大痛点**（让全部持仓到期付出最少的行权价）、**跨式**（离标的最近一档看涨加看跌的中间价，± 是它占标的的比例：市场定价的到期波动幅度）、**25-delta 偏斜**（25-delta 看跌 IV 减看涨 IV）、持仓、成交量。
+- **Volatility**：平值 IV 的期限结构，每个到期日一行（点一下切过去）。
+- **Smile**：选中到期日的 IV 按行权价，看涨看跌两条线，标的一条虚线。
+- **Chain**：行权价居中、左看涨右看跌，平值上下各 40 档，价内的格子着色，离标的最近的一行框出。
+
+- **什么都不估**：场所的数之外全是对它们的算术，页脚折着的说明和答复的 `notes` 逐条写明。
+- **留多久**：Cboe 一分钟、Deribit 三十秒；读失败时四张卡留着上一次的，下面写明。显示时每 30 秒重读。
+- **agent**：`portfolio_options {symbol, expiry}`，答复和页面同一份：`underlying`、`expiries`、`chain`、`smile`、`notes`。
+
+```
+GET /api/account/options?symbol=AAPL                     最近的到期日
+GET /api/account/options?symbol=SPX&expiry=2026-12-18    一个到期日（当天或之后的第一个）
+GET /api/account/options?symbol=BTC                      Deribit
 ```
 
 ## 3 · 让一个 agent 进来，给它交易额度
