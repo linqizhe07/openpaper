@@ -356,15 +356,18 @@ $("lens-menu").addEventListener("keydown", (e) => {
   }
 });
 
-/* the search lives in the page itself (data-live), so a refresh neither freezes nor wipes it: what is typed goes to Markets */
+/* the box lives in the page itself (data-live), so a refresh neither freezes nor wipes it. It is a search and a command line in one
+   (ui/command.js): on Markets the list follows what is typed, as it always did — the words that name a market, never a function's code —
+   and from any other page nothing moves until Enter, since what is typed may be a function for the page the owner is on */
 let searchTimer = 0;
 const searchFor = (q, now) => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => go("markets", { ...(ROUTE.tab === "markets" ? ROUTE.params : {}), q: q.trim() }, { replace: ROUTE.tab === "markets" }), now ? 0 : 250);
 };
 $("search").addEventListener("input", () => {
-  searchFor($("search").value);
-  shPaletteRead($("search").value);
+  const v = $("search").value;
+  if (ROUTE.tab === "markets") searchFor(typeof cmdFilter === "function" ? cmdFilter(v) : v);
+  shPaletteRead(v);
 });
 $("search").addEventListener("blur", (e) => {
   // the focus going into the palette (↓ to a row) is not a leaving: the menu stays; anywhere else, it closes
@@ -374,21 +377,31 @@ $("search").addEventListener("blur", (e) => {
 });
 $("search-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  shSearchRemember($("search").value);
+  const v = $("search").value;
+  // a function (ui/command.js cmdEnter): it runs — on its market's first match, read first where the palette's answer is not for it yet
+  if (typeof cmdEnter === "function" && cmdEnter(v, palFor && palFor === cmdQuery(v) ? palBody : null)) return;
+  shSearchRemember(v);
   shPaletteClose();
-  searchFor($("search").value, true);
+  searchFor(v, true);
 });
 
 /* THE SEARCH PALETTE (⌘K): the top matches under the box as it is typed — eight rows at most, each a market as Markets names it (its
    avatar, its short name, what it is, the first venue listing it) with its price and 24 hours, read through the same explore read Markets
    uses (the account keeps an answer thirty seconds) — ↓ from the box into them, ↑ ↓ Home End along them, Enter or a click opens the
    market's drawer, Escape closes; with the box empty, the recent searches kept in this browser (account.searches). Enter in the box keeps
-   its meaning: the Markets list filtered by what was typed */
+   its meaning for a search: the Markets list filtered by what was typed.
+   THE BOX IS A COMMAND LINE TOO (ui/command.js): over the matches come the functions what is typed names or starts — MOST, HELP, and for
+   a market and a function (AAPL DES) each match with the function it would be run on, the first the one Enter takes. The search is then
+   asked for the market's words alone (shPaletteAsk), a function's row runs it (cmdChoose), and a function kept among the recent ones
+   runs again when it is pressed */
 const SH_PAL_MAX = 8;
 const SH_RECENT = "account.searches";
 let palTimer = 0;
 let palBody = null;
 let palQ = "";
+/* what is in the box as it was typed (a space after a market asks which functions it has), and the search palBody is the answer to */
+let palRaw = "";
+let palFor = "";
 const shSearchesOf = () => {
   try {
     const v = JSON.parse(localStorage.getItem(SH_RECENT) || "[]");
@@ -415,15 +428,16 @@ function shSearchesClear() {
     // ditto
   }
 }
-/* the rows: the matches, or the recent searches while the box is empty, or a word on where the read stands */
-function shPaletteRows(body, q) {
+/* the rows: the matches, or the recent searches while the box is empty, or a word on where the read stands — which is left unsaid
+   `under` a function's rows: there the function is the answer, and a search that found no market of its name is no news */
+function shPaletteRows(body, q, under = false) {
   if (!q) {
     const recent = shSearchesOf();
-    if (!recent.length) return '<div class="menu-h" role="presentation">Type to search markets · ↓ to the matches · Enter filters the Markets list</div>';
+    if (!recent.length) return '<div class="menu-h" role="presentation">Type to search markets, or a function: AAPL DES · MOST · HELP · ↓ to the matches · Enter runs a function, or filters the Markets list</div>';
     return `<div class="menu-h" role="presentation">Recent</div>${recent.map((s) => `<button type="button" role="option" data-pal-q="${esc(s)}">${icon("clock")}<span>${esc(s)}</span></button>`).join("")}<button type="button" class="pal-clear" data-pal-clear>Clear</button>`;
   }
   const items = body && Array.isArray(body.items) ? body.items.filter((x) => x && Array.isArray(x.at)).slice(0, SH_PAL_MAX) : [];
-  if (!items.length) return `<div class="menu-h" role="presentation">${body ? `Nothing matches “${esc(q)}”` : "Looking…"}</div>`;
+  if (!items.length) return under ? "" : `<div class="menu-h" role="presentation">${body ? `Nothing matches “${esc(q)}”` : "Looking…"}</div>`;
   const av = typeof mkAv === "function" ? mkAv : () => "";
   const name = typeof mkShortHtml === "function" ? mkShortHtml : (x) => esc(String(x.name || ""));
   const sub = typeof mkSub === "function" ? mkSub : () => "";
@@ -442,34 +456,46 @@ function shPaletteNext(key, rows, at, fromInput) {
   if (key === "End") return rows - 1;
   return null;
 }
+/* what the search is asked for while this is in the box: a function's market where it is one (ui/command.js cmdQuery), else what is typed */
+const shPaletteAsk = () => (typeof cmdQuery === "function" ? cmdQuery(palRaw) : palQ);
 function shPaletteDraw() {
   const m = $("search-menu");
   if (!m) return;
-  m.innerHTML = shPaletteRows(palBody, palQ);
+  // the functions over the matches (ui/command.js cmdPalette); where every row is a market with its function, the plain matches are left out
+  const cmd = palQ && typeof cmdPalette === "function" ? cmdPalette(palRaw, palBody) : null;
+  m.innerHTML = cmd ? `${cmd.html}${cmd.markets ? shPaletteRows(palBody, cmd.q, cmd.rows > 0) : ""}` : shPaletteRows(palBody, palQ);
   m.hidden = false;
   $("search").setAttribute("aria-expanded", "true");
-  // under the box, wherever the top bar put it: placed from the box's own box, as the lens's menu is
+  // under the box, wherever the top bar put it: placed from the box's own box, as the lens's menu is — at least 420 wide (a function's
+  // row is a code, a name and a line), and drawn back from the bar's right edge where the box stands near it (under the Account's header)
   const f = $("search-form");
   if (f && m.style && Number.isFinite(f.offsetLeft)) {
-    m.style.left = `${f.offsetLeft}px`;
+    const room = f.offsetParent && f.offsetParent.clientWidth > 0 ? f.offsetParent.clientWidth : Infinity;
+    const w = Math.min(Math.max(420, f.offsetWidth || 0), room);
+    m.style.left = `${Math.max(0, Math.min(f.offsetLeft, room - w))}px`;
     m.style.top = `${f.offsetTop + f.offsetHeight + 4}px`;
-    m.style.width = `${Math.max(320, f.offsetWidth || 0)}px`;
+    m.style.width = `${w}px`;
   }
 }
 /* what was typed: the recent searches at once while it is empty, else the matches after a quarter second, the latest typing winning */
 function shPaletteRead(q) {
-  palQ = String(q || "").trim();
+  palRaw = String(q || "");
+  palQ = palRaw.trim();
   clearTimeout(palTimer);
   if (!palQ) {
     palBody = null;
+    palFor = "";
     return void shPaletteDraw();
   }
   shPaletteDraw();
+  // a function that takes words asks the search nothing, and a market's function typed after it (AAPL, then DES) asks nothing again
+  const asked = shPaletteAsk();
+  if (!asked || (asked === palFor && palBody)) return;
   palTimer = setTimeout(async () => {
-    const asked = palQ;
     const body = await api(`/api/account/explore?q=${encodeURIComponent(asked)}&limit=${SH_PAL_MAX}`, { ttl: 20_000 });
-    if (asked !== palQ) return;
+    if (asked !== shPaletteAsk()) return;
     palBody = body && body.ok !== false && Array.isArray(body.items) ? body : { items: [] };
+    palFor = asked;
     shPaletteDraw();
   }, 250);
 }
@@ -479,15 +505,18 @@ function shPaletteClose() {
   m.hidden = true;
   $("search").setAttribute("aria-expanded", "false");
 }
-/* a row chosen: the market's drawer, and the search remembered; a recent search typed back into the box; Clear */
+/* a row chosen: a function's row runs it (ui/command.js); a market's opens its drawer, and the search is remembered; a recent search is
+   typed back into the box — and runs again where it was a function; Clear */
 function shPaletteChoose(b) {
   if (!b || !b.dataset) return;
+  if (b.dataset.cmdI !== undefined) return void (typeof cmdChoose === "function" && cmdChoose(Number(b.dataset.cmdI), palRaw));
   if (b.dataset.palClear !== undefined) {
     shSearchesClear();
     return void shPaletteDraw();
   }
   if (b.dataset.palQ !== undefined) {
     $("search").value = b.dataset.palQ;
+    if (typeof cmdEnter === "function" && cmdEnter(b.dataset.palQ, null)) return;
     searchFor(b.dataset.palQ, true);
     shPaletteRead(b.dataset.palQ);
     return void $("search").focus();
@@ -657,9 +686,8 @@ $("drawer").addEventListener("close", () => {
   if (back && back.isConnected && back.focus) back.focus();
 });
 
-/* the search takes the focus: it is Markets' and Trade's, so from the Account's pages it comes with Markets */
+/* the box takes the focus, on whichever page the owner is: a function typed there goes where it says, a search goes to Markets on Enter */
 function shSearchFocus() {
-  if (ACCOUNT_TABS.includes(ROUTE.tab)) go("markets", {});
   $("search").focus();
   $("search").select();
 }
@@ -668,8 +696,8 @@ function shSearchFocus() {
    The chord's modifier is the platform's: ⌘ on a Mac, Ctrl elsewhere */
 const SH_MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(String(navigator.platform || navigator.userAgent || "")) ? "⌘" : "Ctrl";
 const SHORTCUTS = [
-  { where: "Anywhere", keys: [[[`${SH_MOD} K`], "Search markets, assets and agents (from a field too)"], [["/"], "Search"], [["t"], "Open the ticket"], [["?"], "These keys"], [["Esc"], "Close a sheet, the drawer, a menu"]] },
-  { where: "Search", keys: [[["↓"], "From the field into the results"], [["↑", "↓"], "Through them; ↑ from the first back to the field"], [["Home", "End"], "The first, the last"], [["Enter"], "Open the one chosen; in the field, filter Markets by what is typed"], [["Esc"], "Close the results"]] },
+  { where: "Anywhere", keys: [[[`${SH_MOD} K`], "The command line: a search, or a function such as AAPL DES, MOST or HELP (from a field too)"], [["/"], "The command line"], [["t"], "Open the ticket"], [["?"], "These keys"], [["Esc"], "Close a sheet, the drawer, a menu"]] },
+  { where: "Search", keys: [[["↓"], "From the field into the results"], [["↑", "↓"], "Through them; ↑ from the first back to the field"], [["Home", "End"], "The first, the last"], [["Enter"], "Open the one chosen; in the field, run the function typed — plain words filter Markets"], [["Esc"], "Close the results"]] },
   { where: "Trade · the picker", keys: [[["↓"], "From its search to the first market"], [["↑", "↓"], "Through every list shown"], [["Home", "End"], "The first, the last"], [["Enter"], "Open it"], [["S"], "Star it, or take its star off"]] },
   { where: "Trade · the order book", keys: [[["↑", "↓"], "Through the rows"], [["Home", "End"], "The best ask, the lowest bid"], [["Enter", "Space"], "That price into the ticket"]] },
   { where: "The chart, with the plot focused", keys: [[["←", "→"], "A bar at a time (the view follows past the edge)"], [["Home", "End"], "The oldest and the newest bar shown"], [["+", "−"], "Zoom in, zoom out"], [["F"], "Fill the window with the chart, or back to the page"], [["Delete"], "Remove the drawing selected"], [["Esc"], "The crosshair away; a tool, a selection, a menu or the window-filling view let go"]] },

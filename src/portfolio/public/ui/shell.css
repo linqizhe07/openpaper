@@ -276,6 +276,22 @@ kbd { font-family: var(--font-mono); font-size: 11px; font-weight: 500; border: 
 .search-menu .pal-name .dim { margin-left: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-menu .pal-px { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
 .search-menu .pal-clear { min-height: 36px; color: var(--dim); font-size: 12px; }
+/* the command line's rows in the palette (ui/command.js cmdRowsHtml): a function by its code, and a market with the function it is run
+   on at its right; one the function has nothing for is dimmed. The same code as a key in HELP's list (cmdHelpHtml) */
+.cmd-code { flex: none; min-width: 44px; text-align: center; font-weight: 600; color: var(--text); background: var(--surface-2); }
+.search-menu .cmd-go { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
+.search-menu .cmd-go .dim { margin-left: 0; font-size: 12px; }
+.search-menu button[aria-disabled="true"] { opacity: 0.55; }
+.search-menu .menu-h .cmd-code { margin-right: 6px; }
+.cmd-fns { display: grid; grid-template-columns: minmax(64px, auto) minmax(0, 1fr); gap: 8px 14px; margin: 0; align-items: baseline; }
+.cmd-fns div { display: contents; }
+.cmd-fns dd { margin: 0; font-size: 13px; }
+.cmd-fns .cmd-eg { display: block; margin-top: 2px; font-size: 11px; color: var(--dim); }
+.cmd-help-note { margin: 0 0 12px; }
+/* under the Account's header the box stands beside the mode and Settings: narrower there, so the bar keeps to one line where it can; a
+   narrow window gives it the whole row, as it does the Markets' box */
+.main[data-at="account"] .search { width: 280px; }
+@media (max-width: 900px) { .main[data-at="account"] .search { width: 100%; } }
 .banner { border: 1px solid var(--card-border); border-radius: var(--radius-m); padding: 14px 18px; background: var(--surface); box-shadow: var(--shadow-card); font-size: 14px; }
 .codeform { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .codeform input { font-family: var(--font-mono); font-size: 14px; height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--bg); width: 150px; text-transform: uppercase; }

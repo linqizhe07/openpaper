@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01",
+  "generatedAt": "2026-11-09",
   "mcpTools": {
     "real": 41,
     "simulationOnly": 7,
@@ -87,7 +87,7 @@
   "capUsd": 100,
   "cardMinutes": 30,
   "tests": {
-    "files": 192,
+    "files": 193,
     "attackFiles": 31
   },
   "strip": [
