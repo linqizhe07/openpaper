@@ -96,20 +96,20 @@ describe("the command line", () => {
     for (const t of ["fed cut", "AAPL PORT", "most traded stocks", "", "   "]) expect(parse(t), t).toBeNull();
   });
 
-  it("every function: a code of two to five capitals, once; a name, a line and an example that reads as itself", () => {
+  it("every function: a code of one to five capitals (N is the terminal's own one letter for the news), once; a name, a line and an example that reads as itself", () => {
     const p = page();
     const fns = p.run<Array<{ code: string; name: string; what: string; eg: string; takes: string; ok: boolean }>>("CMD_FNS.map((f) => { const q = cmdParse(f.eg); return { code: f.code, name: f.name, what: f.what, eg: f.eg, takes: f.takes, ok: !!q && q.ready && q.fn === f }; })");
     expect(fns.length).toBeGreaterThan(20);
     expect(new Set(fns.map((f) => f.code)).size).toBe(fns.length);
     for (const f of fns) {
-      expect(f.code, f.code).toMatch(/^[A-Z]{2,5}$/);
+      expect(f.code, f.code).toMatch(/^[A-Z]{1,5}$/);
       expect(f.name.length, f.code).toBeGreaterThan(2);
       expect(f.what.length, f.code).toBeGreaterThan(10);
       expect(f.ok, `${f.code}: ${f.eg}`).toBe(true);
       expect(["market", "market?", "words", ""], f.code).toContain(f.takes);
     }
     // the terminal's own mnemonics for the same things
-    for (const c of ["DES", "GP", "QM", "FA", "CF", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
+    for (const c of ["DES", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
   });
 
   it("asks the search for a function's market alone, for the whole of a function typed alone (a market of that name is offered too), for the words before a function half typed, and for nothing after a function that takes words; the Markets list is never narrowed to a code", () => {
@@ -259,7 +259,7 @@ describe("the command line", () => {
     const all = p.run<string>('cmdHelpHtml("")');
     const codes = p.run<string[]>("CMD_FNS.map((f) => f.code)");
     for (const c of codes) expect(all).toContain(`<kbd class="cmd-code">${c}</kbd>`);
-    for (const g of ["A market", "Markets", "Trading and the lab", "Account"]) expect(all).toContain(`<h3 class="label">${g}</h3>`);
+    for (const g of ["A market", "News", "Markets", "Trading and the lab", "Account"]) expect(all).toContain(`<h3 class="label">${g}</h3>`);
     expect(all).toContain('<span class="cmd-eg mono">AAPL DES</span>');
     expect(all).toContain("nothing is signed or sent from the box");
     const none = p.run<string>('cmdHelpHtml("<zzz>")');

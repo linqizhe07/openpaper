@@ -127,6 +127,15 @@
  *                                                        with `more` (older bars exist) and, where the history ends, why: a connected
  *                                                        venue's own, or a venue not connected from its public data, without a key; kept
  *                                                        seconds to minutes in a bounded memory, nothing written
+ *   GET  /api/account/news?topic=&q=&symbol=&limit=        THE NEWS (live/news.ts): the headlines the publishers put out in their own feeds —
+ *                                                        the Federal Reserve, the ECB, the SEC, CNBC, MarketWatch, the WSJ, the BBC, Nasdaq,
+ *                                                        CoinDesk, Cointelegraph, The Block, Decrypt, PR Newswire — a title, a link to the
+ *                                                        publisher's page, a time, the source; the day's list, a topic's (markets · macro ·
+ *                                                        crypto · companies), the ones carrying a few words, or a US share's (its own feed from
+ *                                                        Nasdaq and every headline that names it). Each feed kept five minutes, a late one's
+ *                                                        last answer standing in (`missing` says which, in its words); no article is read.
+ *                                                        The SEC's feed is read with SEC_CONTACT only. The News page, a share's drawer, and
+ *                                                        the agents' portfolio_news
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -984,6 +993,16 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { id: 40 });
     if (!q) return;
     answerOf(res, svc.backtestKept(q.id));
+  }));
+
+  // NEWS: the headlines the publishers put out in their own feeds — the day's list, a topic's, the ones that carry a few words, a US
+  // share's own — kept five minutes, a late feed's last answer standing in (service.ts news, live/news.ts). A read; no article is fetched,
+  // and a headline's words are a publisher's claim, never the account's
+  app.get("/api/account/news", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { topic: 12, q: 60, symbol: 12, limit: 4 });
+    if (!q) return;
+    answerOf(res, await svc.news({ ...(q.topic ? { topic: q.topic } : {}), ...(q.q ? { q: q.q } : {}), ...(q.symbol ? { symbol: q.symbol } : {}), ...(q.limit ? { limit: Number(q.limit) } : {}) }));
   }));
 
   // COMPANY: a US company's own record as the SEC keeps it — who it is, its fiscal year end, where it is incorporated, its latest reports

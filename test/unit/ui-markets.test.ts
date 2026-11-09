@@ -184,7 +184,7 @@ function page(answer: (path: string, init?: { method?: string; body?: string }) 
   const ctx = createContext(sandbox);
   sandbox.window = runInContext("globalThis", ctx);
   // the page's order: the contract, the connections, the holding's opener, then the pane that draws the drawer they both open
-  for (const f of ["ui/core.js", "ui/connect.js", "ui/asset.js", "ui/markets.js"]) new Script(readFileSync(join(PUBLIC, f), "utf8"), { filename: f }).runInContext(ctx);
+  for (const f of ["ui/core.js", "ui/connect.js", "ui/asset.js", "ui/markets.js", "ui/news.js"]) new Script(readFileSync(join(PUBLIC, f), "utf8"), { filename: f }).runInContext(ctx);
   const run = <T = unknown>(code: string) => runInContext(code, ctx) as T;
   return { run, asked, set: (name: string, value: unknown) => run(`${name} = ${JSON.stringify(value)}`) };
 }
@@ -997,7 +997,7 @@ describe("the one drawer", () => {
     expect(html).toContain("<dt>Volume 24h</dt><dd>$1.9B</dd>");
     expect(html).not.toContain('data-act="rekey"');
     // the parts, each in its own element, in the brief's order
-    expect([...html.matchAll(/data-sec="([a-z]+)"/g)].map((m) => m[1])).toEqual(["head", "chart", "alerts", "across", "company", "financials", "ipo", "held", "agents", "lines"]);
+    expect([...html.matchAll(/data-sec="([a-z]+)"/g)].map((m) => m[1])).toEqual(["head", "chart", "alerts", "across", "news", "company", "financials", "ipo", "held", "agents", "lines"]);
     // the Price head opens the Trade page's own chart of it, at the account its history is read from (yours), the drawer closing on the way
     expect(html).toContain('<span class="mk-sec-t"><h2 class="h2">Price</h2><a class="link mk-open-trade" href="#/trade?kind=crypto&amp;venue=ex&amp;symbol=BTC%2FUSDT" data-drawer-close>Open in Trade →</a></span>');
     expect(html.indexOf('aria-label="Across venues"')).toBeLessThan(html.indexOf('aria-label="You hold"'));
@@ -1825,7 +1825,7 @@ describe("the drawer's Financials from SEC EDGAR", () => {
     expect(parts.financials).not.toContain("Filings at the SEC");
   });
 
-  it("the Company part: a US share's drawer reads the company's record once, shows the record's facts, its latest reports and its newest filings as links, and says it reads no news site", async () => {
+  it("the Company part: a US share's drawer reads the company's record once, shows the record's facts, its latest reports and its newest filings as links, and points at News for the rest", async () => {
     const CO = {
       ok: true, symbol: "AAPL", cik: "0000320193", name: "Apple Inc.", tickers: ["AAPL"], exchanges: ["Nasdaq"], sic: "3571", sicDescription: "Electronic Computers",
       fiscalYearEnd: { month: 9, day: 27, words: "September 27" }, stateOfIncorporation: "CA", stateOfIncorporationWords: "CA", website: "https://www.apple.com/", investorWebsite: "https://investor.apple.com", category: "Large accelerated filer",
@@ -1861,7 +1861,7 @@ describe("the drawer's Financials from SEC EDGAR", () => {
     // a description that only repeats the form is left out
     expect(html).toContain('<b>10-Q</b></a><span class="dim"> · filed 1 May 2026</span>');
     expect(html).toContain('<b>4</b></a><span class="dim"> · filed 2 Apr 2026</span>');
-    expect(html).toContain("SEC EDGAR · submissions · what the company itself filed; the account reads no news site");
+    expect(html).toContain("SEC EDGAR · submissions · what the company itself filed; its news is under News");
     // a coin has no Company part and asks nothing; the SEC's refusal is said in its words, without a link to filings it did not give
     p.run("MKT.open = { item: ITEMS.btc, range: '1M', interval: '1h', ipo: [], fin: undefined, co: undefined }; mkDrawerLoad(MKT.open)");
     expect(p.run<Record<string, string>>("mkDrawerParts(MKT.open)").company).toBe("");
@@ -1870,6 +1870,38 @@ describe("the drawer's Financials from SEC EDGAR", () => {
     parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
     expect(parts.company).toContain('<p class="mk-quiet">SEC EDGAR lists no company under AAPL.</p>');
     expect(parts.company).not.toContain("All filings");
+  });
+
+  it("the News part: a share asks for its own news by its ticker, a coin by the one word a headline would carry, an event contract not at all; the rows are the News page's, with where they came from and the way to the whole list; the feeds' refusal in its words", () => {
+    const NEWS = { ok: true, asOf: "2026-10-06T14:00:00.000Z", symbol: "AAPL", items: [{ id: "n1", title: "Apple sets its call", at: "2026-10-06T13:40:00.000Z", source: "nasdaq:AAPL", sourceName: "Nasdaq", topics: ["companies"], symbol: "AAPL", url: "https://www.nasdaq.com/articles/apple" }, { id: "n2", title: "AAPL <b>leads</b> the Dow", at: "2026-10-06T12:00:00.000Z", source: "cnbc", sourceName: "CNBC", topics: ["markets"] }], total: 2, sources: [{ id: "nasdaq:AAPL", name: "Nasdaq", count: 2 }, { id: "cnbc", name: "CNBC", count: 30 }], missing: [], topics: [], notes: [] };
+    const p = page((path) => (path.startsWith("/api/account/news") ? NEWS : {}));
+    p.set("A", account());
+    p.set("ITEMS", { share: share(), btc, ev: fed });
+    expect(p.run("[mkNewsAsk(ITEMS.share), mkNewsAsk(ITEMS.btc), mkNewsAsk(ITEMS.ev), mkNewsAsk({ kind: 'coin', name: 'Ether', base: 'ETH', at: [] }), mkNewsAsk({ kind: 'perp', name: 'BTC perpetual', base: 'BTC', at: [] }), mkNewsAsk({ kind: 'coin', name: 'A token whose name is a sentence', base: 'x1', at: [] })]")).toEqual(["symbol=AAPL", "q=Bitcoin", "", "q=Ether", "q=BTC", ""]);
+    p.run("MKT.open = { item: ITEMS.share, range: '1M', interval: '1h', ipo: [], fin: null, co: null, news: undefined }; mkDrawerLoad(MKT.open)");
+    expect(p.asked.filter((a) => a.path.startsWith("/api/account/news")).map((a) => a.path)).toEqual(["/api/account/news?symbol=AAPL&limit=8"]);
+    let parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
+    expect(parts.news).toContain('<h2 class="h2">News</h2>');
+    expect(parts.news).toContain('class="skel-rows"');
+    // the answer landed (the drawer's redraw itself needs the page's drawer element, which this stand-in browser has not)
+    p.run(`MKT.open.news = ${JSON.stringify(NEWS)}`);
+    parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
+    expect(parts.news).toContain('<ol class="nw-list nw-compact">');
+    expect(parts.news).toContain('<a class="nw-title" href="https://www.nasdaq.com/articles/apple" target="_blank" rel="noopener noreferrer">Apple sets its call</a>');
+    expect(parts.news).toContain("AAPL &lt;b&gt;leads&lt;/b&gt; the Dow");
+    expect(parts.news).toContain("Nasdaq's feed for AAPL, and every headline that names it · the publishers' own feeds · read 10:00 · <button type=\"button\" class=\"link\" data-act=\"news-all\">All news →</button>");
+    // read once a drawer: another draw asks nothing more
+    p.run("mkDrawerLoad(MKT.open)");
+    expect(p.asked.filter((a) => a.path.startsWith("/api/account/news")).length).toBe(1);
+    // an event contract has no News part and asks nothing
+    p.run("MKT.open = { item: ITEMS.ev, range: '1M', interval: '1h', ipo: [], fin: undefined, co: undefined, news: undefined }; mkDrawerLoad(MKT.open)");
+    expect(p.run<Record<string, string>>("mkDrawerParts(MKT.open)").news).toBe("");
+    expect(p.asked.filter((a) => a.path.startsWith("/api/account/news")).length).toBe(1);
+    // none names it; and the feeds' refusal, in its words
+    p.run("MKT.open = { item: ITEMS.btc, range: '1M', interval: '1h', ipo: [], news: { ok: true, q: 'Bitcoin', items: [], sources: [{ id: 'cnbc', name: 'CNBC', count: 30 }, { id: 'bbc', name: 'BBC', count: 12 }], missing: [], asOf: '2026-10-06T14:00:00.000Z' } }");
+    expect(p.run<Record<string, string>>("mkDrawerParts(MKT.open)").news).toContain('<p class="empty">No headline names it among the 42 headlines the feeds gave just now.</p>');
+    p.run("MKT.open.news = { ok: false, refusal: { code: 'E_VENUE_UNREACHABLE', message: 'the feeds did not answer' } }");
+    expect(p.run<Record<string, string>>("mkDrawerParts(MKT.open)").news).toContain('<p class="mk-quiet">the feeds did not answer.</p>');
   });
 
   it("the figures: the fiscal years and the quarters as filed, each row its period and its filing, money short and signed, a dash where the filing tagged nothing, the shares, whose figures they are", () => {

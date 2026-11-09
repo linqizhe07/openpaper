@@ -121,13 +121,20 @@ export interface HttpReply {
   status: number;
   /** the body parsed as JSON, when it is JSON */
   body: unknown;
+  /** the body's first 2,000 characters — a refusal's words, a page's title — or, for a caller that asked for a text body (maxBytes) and
+   * got one that is not JSON, the whole of it */
   text: string;
   /** how long the venue asked to be left alone (a 429's or a 418's Retry-After), when it said: at most an hour */
   retryAfterMs?: number | undefined;
   /** a redirect's target, its host only — never followed, and never its path, which may carry a place or an address */
   location?: string | undefined;
+  /** the body ran past the caller's maxBytes: cut off unread, and nothing of it kept */
+  tooLong?: true | undefined;
 }
-export type Http = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; timeoutMs?: number }) => Promise<HttpReply>;
+/** `maxBytes`: a reader of a TEXT body (a feed, a CSV: live/news.ts) asks for the whole body, within this many bytes — one longer is cut
+ * off unread and answered as tooLong. Without it the body's text is kept to its first 2,000 characters, as every JSON reader wants: a
+ * refusal's words, and no more */
+export type Http = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; timeoutMs?: number; maxBytes?: number }) => Promise<HttpReply>;
 
 /** the real network: one request, a timeout (the body's too), no redirect followed — a redirect comes back as the answer it is, with the
  * host it pointed at, so it is told as the venue answering and not as "did not answer" */
@@ -139,6 +146,18 @@ export const realHttp: Http = async (url, init = {}) => {
     const host = hostOf(r.headers.get("location"), url);
     return { status: r.status, body: undefined, text: "", ...(host ? { location: host } : {}), ...(wait ? { retryAfterMs: wait } : {}) };
   }
+  if (init.maxBytes !== undefined) {
+    const text = await textWithin(r, init.maxBytes);
+    if (text === undefined) return { status: r.status, body: undefined, text: "", tooLong: true, ...(wait ? { retryAfterMs: wait } : {}) };
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = undefined;
+    }
+    // a text body whole; a JSON one as every other caller has it, its words cut short
+    return { status: r.status, body, text: body === undefined ? text : text.slice(0, 2000), ...(wait ? { retryAfterMs: wait } : {}) };
+  }
   const text = await r.text();
   let body: unknown;
   try {
@@ -148,6 +167,45 @@ export const realHttp: Http = async (url, init = {}) => {
   }
   return { status: r.status, body, text: text.slice(0, 2000), ...(wait ? { retryAfterMs: wait } : {}) };
 };
+
+/** a body read as text within `most` bytes — a length the server declared past it is not read at all, one that runs past it as it comes is
+ * cut off and the connection closed — decoded in the charset its content type names (UTF-8 where it names none or one this runtime does
+ * not know); undefined for one too long */
+async function textWithin(r: Response, most: number): Promise<string | undefined> {
+  const declared = Number(r.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > most) {
+    await r.body?.cancel().catch(() => undefined);
+    return undefined;
+  }
+  const charset = /charset\s*=\s*"?([A-Za-z0-9_.:-]+)/i.exec(r.headers.get("content-type") ?? "")?.[1];
+  let decoder: TextDecoder;
+  try {
+    decoder = new TextDecoder(charset ?? "utf-8");
+  } catch {
+    decoder = new TextDecoder("utf-8");
+  }
+  if (!r.body) return decoder.decode(new Uint8Array(await r.arrayBuffer()).slice(0, most));
+  const reader = r.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > most) {
+      await reader.cancel().catch(() => undefined);
+      return undefined;
+    }
+    parts.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) {
+    all.set(p, at);
+    at += p.byteLength;
+  }
+  return decoder.decode(all);
+}
 
 /** a Retry-After header — seconds, or an HTTP date — as milliseconds from now; nothing when it says nothing usable. An hour at most */
 export function retryAfterMs(header: string | null | undefined, now: number = Date.now()): number | undefined {

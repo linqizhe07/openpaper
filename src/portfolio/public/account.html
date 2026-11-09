@@ -18,6 +18,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <link rel="stylesheet" href="/account.css" />
 <link rel="stylesheet" href="/ui/portfolio.css" />
 <link rel="stylesheet" href="/ui/markets.css" />
+<link rel="stylesheet" href="/ui/news.css" />
 <link rel="stylesheet" href="/ui/trade.css" />
 <link rel="stylesheet" href="/ui/terminal.css" />
 <link rel="stylesheet" href="/ui/chart.css" />
@@ -131,6 +132,10 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
       <div class="seg"><a href="#/portfolio" data-acct="portfolio">Portfolio</a><a href="#/venues" data-acct="venues">Venues</a><a href="#/memory" data-acct="memory">Memory</a></div>
       <span class="note-s dim" id="mode-note"></span>
     </nav>
+    <!-- the Markets group's own row (core MARKETS_TABS, shell.js marks the one showing): the Overview, and the data pages beside it -->
+    <nav class="acct-tabs" data-only="markets" aria-label="Markets">
+      <div class="seg"><a href="#/markets" data-mkt="markets">Overview</a><a href="#/news" data-mkt="news">News</a></div>
+    </nav>
     <div class="banner" id="banner" hidden></div>
     <div class="notice" id="restored" hidden></div>
 
@@ -139,6 +144,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     <section class="pane" data-pane="venues" aria-labelledby="h-venues" hidden><h1 class="sr" id="h-venues">Venues</h1><div id="pane-venues"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <section class="pane" data-pane="memory" aria-labelledby="h-memory" hidden><h1 class="sr" id="h-memory">Memory</h1><div id="pane-memory"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <section class="pane" data-pane="markets" aria-labelledby="h-markets" hidden><h1 class="sr" id="h-markets">Markets</h1><div id="pane-markets"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
+    <!-- the news: the publishers' own headlines, the day's list and a share's (ui/news.js) -->
+    <section class="pane" data-pane="news" aria-labelledby="h-news" hidden><h1 class="sr" id="h-news">News</h1><div id="pane-news"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <section class="pane" data-pane="trade" aria-labelledby="h-trade" hidden><h1 class="sr" id="h-trade">Trade</h1><div id="pane-trade"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <!-- the desk: the account's own agents (ui/desk.js), opened from the rail's Agents -->
     <section class="pane" data-pane="desk" aria-labelledby="h-desk" hidden><h1 class="sr" id="h-desk">Agents</h1><div id="pane-desk"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
@@ -176,6 +183,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <script defer src="/ui/memory.js"></script>
 <script defer src="/ui/earn.js"></script>
 <script defer src="/ui/markets.js"></script>
+<!-- the news (ui/news.js): the publishers' own headlines, the day's list, a topic's, a share's -->
+<script defer src="/ui/news.js"></script>
 <script defer src="/ui/trade.js"></script>
 <script defer src="/ui/indicators.js"></script>
 <script defer src="/ui/chart.js"></script>

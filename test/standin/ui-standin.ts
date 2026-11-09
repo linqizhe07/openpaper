@@ -99,6 +99,7 @@ import { pairingCode, startPortfolioServer, type PortfolioServerHandle } from ".
 import { loadOpenness, PortfolioService } from "../../src/portfolio/service.ts";
 import { standinHistory } from "./history.ts";
 import { DAY, toStep } from "./model.ts";
+import { standinNews } from "./news.ts";
 import { makeWorld, publicSources, registerStandins, standinChain, standinHub, standinPrice, standinSender, stockSession, tick, type World } from "./venues.ts";
 
 type NoNonce<T> = T extends unknown ? Omit<T, "nonce"> : never;
@@ -209,6 +210,8 @@ export async function startStandin(o: StandinOptions): Promise<Standin> {
     ...(hub ? { streams: hub } : {}),
     // the lab's history (the Backtest pane): made-up bars and funding up to the stand-in's clock, so a backtest runs with no network
     backtest: { sources: standinHistory(clock) },
+    // the news (the News page, a share's drawer): made-up headlines under made-up publishers, timed from the stand-in's clock
+    readers: { news: standinNews(clock) },
     // the desk's brain is a script: Search names the majors in turn, Risk clears $60 with a 1.2% take-profit and a 0.8% stop, Exit holds —
     // held under Claude's preset id beside every other preset's real brain (standinBrains). No desk seeded: the real brains alone stand
     // behind the hire form, each saying honestly that this home holds no key for it
