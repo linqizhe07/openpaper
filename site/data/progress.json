@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 64,
+      "title": "Options: a listed chain as Cboe or Deribit publishes it, and the figures a terminal reads off it",
+      "mergedAt": "2026-11-09T22:06:00Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/64",
+      "branch": "feat/options"
+    },
+    {
       "number": 63,
       "title": "The world: indices, the yield curve, currencies and commodities on one page, each from a public source read without a key",
       "mergedAt": "2026-11-09T21:33:41Z",
