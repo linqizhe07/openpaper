@@ -97,6 +97,7 @@ const CMD_GROUPS = [
   {
     group: "Markets",
     fns: [
+      { code: "MON", name: "Monitor", takes: "market?", what: "One screen of tiles you compose — markets, the world's boards, headlines, today's calendar, an option chain; with a market, that market joins it", eg: "AAPL MON", run: (c) => (c.item && typeof monAdd === "function" ? monAdd("m", c.item.key) : go("monitor")) },
       { code: "MOST", name: "Most traded", takes: "", what: "Every market, the busiest first", eg: "MOST", run: cmdTab("all") },
       { code: "MOV", name: "Biggest moves", takes: "", what: "Every market by its last 24 hours", eg: "MOV", run: cmdTab("all", "movers") },
       { code: "WATCH", name: "Watchlist", takes: "", what: "The markets you starred, and your price alerts", eg: "WATCH", run: cmdTab("watching") },

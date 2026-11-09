@@ -109,7 +109,7 @@ describe("the command line", () => {
       expect(["market", "market?", "words", ""], f.code).toContain(f.takes);
     }
     // the terminal's own mnemonics for the same things
-    for (const c of ["DES", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "ECO", "ERN", "DVD", "SPLT", "IPO", "WEI", "GC", "FXC", "GLCO", "OMON", "SKEW", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
+    for (const c of ["DES", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "ECO", "ERN", "DVD", "SPLT", "IPO", "WEI", "GC", "FXC", "GLCO", "OMON", "SKEW", "MON", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
   });
 
   it("asks the search for a function's market alone, for the whole of a function typed alone (a market of that name is offered too), for the words before a function half typed, and for nothing after a function that takes words; the Markets list is never narrowed to a code", () => {
@@ -143,7 +143,7 @@ describe("the command line", () => {
     expect(rows("HELP chart", null)).toEqual([{ code: "HELP", tail: "chart" }]);
     expect(rows("DES", null)).toEqual([{ code: "DES", fill: true }]);
     // the functions a word starts, by code then by name — a function that needs a market is a code to fill in
-    expect(rows("mo", null).map((r) => [r.code, r.fill])).toEqual([["MOST", undefined], ["MOV", undefined]]);
+    expect(rows("mo", null).map((r) => [r.code, r.fill])).toEqual([["MON", undefined], ["MOST", undefined], ["MOV", undefined]]);
     expect(rows("chart", null).map((r) => [r.code, r.fill])).toEqual([["GP", true]]);
     expect(rows("zzzz", null)).toEqual([]);
     // a market and a space: its functions, the market said once over them; a market and a function half typed: those it starts
