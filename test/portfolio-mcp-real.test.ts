@@ -327,6 +327,14 @@ describe("declined asks and price history through the MCP seat", () => {
     // the company's filings tool is there, and a ticker that is not one is refused before the SEC is asked
     expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_financials");
     expect((await tool("portfolio_financials", { symbol: "not a ticker" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
+    // the news tool is there and answers the same as over HTTP (this service reaches no network: every feed is in `missing`); a share that
+    // is no ticker is refused before anything is asked
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_news");
+    const n = (await tool("portfolio_news", { topic: "crypto", limit: 5 })).body as { ok: boolean; items: unknown[]; missing: Array<{ venue: string }> };
+    expect(n.ok).toBe(true);
+    expect(n.items).toEqual([]);
+    expect(n.missing.map((m) => m.venue).sort()).toEqual(["coindesk", "cointelegraph", "decrypt", "theblock"]);
+    expect((await tool("portfolio_news", { symbol: "not a ticker" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);

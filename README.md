@@ -11,9 +11,10 @@ openpaper runs on your own computer. It puts your exchanges, brokers, wallets an
 - **One page for your accounts.** Exchanges (93 by API key), Alpaca and Robinhood, Kalshi and Polymarket, Hyperliquid, MetaMask and other wallets: holdings, orders, positions, net worth over time, and a statement you can filter and export.
 - **A paper account with live prices.** Crypto, US stocks, perpetuals and event contracts on paper money: market, limit, stop, stop-limit and trailing-stop orders, brackets, US sessions kept honestly, funding and liquidation on perpetuals.
 - **Markets.** The day in six figures and the US session clock, every market at every venue that serves your network, ★ to watch and 🔔 to be told when a price crosses a line, a command line (⌘K: `AAPL DES`, `BTC GP`, `MOST`, `HELP`), and a US company's financials as it filed them with the SEC.
+- **News.** The headlines the publishers themselves put out in their feeds — the Federal Reserve, the ECB and the SEC; CNBC, MarketWatch, the Wall Street Journal, the BBC and Nasdaq; CoinDesk, Cointelegraph, The Block and Decrypt — the day's list, a topic's, or a share's own (`NVDA CN`): a title, a link to the publisher's page and a time, nothing more, and no article read.
 - **A trading terminal.** Its own candle chart with years of history, an order book and a trades tape fed by the venues' streams, and the account's own lines — entries, stops, resting orders — drawn on the chart.
 - **The superagent.** A desk of AI agents that trades the paper account by itself and plays each step as it happens, on a key from any of thirteen model providers, or a model running on your machine.
-- **Your own agent over MCP.** Thirty-five tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
+- **Your own agent over MCP.** Forty-two tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
 - **You sign what matters.** Every order, movement and limit is signed by a key your browser cannot export; Guard holds each request for your yes, Beast lets agents act inside their limits; a cap on every order; a hash-chained log of everything.
 - **Nothing in the middle.** No server, no account to create, no analytics: your computer reads public prices and talks to venues directly, so your own network decides what you see.
 
@@ -60,7 +61,7 @@ Then, on the page:
 1. **Start a paper account** — $10,000 of paper money, live public prices, nothing to connect.
 2. **Trade** — buy or sell crypto, US stocks, perpetuals and event contracts on paper.
 3. **Superagent** (Trade → Superagent) — paste an API key and press **Start the superagent**. The desk trades your paper account by itself: every trade lands on the chart, and each step it takes is played as it happens.
-4. **Watch** (Markets) — the day in six figures and the US session clock at the top; ★ a market to watch it, 🔔 to be told when it crosses a price — on the page, and as a notification if you ask. Your agents read both. ⌘K or `/` is the command line: a search, or a function — `AAPL DES` opens Apple's page, `BTC GP` its chart, `MOST` the busiest markets, `HELP` every function. Open a US stock and its **Financials** are there as the company filed them with the SEC — start the account with `SEC_CONTACT` set to your email, since the SEC asks every reader to say who they are.
+4. **Watch** (Markets) — the day in six figures and the US session clock at the top; ★ a market to watch it, 🔔 to be told when it crosses a price — on the page, and as a notification if you ask. Your agents read both. ⌘K or `/` is the command line: a search, or a function — `AAPL DES` opens Apple's page, `BTC GP` its chart, `MOST` the busiest markets, `TOP` the day's headlines, `HELP` every function. **News** (Markets › News) is the publishers' own headlines — the central banks, the markets press, crypto — and a share's drawer carries its own. Open a US stock and its **Financials** are there as the company filed them with the SEC — start the account with `SEC_CONTACT` set to your email, since the SEC asks every reader to say who they are.
 5. **Backtest** — try a strategy (buy and hold, a moving-average cross, momentum, a funding carry) on recorded bars through the same paper account's rules, beside buying and holding the same markets. Every run is counted, its Sharpe deflated by everything tried before it, and the latest 90 days are held out: only you look at them, by signature. Walk forward picks a strategy's numbers fold by fold; The desk plays the account's own desk over the bars, by your signature.
 
 The superagent needs an AI model to think with. Paste a key from any of Anthropic, OpenAI, DeepSeek, Gemini, xAI, Kimi, Qwen, OpenRouter, Groq, Together or Meta — the account tells whose key it is and picks that provider's best model — or run a model on your machine with Ollama or vLLM (no key). Its calls are billed to your key.
@@ -105,6 +106,7 @@ Where each price comes from, and how fresh it is:
 | Event contracts | Kalshi, Polymarket and Polymarket US public books | Live | Yes, settled at $1 or $0 when the venue says |
 | Pre-IPO and RWAs | Nine venues' public tickers; Robinhood Stock Tokens, xStocks at Gate, Ondo | On each read | Pre-IPO on paper; tokenized assets through your wallet |
 | Financials | SEC EDGAR, with `SEC_CONTACT` as the reader's name | Kept 12 hours | — |
+| News | The publishers' own feeds: the Federal Reserve, the ECB, the SEC (with `SEC_CONTACT`), CNBC, MarketWatch, the WSJ, the BBC, Nasdaq, CoinDesk, Cointelegraph, The Block, Decrypt, PR Newswire — titles, links and times only | Each kept 5 minutes; a late feed's last answer stands in | — |
 | Price alerts | The market's source above | Judged every 30 s while the account runs, page open or not | — |
 
 Where no source answers, that market has no price: a paper market order is refused and a limit order waits, and the page says why.
@@ -176,7 +178,7 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
   backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
                        desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
-  mcp.ts               the MCP server an agent's seat runs (41 tools)
+  mcp.ts               the MCP server an agent's seat runs (42 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only
 src/core/ src/agent/   shared: the hash-chained ledger (agent/ledger.ts), refusal codes, hashing, jsonl

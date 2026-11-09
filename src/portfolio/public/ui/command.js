@@ -63,6 +63,14 @@ const CMD_GROUPS = [
       { code: "SELL", name: "Sell", takes: "market", what: "The order ticket set to sell it: nothing goes until you sign", eg: "SOL SELL", run: (c) => typeof mkTrade === "function" && mkTrade(c.item, "sell") },
       { code: "HAND", name: "Hand to agent", takes: "market", what: "Write what you want done with it, for your agents to read: it grants nothing", eg: "BTC HAND", run: (c) => typeof mkHand === "function" && mkHand(c.item) },
       { code: "ALRT", name: "Price alerts", takes: "market?", what: "Be told when its price crosses a line; alone, every alert you set", eg: "BTC ALRT", run: (c) => (c.item ? typeof openAlertSheet === "function" && openAlertSheet(c.item) : go("markets", { tab: "watching" })) },
+      { code: "CN", name: "Company news", takes: "market", what: "Its headlines from the publishers' feeds: a US share's own feed, a coin by its name", eg: "NVDA CN", only: (item) => (typeof mkNewsAsk === "function" && mkNewsAsk(item) ? "" : `CN reads the headlines that name a market: ${item.name} is not one a headline would name.`), run: (c) => cmdOpen(c.item, "news") },
+    ],
+  },
+  {
+    group: "News",
+    fns: [
+      { code: "TOP", name: "Top news", takes: "", what: "The day's headlines from the publishers' own feeds: the markets, the central banks, crypto", eg: "TOP", run: () => go("news") },
+      { code: "N", name: "News search", takes: "words", what: "The headlines that carry these words", eg: "N fed rates", run: (c) => go("news", c.tail ? { q: c.tail } : {}) },
     ],
   },
   {

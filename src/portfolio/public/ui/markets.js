@@ -1398,7 +1398,7 @@ function openMarket(item) {
   if (!A) return;
   const it = mkResolve(item);
   if (!it) return void mkLookup(item);
-  MKT.open = { item: it, range: "1M", interval: "1h", asset: undefined, assetFor: "", compare: undefined, candles: undefined, ipoRead: undefined, ipo: [], fin: undefined, co: undefined };
+  MKT.open = { item: it, range: "1M", interval: "1h", asset: undefined, assetFor: "", compare: undefined, candles: undefined, ipoRead: undefined, ipo: [], fin: undefined, co: undefined, news: undefined };
   const body = openDrawer(`<div class="mk-d" data-mk-drawer>${mkDrawerHtml(MKT.open)}</div>`, { title: it.name, redraw: mkDrawerRedraw });
   if (!MKT.drawerWired) {
     $("drawer").addEventListener("close", () => {
@@ -1504,6 +1504,18 @@ function mkDrawerLoad(o) {
       mkDrawerRedraw();
     });
   }
+  // the market's headlines (GET /api/account/news, live/news.ts): a US share's own feed and every headline that names it; a coin or a
+  // perpetual by the one word a headline would carry (Bitcoin, Ethereum; the symbol where the name is no word). Read once a drawer, kept a
+  // minute; nothing for a market no headline would name (an event contract, a pre-IPO valuation)
+  const newsAsk = mkNewsAsk(o.item);
+  if (newsAsk && o.news === undefined) {
+    o.news = null;
+    api(`/api/account/news?${newsAsk}&limit=8`, { ttl: 60_000 }).then((b) => {
+      if (MKT.open !== o) return;
+      o.news = b;
+      mkDrawerRedraw();
+    });
+  }
   const company = pre ? mkCompanyOf(o.item) : "";
   if (company && o.ipoRead === undefined) {
     o.ipoRead = null;
@@ -1578,6 +1590,10 @@ function mkDrawerClick(e) {
     case "statement":
       closeDrawer();
       return void (typeof openStatement === "function" && openStatement());
+    // the News page, narrowed to this market's words
+    case "news-all":
+      closeDrawer();
+      return void go("news", b.dataset.q ? { q: b.dataset.q } : {});
     default: return void mkAct(b, item);
   }
 }
@@ -1795,12 +1811,41 @@ function mkChartHtml(o, it, leg, key) {
   return fromAsset || `<p class="empty">${esc(((a.missing || []).find((m) => m.part === "candles") || {}).why || (mkPublicOnly(it) ? "Price history comes from a connected venue that trades it: connect one to see it." : ev ? "The venue keeps price history for a contract you hold." : "No venue on the account keeps price history for it."))}</p>`;
 }
 
+// ---- a market's headlines (GET /api/account/news, live/news.ts; the rows are ui/news.js's) ----------------------------------------------
+
+/* what the news is asked for a market: a US share by its ticker (its own feed, and every headline that names it); a coin or a perpetual by
+   the one word a headline would carry — its name where that is a word (Bitcoin), else its symbol (BTC); "" for a market no headline names
+   (an event contract's question, a pre-IPO valuation, a token whose name is a sentence) */
+function mkNewsAsk(item) {
+  if (!item || mkIsPreipo(item)) return "";
+  const ticker = mkTicker(item);
+  if (ticker) return `symbol=${encodeURIComponent(ticker)}`;
+  if (!["coin", "perp"].includes(item.kind)) return "";
+  const word = /^[A-Za-z][A-Za-z.-]{2,19}$/;
+  const name = String(item.name || "").trim();
+  const base = String(item.base || "").trim();
+  const q = word.test(name) && !/perp/i.test(name) ? name : word.test(base) ? base : "";
+  return q ? `q=${encodeURIComponent(q)}` : "";
+}
+/** THE NEWS PART of a market's drawer: its headlines as the News page draws them (nwRowsHtml), eight at most, with where they came from
+ * and the way to the whole list; a skeleton while the feeds answer, their refusal in its words, or a word where none names the market */
+function mkNewsHtml(o) {
+  const b = o.news;
+  if (b === undefined || b === null) return '<div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel" style="width:70%"></span></div>';
+  if (b.ok === false) return `<p class="mk-quiet">${esc(mkSaid(refusalOf(b)) || "The news could not be read")}.</p>`;
+  const items = Array.isArray(b.items) ? b.items : [];
+  const read = Array.isArray(b.sources) ? b.sources.reduce((n, s) => n + (s.count || 0), 0) : 0;
+  const words = b.symbol ? `Nasdaq's feed for ${esc(b.symbol)}, and every headline that names it` : b.q ? `Headlines that carry “${esc(b.q)}”` : "Headlines";
+  const rows = items.length ? (typeof nwRowsHtml === "function" ? nwRowsHtml(items, { compact: true }) : "") : `<p class="empty">No headline names it among the ${plural(read, "headline")} the feeds gave just now.</p>`;
+  return `${rows}<p class="mk-src">${words} · the publishers' own feeds${b.asOf ? ` · read ${esc(nyTime(b.asOf))}` : ""} · <button type="button" class="link" data-act="news-all"${b.q ? ` data-q="${esc(b.q)}"` : ""}>All news →</button></p>`;
+}
+
 // ---- a share's company record and its latest filings (SEC EDGAR submissions, live/edgar.ts) ---------------------------------------------
 
 /** the Company part: what the SEC's record says of the company — where it is listed, its industry (SIC), when its fiscal year ends, where it
  * is incorporated, its filer category, its sites — its latest annual and quarterly reports, and its newest filings, each a link to the
  * document on the SEC's site, an 8-K said by its items in plain words. Read once a drawer and kept ten minutes (GET /api/account/company).
- * None of it is news: it is what the company itself filed, and the foot says the account reads no news site */
+ * None of it is news: it is what the company itself filed; the share's news is the drawer's News part (mkNewsHtml), from the publishers' feeds */
 function mkCompanyHtml(o) {
   if (o.co === undefined || o.co === null) return '<div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel" style="width:70%"></span></div>';
   const c = o.co.ok !== false ? o.co : null;
@@ -1821,7 +1866,7 @@ function mkCompanyHtml(o) {
   // a filing's description where it says more than the form's name does (a 4 described as "FORM 4" is said by its form alone)
   const said = (f) => { const d = typeof f.description === "string" ? f.description.trim() : ""; return d && d.toUpperCase().replace(/^FORM\s+/, "") !== String(f.form).toUpperCase() ? d : ""; };
   const filings = Array.isArray(c.filings) && c.filings.length ? `<h3 class="label mk-fin-h">Latest filings</h3><ul class="mk-filings">${c.filings.slice(0, 8).map((f) => `<li><a class="link" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(f.form)}</b>${said(f) ? ` ${esc(said(f))}` : ""}</a><span class="dim"> · filed ${esc(mkDate(f.filed))}</span></li>`).join("")}</ul>` : "";
-  return `${dl}${latest.length ? `<p class="mk-co-latest">${latest.join(" · ")}</p>` : ""}${filings}<p class="mk-src">${esc(c.source || "SEC EDGAR")} · what the company itself filed; the account reads no news site</p>`;
+  return `${dl}${latest.length ? `<p class="mk-co-latest">${latest.join(" · ")}</p>` : ""}${filings}<p class="mk-src">${esc(c.source || "SEC EDGAR")} · what the company itself filed; its news is under News</p>`;
 }
 
 // ---- a share's financials (SEC EDGAR, live/edgar.ts) -----------------------------------------------------------------------------
@@ -1966,11 +2011,14 @@ function mkDrawerParts(o) {
   const coOk = o.co && o.co.ok !== false ? o.co : null;
   const coPart = !pre && mkTicker(it) ? `<section class="sec" aria-label="Company"><div class="sec-head"><h2 class="h2">Company</h2>${coOk ? `<a class="link mk-fin-link" href="${esc(coOk.filingsUrl)}" target="_blank" rel="noopener noreferrer">All filings ${icon("external", "sm")}</a>` : ""}</div>${mkCompanyHtml(o)}</section>` : "";
   const financials = !pre && mkTicker(it) ? `<section class="sec" aria-label="Financials"><div class="sec-head"><h2 class="h2">Financials</h2>${finOk ? `<a class="link mk-fin-link" href="${esc(finOk.filingsUrl)}" target="_blank" rel="noopener noreferrer">Filings at the SEC ${icon("external", "sm")}</a>` : ""}</div>${mkFinHtml(o)}</section>` : "";
+  // the market's headlines (mkNewsHtml), where a headline would name it
+  const news = mkNewsAsk(it) ? `<section class="sec" aria-label="News"><div class="sec-head"><h2 class="h2">News</h2></div>${mkNewsHtml(o)}</section>` : "";
   return {
     head,
     chart,
     alerts,
     across,
+    news,
     company: coPart,
     financials,
     ipo: pre ? mkIpoHtml(o) : "",

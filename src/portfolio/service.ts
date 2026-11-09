@@ -72,6 +72,7 @@ import type { Payment } from "./account/payments.ts";
 import { exploreAcross, type Exploration, type ExploreSort, type ExploreVenue } from "./live/explore.ts";
 import { fixedHosts, holdBackMs, KEEP_MS as LISTING_KEEP_MS, publicSources, type PublicSource } from "./live/public-markets.ts";
 import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Company, type Financials } from "./live/edgar.ts";
+import { NEWS_HOSTS, NEWS_MAX_BYTES, NEWS_TIMEOUT_MS, NewsWire, type NewsAsk, type NewsReader, type NewsView } from "./live/news.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -222,6 +223,9 @@ export interface ServiceOptions {
   /** SEC EDGAR (live/edgar.ts), which the stock drawer's Financials are read from: the environment the owner's contact (SEC_CONTACT) is
    * read from (the process's own by default), or the user agent outright (tests) */
   sec?: { env?: NodeJS.ProcessEnv | undefined; userAgent?: string | undefined } | undefined;
+  /** THE KEYLESS READERS the terminal's functions read beside the markets — the news (live/news.ts) — as a test or the stand-in hands them
+   * in; by default each is made over the live connection's network, behind its own fixed hosts */
+  readers?: { news?: NewsReader | undefined } | undefined;
   /** THE DESK (account/desk.ts), on a real account: the brains its house seats may think with and how often its clock ticks (0: only when
    * asked, as in tests). The brains, by default: every provider the Brains place offers (account/brains.ts brainProviders) — Claude through
    * the Anthropic API and each OpenAI-format preset — each ready when its key is there; a scripted one in tests. `env`: the environment
@@ -1031,6 +1035,20 @@ export class PortfolioService {
     const sym = symbol.trim().toUpperCase();
     if (!SEC_TICKER.test(sym)) return no("E_ACCOUNT_BAD_ACTION", { message: "a company's record is read for a US stock's ticker: letters, with a class letter after a dot (BRK.B)" });
     return this.edgar().company(sym);
+  }
+  /** THE NEWS (live/news.ts): the publishers' own headline feeds, kept five minutes — the News page, a share's drawer and the agents'
+   * portfolio_news. The SEC's feed is read with the same declared user agent as EDGAR, and not at all without one. A read */
+  async news(ask: NewsAsk = {}): Promise<NewsView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return this.newsReader().headlines(ask);
+  }
+  private newsMade: NewsReader | undefined;
+  private newsReader(): NewsReader {
+    if (!this.newsMade) {
+      const deps = this.liveDeps();
+      this.newsMade = this.opts.readers?.news ?? new NewsWire({ http: fixedHosts(deps.http, NEWS_HOSTS, NEWS_TIMEOUT_MS, { maxBytes: NEWS_MAX_BYTES }), clock: deps.clock, secUserAgent: this.opts.sec?.userAgent ?? secUserAgent(this.opts.sec?.env ?? process.env) });
+    }
+    return this.newsMade;
   }
   private edgarMade: SecEdgar | undefined;
   /** the SEC reader, made once: the live connection's network behind the fixed-host guard for the SEC's two hosts, and the account's user

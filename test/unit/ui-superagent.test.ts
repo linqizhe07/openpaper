@@ -279,7 +279,7 @@ const CATALOG = {
     { id: "exit", name: "Exit", tag: "EXIT", house: true, trades: true, charter: { owns: OWNS("exit"), good: "", never: "" } },
     { id: "watch", name: "Watch", tag: "WATCH", house: true, trades: true, charter: { owns: OWNS("watch"), good: "", never: "" } },
     { id: "flow", name: "Flow", tag: "FLOW", house: false, outsideOnly: FLOW_WHY, trades: false, charter: { owns: OWNS("flow"), good: "", never: "" } },
-    { id: "sentiment", name: "Sentiment", tag: "SENTIMENT", house: false, outsideOnly: "needs a feed of social and news attention, which the account does not have: an agent of yours with that data fills this seat", trades: false, charter: { owns: OWNS("sentiment"), good: "", never: "" } },
+    { id: "sentiment", name: "Sentiment", tag: "SENTIMENT", house: false, outsideOnly: "needs a feed of social attention beside the headlines the account reads (portfolio_news), which no house seat reads yet: an agent of yours with that data fills this seat", trades: false, charter: { owns: OWNS("sentiment"), good: "", never: "" } },
   ],
   seats: { head: addr(1), search: addr(2), risk: addr(3), sniper: addr(4), exit: addr(5), watch: addr(6) },
   brain: { ok: true, provider: "claude", label: "Claude", model: "claude-opus-5-5", models: [{ id: "claude-opus-5-5", name: "Claude Opus 5.5", inUsd: 4, outUsd: 20 }], effort: "medium", how: "the Anthropic API" },

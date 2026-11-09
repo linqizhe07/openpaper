@@ -412,8 +412,9 @@ const pct = (v: unknown): number | undefined => {
 };
 
 /** The network as a public source uses it: a GET over https to one of `hosts`, on the default port, with no user in the URL, within
- * `timeoutMs`. Anything else is not asked */
-export function fixedHosts(http: Http, hosts: readonly string[], timeoutMs: number): Http {
+ * `timeoutMs`. Anything else is not asked. A guard made for a reader of TEXT bodies (a feed, a CSV) is made with `maxBytes`: its GETs ask
+ * for the whole body within that many bytes (types.ts Http) — the guard's own, set once, never a caller's option */
+export function fixedHosts(http: Http, hosts: readonly string[], timeoutMs: number, o: { maxBytes?: number | undefined } = {}): Http {
   return async (url, init = {}) => {
     let u: URL;
     try {
@@ -422,7 +423,7 @@ export function fixedHosts(http: Http, hosts: readonly string[], timeoutMs: numb
       throw new Error("not a URL: not asked");
     }
     if (u.protocol !== "https:" || u.username || u.password || u.port || !hosts.includes(u.hostname) || (init.method ?? "GET") !== "GET" || init.body !== undefined) throw new Error(`${u.protocol}//${u.host} is not asked: a public market is read with a GET from ${hosts.join(", ")} only`);
-    return http(url, { method: "GET", headers: { accept: "application/json", ...(init.headers ?? {}) }, timeoutMs: Math.min(init.timeoutMs ?? timeoutMs, timeoutMs) });
+    return http(url, { method: "GET", headers: { accept: "application/json", ...(init.headers ?? {}) }, timeoutMs: Math.min(init.timeoutMs ?? timeoutMs, timeoutMs), ...(o.maxBytes !== undefined ? { maxBytes: o.maxBytes } : {}) });
   };
 }
 

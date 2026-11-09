@@ -215,7 +215,9 @@ button.pill-btn:hover { filter: brightness(0.96); }
    something on open water may reach past the column's edge, never past the window's */
 .main { flex: 999 1 560px; min-width: 0; padding: 24px 36px 48px; display: flex; flex-direction: column; gap: 24px; outline: none; overflow-x: clip; }
 /* the top bar is the Account's header on its three tabs (F5: its name, the mode, trading on, Settings) and Markets' and Trade's search on theirs */
-.main[data-at="account"] [data-only="trading"], .main[data-at="trading"] [data-only="account"] { display: none !important; }
+/* where the page is (shell.js: main[data-at] account · markets · trading) decides what the header shows: the Account's own tools on its pages,
+   the Markets group's row on its, the rest everywhere but the Account */
+.main[data-at="account"] [data-only="trading"], .main:not([data-at="account"]) [data-only="account"], .main:not([data-at="markets"]) [data-only="markets"] { display: none !important; }
 .acct-h { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; margin-right: 4px; }
 .acct-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .acct-tools .icon-btn { width: 36px; height: 36px; color: var(--dim); }

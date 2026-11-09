@@ -180,7 +180,7 @@ function speak() {
 function drawPane(L, owner) {
   const tab = ROUTE.tab;
   const el = $(`pane-${tab}`);
-  const draw = { portfolio: typeof renderPortfolio === "function" ? renderPortfolio : null, venues: typeof renderVenues === "function" ? renderVenues : null, memory: typeof renderMemory === "function" ? renderMemory : null, markets: typeof renderMarkets === "function" ? renderMarkets : null, trade: typeof renderTrade === "function" ? renderTrade : null, desk: typeof renderDesk === "function" ? renderDesk : null, superagent: typeof renderSuperagent === "function" ? renderSuperagent : null, backtest: typeof renderBacktest === "function" ? renderBacktest : null, debrief: typeof renderDebrief === "function" ? renderDebrief : null, practice: typeof renderPractice === "function" ? renderPractice : null }[tab];
+  const draw = { portfolio: typeof renderPortfolio === "function" ? renderPortfolio : null, venues: typeof renderVenues === "function" ? renderVenues : null, memory: typeof renderMemory === "function" ? renderMemory : null, markets: typeof renderMarkets === "function" ? renderMarkets : null, news: typeof renderNews === "function" ? renderNews : null, trade: typeof renderTrade === "function" ? renderTrade : null, desk: typeof renderDesk === "function" ? renderDesk : null, superagent: typeof renderSuperagent === "function" ? renderSuperagent : null, backtest: typeof renderBacktest === "function" ? renderBacktest : null, debrief: typeof renderDebrief === "function" ? renderDebrief : null, practice: typeof renderPractice === "function" ? renderPractice : null }[tab];
   try {
     if (!draw) throw new Error(`its script did not load. Reload the page`);
     draw({ el, owner, lens: lensNow(), params: ROUTE.params });
@@ -218,7 +218,8 @@ onRoute((tab, params, moved) => {
   if (area) document.documentElement.dataset.area = "trade";
   else delete document.documentElement.dataset.area;
   for (const b of document.querySelectorAll("#trade-mode button[data-trade-mode]")) b.setAttribute("aria-pressed", String((b.dataset.tradeMode === "superagent") === (tab === "superagent")));
-  const railTab = area ? "trade" : tab;
+  // the Markets group (core MARKETS_TABS): Overview and the data pages beside it are the rail's Markets, each marked in the group's own row
+  const railTab = area ? "trade" : MARKETS_TABS.includes(tab) ? "markets" : tab;
   for (const a of document.querySelectorAll(".rail-nav a[data-tab]")) {
     if (a.dataset.tab === railTab) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -227,7 +228,11 @@ onRoute((tab, params, moved) => {
   if (railTrade) railTrade.setAttribute("href", area ? hashOf(tab, params) : tradeModeLast() === "superagent" ? hashOf("superagent") : "#/trade");
   // the Account's three under its own header, the wallet at the rail's foot marked while one of them is shown; Markets and Trade keep the search
   const account = ACCOUNT_TABS.includes(tab);
-  $("main").dataset.at = account ? "account" : "trading";
+  $("main").dataset.at = account ? "account" : MARKETS_TABS.includes(tab) ? "markets" : "trading";
+  for (const a of document.querySelectorAll(".acct-tabs a[data-mkt]")) {
+    if (a.dataset.mkt === tab) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  }
   for (const a of document.querySelectorAll(".acct-tabs a[data-acct]")) {
     if (a.dataset.acct === tab) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
@@ -288,7 +293,7 @@ function railPill(motion) {
   const pill = nav && nav.querySelector(".rail-pill");
   if (!pill || !RAIL.at || !pill.style) return;
   // the trading area's two modes are one item on the rail: Trade's
-  const tab = TRADE_AREA.includes(ROUTE.tab) ? "trade" : ROUTE.tab;
+  const tab = TRADE_AREA.includes(ROUTE.tab) ? "trade" : MARKETS_TABS.includes(ROUTE.tab) ? "markets" : ROUTE.tab;
   const i = [...nav.querySelectorAll("a[data-tab]")].findIndex((a) => a.dataset.tab === tab);
   const at = RAIL.at[i];
   // the Account's tabs are marked at the rail's foot: no pill in the nav
