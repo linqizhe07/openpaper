@@ -138,6 +138,7 @@ const CMD_GROUPS = [
     group: "Account",
     fns: [
       { code: "PORT", name: "Portfolio", takes: "", what: "What you hold, what waits for you, the net worth over time", eg: "PORT", run: () => go("portfolio") },
+      { code: "RISK", name: "Risk", takes: "", what: "Your lines weighed and measured: exposure, volatility, one-day value at risk, betas to SPY and BTC, the net worth's drawdown, what a flat move would be", eg: "RISK", run: () => go("risk") },
       { code: "VEN", name: "Venues", takes: "", what: "The accounts connected, and where you can connect", eg: "VEN", run: () => go("venues") },
       { code: "MEM", name: "Memory", takes: "", what: "What each agent remembers about you", eg: "MEM", run: () => go("memory") },
       { code: "AGT", name: "Agents", takes: "", what: "The desk's seats and your own agents, with their limits", eg: "AGT", run: () => go("desk") },

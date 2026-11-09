@@ -79,6 +79,7 @@ import { optionsDesk, type OptionsAsk, type OptionsReader, type OptionsView } fr
 import { nasdaqSecurity, type SecurityReader, type SecurityView } from "./live/security.ts";
 import { nasdaqScreener, type ScreenAsk, type ScreenerReader, type ScreenView } from "./live/screener.ts";
 import { analyticsOf, checkMarkets, type AnalyticsView, type SeriesIn } from "./live/analytics.ts";
+import { riskOf, type RiskLineIn, type RiskView } from "./live/risk.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -1129,6 +1130,45 @@ export class PortfolioService {
     // in the order asked: the first is what the betas are against
     series.sort((a, b) => markets.findIndex((m) => m.key === a.key) - markets.findIndex((m) => m.key === b.key));
     return analyticsOf(series, missing, interval, range, this.liveDeps().clock());
+  }
+  /** PORTFOLIO RISK (live/risk.ts): the holdings read's rows and the perpetual positions as lines, each with a year of daily bars from the
+   * candles read at the venue the Markets page would chart it at, the benchmarks' bars the same way, the net worth curve — the Risk page,
+   * and the agents' portfolio_risk. A read; arithmetic over the account's own balances and the venues' own bars */
+  async risk(): Promise<RiskView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const h = await this.holdings({ cost: true });
+    if (isRefusal(h)) return h;
+    // a year of daily bars for a market the account lists, at its first connected venue (the one the chart would use), else its first
+    const barsFor = async (key: string): Promise<Candle[] | undefined> => {
+      const ex = await this.explore({ key, limit: 1 });
+      if (isRefusal(ex) || !ex.items[0]) return undefined;
+      const at = ex.items[0].at.find((a) => a.connected && !a.paper) ?? ex.items[0].at[0];
+      if (!at) return undefined;
+      const c = await this.candles(at.venue, at.symbol, "1d", { range: "1Y" });
+      return isRefusal(c) ? undefined : c.candles;
+    };
+    const lines: RiskLineIn[] = [];
+    await Promise.all(h.rows.map(async (row) => {
+      if (!(Math.abs(row.usd) > 0)) return;
+      const key = row.class === "crypto" ? `coin:${row.asset}` : row.class === "equity" ? `stock:${row.asset}` : row.class === "rwa" ? `rwa:${row.asset}` : undefined;
+      const candles = key ? await barsFor(key) : undefined;
+      const top = row.venues[0];
+      lines.push({ key: row.key, name: row.asset, class: row.class, usd: row.usd, ...(top ? { venue: top.venue, venueName: top.venueName } : {}), ...(candles ? { candles } : {}) });
+    }));
+    await Promise.all((h.positions ?? []).map(async (p) => {
+      if ((p.kind !== "perp" && p.kind !== "future") || !Number.isFinite(p.usd) || !(Math.abs(p.usd!) > 0)) return;
+      const c = await this.candles(p.venue, p.symbol, "1d", { range: "1Y" });
+      lines.push({ key: `perp:${p.venue}|${p.symbol}`, name: `${p.name || p.symbol} ${p.side}`, class: "perp", usd: p.side === "short" ? -Math.abs(p.usd!) : Math.abs(p.usd!), venue: p.venue, ...(p.venueName ? { venueName: p.venueName } : {}), ...(isRefusal(c) ? {} : { candles: c.candles }), ...(p.leverage !== undefined ? { leverage: p.leverage } : {}) });
+    }));
+    lines.sort((a, b) => Math.abs(b.usd) - Math.abs(a.usd));
+    const benchmarks: Array<{ key: string; name: string; candles: Candle[] }> = [];
+    await Promise.all([["stock:SPY", "SPY"], ["coin:BTC", "BTC"]].map(async ([key, name]) => {
+      const candles = await barsFor(key!);
+      if (candles && candles.length >= 10) benchmarks.push({ key: key!, name: name!, candles });
+    }));
+    benchmarks.sort((a, b) => (a.key < b.key ? 1 : -1));
+    const hist = this.history("all");
+    return riskOf(lines, benchmarks, isRefusal(hist) ? [] : hist.points.map((p) => ({ at: p.at, usd: p.usd })), this.liveDeps().clock());
   }
   private calendarMade: CalendarReader | undefined;
   private calendarReader(): CalendarReader {

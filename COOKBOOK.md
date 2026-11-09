@@ -192,6 +192,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `MON` | 市场，可省 | Monitor 页；带市场时那个市场加进版面（第 2i 条） |
 | `EQS` · `IMAP` | — | Screener 页：筛选表 · 板块地图（第 2k 条） |
 | `COMP` · `CORR` · `HVG` · `BETA` · `SEAG` | 市场，可省 | Analytics 页：比较 · 相关 · 波动率 · beta · 季节性；带市场就把它加进集合（第 2l 条） |
+| `RISK` | — | Account 下的 Risk 页：自己的持仓称一称（第 2m 条） |
 | `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
 | `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
 | `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
@@ -376,6 +377,25 @@ Markets 下的第七页 **Analytics**（命令行 `NVDA COMP` 把英伟达加进
 ```
 GET /api/account/analytics?markets=broker|SPY,broker|AAPL,ex|BTC/USDT&range=1Y
 GET /api/account/analytics?markets=ex|BTC/USDT,ex|ETH/USDT&interval=1w&range=5Y
+```
+
+## 2m · Risk：自己的持仓称一称
+
+Account 头下的第四页 **Risk**（命令行 `RISK`）。持仓读的每一行和永续仓位，各配一年日线（图表会用的那个场所的），算出来（`live/risk.ts`）：
+
+| 卡 | 里面是什么 |
+|---|---|
+| Risk | 净敞口 · 总敞口（多 / 空）· 有价的比例和共有天数 · 年化波动率 · 一日 VaR 95%（旁边正态分布的数）· VaR 99% · 期望损失 95% · 最坏和最好一天 · 回撤（最深、现在）；最近九十天的日收益条 |
+| Lines | 每一行：类、场所、杠杆、美元（空头红）、占总敞口的权重、年化波动率、占组合风险的份额、自己的一日 VaR、bar 数；下面写哪些行不算波动（现金、稳定币、没 K 线的）和为什么 |
+| Exposure | 按类、按场所的两张小表；集中度：最大一行、前三、赫芬达尔指数、有效行数 |
+| Beta and stress | 组合对 SPY 和 BTC 的 beta 和相关（共有十天以上才算）；全部有价行一起 −5 / −10 / −20%、每一类单独跌（加密和永续 −30%，其余 −10%）会是多少美元 |
+
+- **怎么算**：组合的日收益是在所有有价行共有的日子上各行按权重（美元 / 总敞口，空头为负）加起来的对数收益；VaR 是这串收益的第 5 / 1 百分位换成亏损的美元；每行的风险份额是它和组合的协方差乘权重除以组合方差，加起来 100%。全是对账户余额和场所 K 线的算术，不是预测，页脚折着说明。
+- **留多久**：页面一分钟。
+- **agent**：`portfolio_risk {}`，答复和页面同一份。
+
+```
+GET /api/account/risk
 ```
 
 ## 3 · 让一个 agent 进来，给它交易额度

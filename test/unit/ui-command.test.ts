@@ -109,7 +109,7 @@ describe("the command line", () => {
       expect(["market", "market?", "words", ""], f.code).toContain(f.takes);
     }
     // the terminal's own mnemonics for the same things
-    for (const c of ["DES", "ANR", "EE", "SI", "HDS", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "ECO", "ERN", "DVD", "SPLT", "IPO", "WEI", "GC", "FXC", "GLCO", "OMON", "SKEW", "COMP", "CORR", "HVG", "BETA", "SEAG", "EQS", "IMAP", "MON", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
+    for (const c of ["DES", "ANR", "EE", "SI", "HDS", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "ECO", "ERN", "DVD", "SPLT", "IPO", "WEI", "GC", "FXC", "GLCO", "OMON", "SKEW", "COMP", "CORR", "HVG", "BETA", "SEAG", "EQS", "IMAP", "MON", "MOST", "PORT", "RISK", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
   });
 
   it("asks the search for a function's market alone, for the whole of a function typed alone (a market of that name is offered too), for the words before a function half typed, and for nothing after a function that takes words; the Markets list is never narrowed to a code", () => {

@@ -19,9 +19,10 @@ openpaper runs on your own computer. It puts your exchanges, brokers, wallets an
 - **A share's page.** What Nasdaq's own pages say of one US share, as written: the company and its description, Nasdaq's last sale, the key figures (ranges, volumes, market cap, dividend, P/E, PEG), the analysts' consensus and targets with a year of history, the earnings surprises and the estimates ahead, the dividends paid, the short interest, the institutions and the insiders (`AAPL DES`, `ANR`, `EE`, `DVD`, `SI`, `HDS`).
 - **The screener.** Every US-listed share as Nasdaq lists it, screened by sector, industry, country, market cap, price, the day's change, volume, IPO year or words, sorted as you ask; and the sector map — every sector a tile sized by market cap and coloured by the day, opening into its industries (`EQS`, `IMAP`).
 - **Analytics.** A few markets over the bars the account already reads: rebased together with each one's return, volatility, drawdown and Sharpe; the correlation of their returns; rolling historical volatility; each one's beta, correlation and alpha to the first; the average return by calendar month and weekday — arithmetic over the venues' own bars, no forecast (`COMP`, `CORR`, `HVG`, `BETA`, `SEAG`).
+- **Risk.** Your own lines weighed and measured, under the Account: the exposure (net, gross, long, short, by class, by venue, how concentrated), each line's volatility over a year of daily bars and its share of the whole, the portfolio's volatility and one-day value at risk read off its own days, the betas to SPY and BTC, the net worth's drawdown, what a flat move would be — arithmetic over your balances and the venues' bars, no forecast (`RISK`).
 - **A trading terminal.** Its own candle chart with years of history, an order book and a trades tape fed by the venues' streams, and the account's own lines — entries, stops, resting orders — drawn on the chart.
 - **The superagent.** A desk of AI agents that trades the paper account by itself and plays each step as it happens, on a key from any of thirteen model providers, or a model running on your machine.
-- **Your own agent over MCP.** Forty-eight tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
+- **Your own agent over MCP.** Forty-nine tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
 - **You sign what matters.** Every order, movement and limit is signed by a key your browser cannot export; Guard holds each request for your yes, Beast lets agents act inside their limits; a cap on every order; a hash-chained log of everything.
 - **Nothing in the middle.** No server, no account to create, no analytics: your computer reads public prices and talks to venues directly, so your own network decides what you see.
 
@@ -193,7 +194,7 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
   backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
                        desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
-  mcp.ts               the MCP server an agent's seat runs (48 tools)
+  mcp.ts               the MCP server an agent's seat runs (49 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only
 src/core/ src/agent/   shared: the hash-chained ledger (agent/ledger.ts), refusal codes, hashing, jsonl
