@@ -1,0 +1,51 @@
+/* ANALYTICS (ui/analytics.js): the markets as chips in a head card, the view in a second; the series in eight colours that read on both
+   backgrounds. The page's tokens, and the eight series colours set here */
+.an { container-type: inline-size; --an-c0: #2563eb; --an-c1: #d97706; --an-c2: #059669; --an-c3: #dc2626; --an-c4: #7c3aed; --an-c5: #0891b2; --an-c6: #db2777; --an-c7: #65a30d; }
+.an-card { margin-bottom: 20px; }
+.an-card .sec-head { align-items: center; }
+.an-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; min-height: 26px; }
+.an-chip { color: var(--text); gap: 4px; padding-right: 4px; }
+.an-x { border: 0; background: none; color: var(--dim); font-size: 15px; line-height: 1; padding: 0 4px; cursor: pointer; border-radius: var(--radius-pill); }
+.an-x:hover { color: var(--text); }
+.an-form { display: flex; gap: 8px; align-items: center; margin: 0 0 8px; }
+.an-in { width: 260px; max-width: 100%; font-size: 13px; padding: 6px 10px; border: 1px solid var(--card-border); border-radius: var(--radius-s); background: var(--surface); color: var(--text); }
+.an-in:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.an-found { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.an-found .chip { cursor: pointer; }
+.an-presets { margin: 0; }
+.an-presets kbd { font-family: inherit; font-weight: 600; color: var(--text); }
+.an-key { display: inline-block; width: 14px; height: 0; border-top: 3px solid var(--text); vertical-align: middle; border-radius: 2px; }
+.an-c0 .an-key, .an-key.an-c0 { border-color: var(--an-c0); }
+.an-c1 .an-key, .an-key.an-c1 { border-color: var(--an-c1); }
+.an-c2 .an-key, .an-key.an-c2 { border-color: var(--an-c2); }
+.an-c3 .an-key, .an-key.an-c3 { border-color: var(--an-c3); }
+.an-c4 .an-key, .an-key.an-c4 { border-color: var(--an-c4); }
+.an-c5 .an-key, .an-key.an-c5 { border-color: var(--an-c5); }
+.an-c6 .an-key, .an-key.an-c6 { border-color: var(--an-c6); }
+.an-c7 .an-key, .an-key.an-c7 { border-color: var(--an-c7); }
+.an-legend { margin: 0 0 6px; }
+.an-chart { width: 100%; height: 220px; display: block; margin: 4px 0 10px; font-size: 10px; fill: var(--dim); }
+.an-line { fill: none; stroke: var(--text); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.an-line.an-c0 { stroke: var(--an-c0); }
+.an-line.an-c1 { stroke: var(--an-c1); }
+.an-line.an-c2 { stroke: var(--an-c2); }
+.an-line.an-c3 { stroke: var(--an-c3); }
+.an-line.an-c4 { stroke: var(--an-c4); }
+.an-line.an-c5 { stroke: var(--an-c5); }
+.an-line.an-c6 { stroke: var(--an-c6); }
+.an-line.an-c7 { stroke: var(--an-c7); }
+.an-base { stroke: var(--dim); stroke-dasharray: 3 3; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.an-table td { font-size: 13px; font-variant-numeric: tabular-nums; }
+.an-name { font-weight: 600; }
+.an-matrix th[scope="row"] { text-align: left; font-weight: 600; }
+.an-matrix td.an-hi { background: color-mix(in oklab, var(--up) 45%, var(--surface-2)); }
+.an-matrix td.an-mid { background: color-mix(in oklab, var(--up) 20%, var(--surface-2)); }
+.an-matrix td.an-lo { background: color-mix(in oklab, var(--down) 45%, var(--surface-2)); }
+.an-matrix td.an-midlo { background: color-mix(in oklab, var(--down) 20%, var(--surface-2)); }
+.an-seag th[scope="row"] { text-align: left; }
+.an-h3 { margin: 14px 0 8px; }
+.an-h3:first-child { margin-top: 0; }
+.an-asof { margin: 16px 0 0; }
+.an-foot { margin-top: 10px; }
+.an-foot summary { cursor: pointer; }
+.an-foot p { margin: 6px 0 0; }
