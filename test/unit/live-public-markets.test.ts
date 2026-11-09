@@ -928,7 +928,7 @@ describe("every public source", () => {
   it("is the five exchanges (Bybit by default, after Binance), Kalshi, Polymarket, Polymarket US, Hyperliquid, US stocks at Cboe, the Stock Tokens, xStocks at Gate, Ondo Stocks, the eight exchanges' pre-IPO perpetuals and Hyperliquid's HIP-3 ones, unless other exchanges are named", () => {
     const preipo = ["okx-preipo", "gate-preipo", "krakenfutures-preipo", "deribit-preipo", "kucoinfutures-preipo", "mexc-preipo", "binance-preipo", "bybit-preipo", "hyperliquid-preipo"];
     // the stocks before the Stock Tokens: a paper account's "NVDA" is the share
-    const rest = ["kalshi", "polymarket", "polymarket-us", "hyperliquid", "cboe", "robinhood-stock-tokens", "xstocks", "ondo-stocks", ...preipo];
+    const rest = ["kalshi", "polymarket", "polymarket-us", "hyperliquid", "cboe", "robinhood-stock-tokens", "xstocks", "ondo-stocks", ...preipo, "hyperliquid-world"];
     expect(publicSources().map((s) => s.id)).toEqual(["kraken", "coinbase", "okx", "binance", "bybit", ...rest]);
     expect(publicSources({ exchanges: ["kraken"] }).map((s) => s.id)).toEqual(["kraken", ...rest]);
     expect(PRE_IPO_VENUES.map((v) => v.id)).toEqual(["okx", "gate", "krakenfutures", "deribit", "kucoinfutures", "mexc", "binance", "bybit"]);

@@ -71,6 +71,8 @@ Node ≥ 22。常用开关：`--live-cap 50`（单笔上限，默认 $100）、`
 
 **地区：按每个用户自己所在的地方，不按开发者。** 账户启动后、之后每 30 分钟，自动替每个场所问一遍它对**这台机器的网络**怎么答（不带钥匙），再把它公布的居住地规矩对上这台机器此刻所在的地方：能接、不服务这里、只能平仓（Polymarket 对美国就是这样：照样接得上，能卖、能撤单，不能开新仓；美国人开新仓的地方是另一家交易所 Polymarket US，自己的账户、自己的钥匙，单独一张卡）、它的条款排除你所在的地方（只提示，不拦）、本机先要准备。连不了的，如果它有给你那里的另一个版本（Binance → Binance.US、OKX → OKX US、Polymarket → Polymarket US），而且那个版本从你的网络能接、它自己的话说它是为你那里做的，就标在旁边。同一个答案用在 Connect an account 的卡片、Markets 和下单票（只对会收你的场所给 "Connect to trade"），以及 agent（`portfolio_venues`；agent 请主人接一个不服务你这个网络的场所会直接被拒）。地方只在内存里用于这个判断，不保存、不返回、不写进拒绝；开发者那里被拒的场所（Binance、Bybit、Polymarket 开新仓、Hyperliquid 下单）照样接好了，在服务它们的地方就全有；每个用户都按他自己的网络算，开发者机器上的答案不进代码。**网络的回答也拦不住接**：场所不服务这个网络、或这会儿没答，Connect 照样能签，连接留在账户上等（Venues 里 "Waiting for the venue"，场所的原话），场所答之前什么都不往它发，换了网络 "Check again" 发现它答了就自动接上；拒的是钥匙或账户本身才是拒绝。IP 引起的另几种问题分开说，各用场所自己的话：钥匙绑了别的 IP（去场所把这台机器的地址加上）、场所前面的服务器拒绝这个网络、请求太多被封（等到它说的时间）。场所话里带着的 IP 不进日志和账本。账户从不提供绕过地区规矩的办法。
 
+**世界市场的永续**（`public-markets.ts` 的 `hyperliquidWorldPublic`，源 id `hyperliquid-world`）：Hyperliquid 的 HIP-3 dex 上按股票（NVDA、TSLA、AAPL…）、指数（SP500、XYZ100）、商品（GOLD、CL、BRENTOIL）、外汇（EUR、JPY）、利率（10Y）部署的永续，按 Hyperliquid 自己的分类认（stocks · commodities · indices · fx · rates；pre-IPO 归下一条，crypto 不算），2026-11-09 读到 155 个，列进 Perps 里：代码是去掉 dex 前缀的（`perp:NVDA` 和别家的 NVDA 永续折成一行），场所写 "Hyperliquid · xyz"，分类写在行上；K 线、盘口、成交、资金费率走 Hyperliquid 自己的，纸上账户照永续的规则交易它；有人持有或成交的才列。每份合约是那个 dex 自己按预言机价定的合约，不是股票或商品本身，列表底下写明。
+
 **Pre-IPO**：交易所上按一家未上市公司的估值定价的永续合约，不是股份。九个公开源不带钥匙读（OKX、Gate、Kraken Futures、Deribit、KuCoin Futures、MEXC、Binance、Bybit、Hyperliquid HIP-3；在不服务你的地方，那几家用它们的原话写在列表底下），一家公司一行，写各家隐含估值的中位数（Oura 的合约各家都按一股定价，按股数算）；接上其中一家的钥匙，就在同一行下单。Anthropic、OpenAI 都说未经同意的股权转让无效，原话跟着它们那一行走。
 
 ## 记忆
