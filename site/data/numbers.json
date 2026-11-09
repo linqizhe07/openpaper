@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-11-09",
   "mcpTools": {
-    "real": 44,
+    "real": 45,
     "simulationOnly": 7,
     "names": [
       "portfolio_overview",
@@ -29,6 +29,7 @@
       "portfolio_news",
       "portfolio_calendar",
       "portfolio_world",
+      "portfolio_options",
       "portfolio_backtest",
       "portfolio_backtest_walk",
       "portfolio_backtest_screen",
@@ -90,7 +91,7 @@
   "capUsd": 100,
   "cardMinutes": 30,
   "tests": {
-    "files": 201,
+    "files": 203,
     "attackFiles": 32
   },
   "strip": [

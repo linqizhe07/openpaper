@@ -50,6 +50,9 @@ const cmdTab = (tab, sort) => () => go("markets", { tab, ...(sort ? { sort } : {
 /* a US share's ticker, or the sentence that says why a function that reads Nasdaq's calendar for a share has nothing for this market */
 const cmdShare = (code) => (item) => (typeof mkTicker === "function" && mkTicker(item) && !(typeof mkIsPreipo === "function" && mkIsPreipo(item)) ? "" : `${code} reads Nasdaq's calendar for a US share: ${item.name} is not one.`);
 
+/* a US share's ticker or BTC / ETH, or the sentence that says why a function that reads a listed option chain has nothing for this market */
+const cmdOptions = (code) => (item) => (typeof opSymbolOf === "function" && opSymbolOf(item) ? "" : `${code} reads a listed option chain — Cboe's for a US share, Deribit's for BTC and ETH: ${item.name} has none here.`);
+
 /* every function, in the groups HELP shows them in. `only(item)`: a sentence when the function has nothing for that market, else "" */
 const CMD_GROUPS = [
   {
@@ -65,6 +68,8 @@ const CMD_GROUPS = [
       { code: "SELL", name: "Sell", takes: "market", what: "The order ticket set to sell it: nothing goes until you sign", eg: "SOL SELL", run: (c) => typeof mkTrade === "function" && mkTrade(c.item, "sell") },
       { code: "HAND", name: "Hand to agent", takes: "market", what: "Write what you want done with it, for your agents to read: it grants nothing", eg: "BTC HAND", run: (c) => typeof mkHand === "function" && mkHand(c.item) },
       { code: "ALRT", name: "Price alerts", takes: "market?", what: "Be told when its price crosses a line; alone, every alert you set", eg: "BTC ALRT", run: (c) => (c.item ? typeof openAlertSheet === "function" && openAlertSheet(c.item) : go("markets", { tab: "watching" })) },
+      { code: "OMON", name: "Option chain", takes: "market?", what: "Its listed options: every expiry's at-the-money IV, put/call, max pain, straddle and skew, and one expiry's strikes — Cboe's quotes for a US share, Deribit's for BTC and ETH; alone, the last chain read", eg: "AAPL OMON", only: cmdOptions("OMON"), run: (c) => (typeof opGo === "function" ? opGo(c.item ? opSymbolOf(c.item) : "", "chain") : go("options")) },
+      { code: "SKEW", name: "Volatility skew", takes: "market?", what: "Its implied volatility by expiry and by strike: the term structure, the smile, the 25-delta skew", eg: "SPY SKEW", only: cmdOptions("SKEW"), run: (c) => (typeof opGo === "function" ? opGo(c.item ? opSymbolOf(c.item) : "", "skew") : go("options")) },
       { code: "CN", name: "Company news", takes: "market", what: "Its headlines from the publishers' feeds: a US share's own feed, a coin by its name", eg: "NVDA CN", only: (item) => (typeof mkNewsAsk === "function" && mkNewsAsk(item) ? "" : `CN reads the headlines that name a market: ${item.name} is not one a headline would name.`), run: (c) => cmdOpen(c.item, "news") },
     ],
   },

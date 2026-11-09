@@ -21,6 +21,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <link rel="stylesheet" href="/ui/world.css" />
 <link rel="stylesheet" href="/ui/news.css" />
 <link rel="stylesheet" href="/ui/calendar.css" />
+<link rel="stylesheet" href="/ui/options.css" />
 <link rel="stylesheet" href="/ui/trade.css" />
 <link rel="stylesheet" href="/ui/terminal.css" />
 <link rel="stylesheet" href="/ui/chart.css" />
@@ -136,7 +137,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     </nav>
     <!-- the Markets group's own row (core MARKETS_TABS, shell.js marks the one showing): the Overview, and the data pages beside it -->
     <nav class="acct-tabs" data-only="markets" aria-label="Markets">
-      <div class="seg"><a href="#/markets" data-mkt="markets">Overview</a><a href="#/world" data-mkt="world">World</a><a href="#/news" data-mkt="news">News</a><a href="#/calendar" data-mkt="calendar">Calendar</a></div>
+      <div class="seg"><a href="#/markets" data-mkt="markets">Overview</a><a href="#/world" data-mkt="world">World</a><a href="#/news" data-mkt="news">News</a><a href="#/calendar" data-mkt="calendar">Calendar</a><a href="#/options" data-mkt="options">Options</a></div>
     </nav>
     <div class="banner" id="banner" hidden></div>
     <div class="notice" id="restored" hidden></div>
@@ -152,6 +153,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     <section class="pane" data-pane="news" aria-labelledby="h-news" hidden><h1 class="sr" id="h-news">News</h1><div id="pane-news"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <!-- the calendar: what Nasdaq's pages schedule — releases, earnings, dividends, splits, IPOs (ui/calendar.js) -->
     <section class="pane" data-pane="calendar" aria-labelledby="h-calendar" hidden><h1 class="sr" id="h-calendar">Calendar</h1><div id="pane-calendar"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
+    <!-- the options: a listed chain as its venue publishes it and the figures read off it — expiries, the smile, the strikes (ui/options.js) -->
+    <section class="pane" data-pane="options" aria-labelledby="h-options" hidden><h1 class="sr" id="h-options">Options</h1><div id="pane-options"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:70%"></span><span class="skel"></span></div></div></section>
     <section class="pane" data-pane="trade" aria-labelledby="h-trade" hidden><h1 class="sr" id="h-trade">Trade</h1><div id="pane-trade"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <!-- the desk: the account's own agents (ui/desk.js), opened from the rail's Agents -->
     <section class="pane" data-pane="desk" aria-labelledby="h-desk" hidden><h1 class="sr" id="h-desk">Agents</h1><div id="pane-desk"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
@@ -195,6 +198,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <script defer src="/ui/news.js"></script>
 <!-- the calendar (ui/calendar.js): the economic releases, the earnings, the dividends, the splits, the IPOs, a day at a time -->
 <script defer src="/ui/calendar.js"></script>
+<!-- the options (ui/options.js): a chain as Cboe or Deribit publishes it, every expiry's figures, the smile, the strikes around the money -->
+<script defer src="/ui/options.js"></script>
 <script defer src="/ui/trade.js"></script>
 <script defer src="/ui/indicators.js"></script>
 <script defer src="/ui/chart.js"></script>

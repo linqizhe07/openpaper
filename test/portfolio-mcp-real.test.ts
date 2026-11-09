@@ -352,6 +352,14 @@ describe("declined asks and price history through the MCP seat", () => {
     expect(w.missing.map((m) => [m.venue, m.code])).toEqual([["indices", "E_VENUE_UNREACHABLE"], ["rates", "E_VENUE_UNREACHABLE"], ["kraken", "E_VENUE_UNREACHABLE"], ["ecb", "E_VENUE_UNREACHABLE"], ["commodities", "E_VENUE_UNREACHABLE"]]);
     const wh = (await (await fetch(`${server.url}/api/account/world`)).json()) as Record<string, unknown>;
     expect({ ...wh, asOf: "" }).toEqual({ ...(w as Record<string, unknown>), asOf: "" });
+    // the options tool is there; a symbol that is none is refused before anything is asked; with no network the venue's refusal is the
+    // route's, word for word
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_options");
+    expect((await tool("portfolio_options", { symbol: "not a ticker" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
+    const op = (await tool("portfolio_options", { symbol: "AAPL" })).body as { ok: boolean; code: string; message: string };
+    expect(op).toMatchObject({ ok: false, code: "E_VENUE_UNREACHABLE" });
+    const oh = (await (await fetch(`${server.url}/api/account/options?symbol=AAPL`)).json()) as { refusal: { code: string; message: string } };
+    expect([oh.refusal.code, oh.refusal.message]).toEqual([op.code, op.message]);
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);

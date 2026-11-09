@@ -75,6 +75,7 @@ import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Com
 import { NEWS_HOSTS, NEWS_MAX_BYTES, NEWS_TIMEOUT_MS, NewsWire, type NewsAsk, type NewsReader, type NewsView } from "./live/news.ts";
 import { CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS, NasdaqCalendars, type CalendarAsk, type CalendarReader, type CalendarView } from "./live/calendars.ts";
 import { worldDesk, type WorldReader, type WorldView } from "./live/world.ts";
+import { optionsDesk, type OptionsAsk, type OptionsReader, type OptionsView } from "./live/options.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -227,7 +228,7 @@ export interface ServiceOptions {
   sec?: { env?: NodeJS.ProcessEnv | undefined; userAgent?: string | undefined } | undefined;
   /** THE KEYLESS READERS the terminal's functions read beside the markets — the news (live/news.ts) — as a test or the stand-in hands them
    * in; by default each is made over the live connection's network, behind its own fixed hosts */
-  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined; world?: WorldReader | undefined } | undefined;
+  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined; world?: WorldReader | undefined; options?: OptionsReader | undefined } | undefined;
   /** THE DESK (account/desk.ts), on a real account: the brains its house seats may think with and how often its clock ticks (0: only when
    * asked, as in tests). The brains, by default: every provider the Brains place offers (account/brains.ts brainProviders) — Claude through
    * the Anthropic API and each OpenAI-format preset — each ready when its key is there; a scripted one in tests. `env`: the environment
@@ -1063,6 +1064,20 @@ export class PortfolioService {
       this.worldMade = this.opts.readers?.world ?? worldDesk({ http: deps.http, clock: deps.clock });
     }
     return this.worldMade;
+  }
+  /** OPTIONS (live/options.ts): a share's, an index's or a coin's chain as Cboe or Deribit publishes it, and the figures read off it — the
+   * Options page, and the agents' portfolio_options. A read; every IV and greek is the venue's own */
+  async options(ask: OptionsAsk): Promise<OptionsView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return this.optionsReader().options(ask);
+  }
+  private optionsMade: OptionsReader | undefined;
+  private optionsReader(): OptionsReader {
+    if (!this.optionsMade) {
+      const deps = this.liveDeps();
+      this.optionsMade = this.opts.readers?.options ?? optionsDesk({ http: deps.http, clock: deps.clock });
+    }
+    return this.optionsMade;
   }
   private calendarMade: CalendarReader | undefined;
   private calendarReader(): CalendarReader {
