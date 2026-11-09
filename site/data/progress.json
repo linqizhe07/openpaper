@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 59,
+      "title": "The command line: the top bar's box takes a function as well as a search — AAPL DES, BTC GP, MOST, HELP — on every page",
+      "mergedAt": "2026-11-09T20:18:39Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/59",
+      "branch": "feat/go-command-line"
+    },
+    {
       "number": 60,
       "title": "Two tests date their stand-in bars from the clock, not from 5 October: a month on, the bars had left the first view and main's suite went red",
       "mergedAt": "2026-11-09T20:11:06Z",
