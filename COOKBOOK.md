@@ -190,6 +190,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `WEI` · `GC` · `FXC` · `GLCO` | — | World 页：股指 · 收益率曲线 · 外汇 · 商品，各直达一张卡（第 2g 条） |
 | `OMON` · `SKEW` | 市场，可省（美股、BTC、ETH） | Options 页：期权链 · 波动率偏斜；单独打是上一条链（第 2h 条） |
 | `MON` | 市场，可省 | Monitor 页；带市场时那个市场加进版面（第 2i 条） |
+| `EQS` · `IMAP` | — | Screener 页：筛选表 · 板块地图（第 2k 条） |
 | `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
 | `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
 | `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
@@ -199,7 +200,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 
 ## 2e · News：出版方自己放出的标题，不读正文
 
-Markets 下面现在有五页：**Overview**（原来的 Markets）、**World**（第 2g 条）、**News**、**Calendar**（第 2f 条）和 **Options**（第 2h 条）。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
+Markets 下面现在有六页：**Overview**（原来的 Markets）、**World**（第 2g 条）、**News**、**Calendar**（第 2f 条）、**Options**（第 2h 条）和 **Screener**（第 2k 条）；一只美股自己的页（第 2j 条）也在 Markets 下，从股票进去。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
 
 News 读的是出版方**自己**放出来的 RSS 源，不带钥匙，和读公开行情一个路子（`live/news.ts` 的 `NEWS_FEEDS`，2026-11-09 逐个验过）：
 
@@ -336,6 +337,23 @@ rail 上的 **Monitor**（命令行 `MON`）。像终端的 launchpad：一组�
 ```
 GET /api/account/security?symbol=AAPL
 GET /api/account/security?symbol=SPY         ETF：四部分
+```
+
+## 2k · Screener：筛选器和板块地图
+
+Markets 下的第六页 **Screener**（命令行 `EQS` 看表、`IMAP` 看地图）。Nasdaq 筛选器一次下载的整张表（`live/screener.ts`，2026-11-09 验过：7,127 行、0.8 秒），筛选和排序在账户里做：
+
+- **规则**：板块、行业（选了板块只列它的）、国家、市值档（Mega ≥ $200B · Large $10B–$200B · Mid $2B–$10B · Small $300M–$2B · Micro < $300M）、价格从到、当天涨跌从到、成交量至少、IPO 年从到、名字或代码里的词；排序（市值 · 当天涨跌 · 成交量 · 成交额 · 价格 · IPO 年 · 代码 · 名字）和方向。Screen 提交，Clear 清空。规则就是地址（`#/screener?sector=Technology&capMin=10000000000&sort=changePct`），可以收藏、可以发给人。
+- **表**：几只匹配 / 共几只，前一百行（agent 最多五百）；代码按下开抽屉——实时报价在那里，表里的价是 Nasdaq 写表时的当天价。
+- **地图（IMAP）**：每个板块一块瓦片，面积按市值、颜色按当天涨跌（按市值加权，三档深浅）；大块写名字、涨跌、市值和最大的三只；点板块看它的行业，点行业回到表、只剩那个行业。
+- **留多久**：整表 5 分钟。优先股、单位、权证不在表里。
+- **什么都不估**：Nasdaq 的数照写；筛选、排序、地图的加权都是对它们的算术。
+- **agent**：`portfolio_screener {sector, industry, country, capMin, capMax, priceMin, priceMax, changeMin, changeMax, volumeMin, ipoFrom, ipoTo, q, sort, dir, limit}`，答复和页面同一份，带板块地图。
+
+```
+GET /api/account/screener?sector=Technology&capMin=10000000000&sort=changePct&limit=20
+GET /api/account/screener?industry=Semiconductors&changeMin=3
+GET /api/account/screener?q=bank&country=United%20States
 ```
 
 ## 3 · 让一个 agent 进来，给它交易额度

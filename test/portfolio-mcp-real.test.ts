@@ -368,6 +368,10 @@ describe("declined asks and price history through the MCP seat", () => {
     expect(sc).toMatchObject({ ok: false, code: "E_VENUE_UNREACHABLE" });
     const sh = (await (await fetch(`${server.url}/api/account/security?symbol=AAPL`)).json()) as { refusal: { code: string; message: string } };
     expect([sh.refusal.code, sh.refusal.message]).toEqual([sc.code, sc.message]);
+    // the screener: the tool is there; a rule that is none is refused before the list is asked; with no network the list cannot be read
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_screener");
+    expect((await tool("portfolio_screener", { sector: "<b>x</b>" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
+    expect((await tool("portfolio_screener", { sector: "Technology", capMin: 1e10, limit: 5 })).body).toMatchObject({ ok: false, code: "E_VENUE_UNREACHABLE" });
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);
