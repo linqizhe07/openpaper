@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 62,
+      "title": "The calendar: what Nasdaq's own pages schedule — releases, earnings, dividends, splits, IPOs — a day at a time, under Markets, and for the agents",
+      "mergedAt": "2026-11-09T20:58:57Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/62",
+      "branch": "feat/calendars"
+    },
+    {
       "number": 61,
       "title": "News: the publishers' own headlines on a page of their own under Markets, in a share's drawer and for the agents — TOP, N and CN",
       "mergedAt": "2026-11-09T20:40:20Z",
