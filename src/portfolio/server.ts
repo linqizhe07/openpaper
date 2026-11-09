@@ -136,6 +136,13 @@
  *                                                        last answer standing in (`missing` says which, in its words); no article is read.
  *                                                        The SEC's feed is read with SEC_CONTACT only. The News page, a share's drawer, and
  *                                                        the agents' portfolio_news
+ *   GET  /api/account/calendar?kind=&from=&to=&symbol=&limit=  THE CALENDARS (live/calendars.ts): what Nasdaq's own pages schedule — `kind`
+ *                                                        economic (the releases of the day with their consensus, what came out and what came
+ *                                                        before, in New York time) · earnings (who reports, before the open or after the
+ *                                                        close, the EPS the analysts expect) · dividends (ex-dividend days) · splits · ipos
+ *                                                        (the month's deals by stage) — from `from` (today unless said) to `to`, seven days
+ *                                                        at most, one share alone with `symbol`; each day kept a quarter hour, a past day a
+ *                                                        day. Nothing is estimated. The Calendar page, and the agents' portfolio_calendar
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -1003,6 +1010,15 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { topic: 12, q: 60, symbol: 12, limit: 4 });
     if (!q) return;
     answerOf(res, await svc.news({ ...(q.topic ? { topic: q.topic } : {}), ...(q.q ? { q: q.q } : {}), ...(q.symbol ? { symbol: q.symbol } : {}), ...(q.limit ? { limit: Number(q.limit) } : {}) }));
+  }));
+
+  // CALENDAR: what Nasdaq's pages schedule — economic releases, earnings, dividends, splits, IPOs — a day a read, kept a quarter hour
+  // (service.ts calendar, live/calendars.ts). A read; the consensus and the figures are Nasdaq's as written, nothing the account estimated
+  app.get("/api/account/calendar", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { kind: 12, from: 10, to: 10, symbol: 12, limit: 4 });
+    if (!q) return;
+    answerOf(res, await svc.calendar({ ...(q.kind ? { kind: q.kind } : {}), ...(q.from ? { from: q.from } : {}), ...(q.to ? { to: q.to } : {}), ...(q.symbol ? { symbol: q.symbol } : {}), ...(q.limit ? { limit: Number(q.limit) } : {}) }));
   }));
 
   // COMPANY: a US company's own record as the SEC keeps it — who it is, its fiscal year end, where it is incorporated, its latest reports

@@ -73,6 +73,7 @@ import { exploreAcross, type Exploration, type ExploreSort, type ExploreVenue } 
 import { fixedHosts, holdBackMs, KEEP_MS as LISTING_KEEP_MS, publicSources, type PublicSource } from "./live/public-markets.ts";
 import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Company, type Financials } from "./live/edgar.ts";
 import { NEWS_HOSTS, NEWS_MAX_BYTES, NEWS_TIMEOUT_MS, NewsWire, type NewsAsk, type NewsReader, type NewsView } from "./live/news.ts";
+import { CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS, NasdaqCalendars, type CalendarAsk, type CalendarReader, type CalendarView } from "./live/calendars.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -225,7 +226,7 @@ export interface ServiceOptions {
   sec?: { env?: NodeJS.ProcessEnv | undefined; userAgent?: string | undefined } | undefined;
   /** THE KEYLESS READERS the terminal's functions read beside the markets — the news (live/news.ts) — as a test or the stand-in hands them
    * in; by default each is made over the live connection's network, behind its own fixed hosts */
-  readers?: { news?: NewsReader | undefined } | undefined;
+  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined } | undefined;
   /** THE DESK (account/desk.ts), on a real account: the brains its house seats may think with and how often its clock ticks (0: only when
    * asked, as in tests). The brains, by default: every provider the Brains place offers (account/brains.ts brainProviders) — Claude through
    * the Anthropic API and each OpenAI-format preset — each ready when its key is there; a scripted one in tests. `env`: the environment
@@ -1041,6 +1042,20 @@ export class PortfolioService {
   async news(ask: NewsAsk = {}): Promise<NewsView | Refusal> {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     return this.newsReader().headlines(ask);
+  }
+  /** THE CALENDARS (live/calendars.ts): the economic releases, the earnings, the dividends, the splits and the IPOs Nasdaq's pages list,
+   * a day a read, kept a quarter hour — the Calendar page, and the agents' portfolio_calendar. A read */
+  async calendar(ask: CalendarAsk = {}): Promise<CalendarView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return this.calendarReader().events(ask);
+  }
+  private calendarMade: CalendarReader | undefined;
+  private calendarReader(): CalendarReader {
+    if (!this.calendarMade) {
+      const deps = this.liveDeps();
+      this.calendarMade = this.opts.readers?.calendar ?? new NasdaqCalendars({ http: fixedHosts(deps.http, CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS), clock: deps.clock });
+    }
+    return this.calendarMade;
   }
   private newsMade: NewsReader | undefined;
   private newsReader(): NewsReader {

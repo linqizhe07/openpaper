@@ -335,6 +335,14 @@ describe("declined asks and price history through the MCP seat", () => {
     expect(n.items).toEqual([]);
     expect(n.missing.map((m) => m.venue).sort()).toEqual(["coindesk", "cointelegraph", "decrypt", "theblock"]);
     expect((await tool("portfolio_news", { symbol: "not a ticker" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
+    // the calendar tool is there and answers the same as over HTTP (no network: the day is in `missing`); a span too wide is refused first
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_calendar");
+    const cal = (await tool("portfolio_calendar", { kind: "earnings", from: "2026-11-09" })).body as { ok: boolean; kind: string; items: unknown[]; missing: unknown[] };
+    expect(cal.ok).toBe(true);
+    expect(cal.kind).toBe("earnings");
+    expect(cal.items).toEqual([]);
+    expect(cal.missing).toHaveLength(1);
+    expect((await tool("portfolio_calendar", { from: "2026-11-01", to: "2026-11-30" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);

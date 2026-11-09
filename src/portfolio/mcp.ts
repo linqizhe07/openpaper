@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -981,6 +981,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ topic, q, symbol, limit }) => read(`/api/account/news?${new URLSearchParams({ ...(topic ? { topic } : {}), ...(q ? { q } : {}), ...(symbol ? { symbol } : {}), ...(limit ? { limit: String(limit) } : {}) })}`),
+);
+
+server.registerTool(
+  "portfolio_calendar",
+  {
+    description:
+      "THE CALENDARS — what Nasdaq's own pages schedule, read without a key: `economic` (the day's releases, each with its New York time, country, the consensus Nasdaq writes, what came out and what came before, and whether it came out above or below the consensus), `earnings` (who reports, before the open or after the close, the EPS the analysts expect with how many estimates, last year's figure), `dividends` (the shares going ex-dividend, the amount, the payment day), `splits`, `ipos` (the month's deals by stage: priced, upcoming, filed, withdrawn). `from` a day (YYYY-MM-DD, New York's; today unless said) and `to` another at most six days on; `symbol` one US share's earnings, dividends or splits alone; `limit` at most 500 (200 unless said). Nothing is estimated by the account: a figure is Nasdaq's as written, a day it could not read is in `missing`. Each day is kept a quarter hour, a past day a day. A read.",
+    inputSchema: { kind: z.enum(["economic", "earnings", "dividends", "splits", "ipos"]).optional().describe("which calendar; economic unless said"), from: z.string().max(10).optional().describe("the first day, YYYY-MM-DD New York; today unless said"), to: z.string().max(10).optional().describe("the last day, at most six days after `from`"), symbol: z.string().max(12).optional().describe("one US share's rows alone"), limit: z.number().int().min(1).max(500).optional() },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ kind, from, to, symbol, limit }) => read(`/api/account/calendar?${new URLSearchParams({ ...(kind ? { kind } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), ...(symbol ? { symbol } : {}), ...(limit ? { limit: String(limit) } : {}) })}`),
 );
 
 server.registerTool(
