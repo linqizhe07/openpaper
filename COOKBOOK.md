@@ -188,6 +188,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN、DVD 可带股票） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
 | `WEI` · `GC` · `FXC` · `GLCO` | — | World 页：股指 · 收益率曲线 · 外汇 · 商品，各直达一张卡（第 2g 条） |
 | `OMON` · `SKEW` | 市场，可省（美股、BTC、ETH） | Options 页：期权链 · 波动率偏斜；单独打是上一条链（第 2h 条） |
+| `MON` | 市场，可省 | Monitor 页；带市场时那个市场加进版面（第 2i 条） |
 | `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
 | `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
 | `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
@@ -294,6 +295,23 @@ GET /api/account/options?symbol=AAPL                     最近的到期日
 GET /api/account/options?symbol=SPX&expiry=2026-12-18    一个到期日（当天或之后的第一个）
 GET /api/account/options?symbol=BTC                      Deribit
 ```
+
+## 2i · Monitor：一屏自己拼的格子
+
+rail 上的 **Monitor**（命令行 `MON`）。像终端的 launchpad：一组卡片，每张是别的页面的一块，用那一页自己的读法和画法——
+
+| 格子 | 里面是什么 | 从哪来 |
+|---|---|---|
+| 一个市场 | 价格、24 小时涨跌、在哪个场所、当天的 5 分钟线 | Markets 页（`explore?key=` 和 `candles`） |
+| 一块板 | 股指（前八行）· 收益率曲线（SVG 和三个利差）· 外汇（实时对）· 商品 | World 页（第 2g 条） |
+| 新闻 | 一个主题的八条标题 | News 页（第 2e 条） |
+| 今天的日历 | 一种日历今天的十二行 | Calendar 页（第 2f 条） |
+| 期权 | 一条链最近到期日的八块数，上面标的和 IV30 | Options 页（第 2h 条） |
+
+- **拼法**：上面三个预设（**Desk** 股指 · 曲线 · BTC · 市场新闻 · 经济数据 · SPX 期权；**Macro**；**Crypto**），下拉加板 / 新闻 / 日历 / 期权，市场从命令行加：`AAPL MON`、`BTC MON`。每张卡右上 **Open** 去它那一页，**×** 去掉。最多十二块。
+- **版面在哪**：地址里（`#/monitor?tiles=w=indices,m=coin:BTC,…`，可以直接发给人），同时记在这个浏览器里；地址没说就用记住的，都没有就是 Desk。不在账户里。
+- **重读**：显示时每 15 秒，按每块自己那一页的保留时间；读失败的块留着上一次的、写原话。
+- 没有新接口、没有新工具：agent 要这些数，照各自的工具读（`portfolio_world`、`portfolio_news`、`portfolio_calendar`、`portfolio_options`、`portfolio_explore`、`portfolio_candles`）。
 
 ## 3 · 让一个 agent 进来，给它交易额度
 
