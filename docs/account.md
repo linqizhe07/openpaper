@@ -407,6 +407,14 @@ Robinhood 的三条线都是它自己发布的接口（2026-10-05 读）：股�
   ⑦ **页面**：练习页的 **Your license**：阶梯（记录显示的级别、生效的级别）；两本记录的检查，✓ / ✗ 加一句话，读屏器另有 "passed" / "not yet"；下一级还差什么；现在管不管你。按钮 Hold… / Step up… / Stop… 每个先弹确认，说清楚签了会怎样，再把约束连同执照重新签一次，在用的其他约束保留。Debrief 页的约束表单不动执照；把约束全部去掉时，会说明执照一起去掉。
   已知的限：执照只看模拟机，实时的纸上交易和真钱交易都不进记录（真钱交易没有黑匣子）。各级的笔数和金额是这个 PR 定的初值（$25 / $100 / 服务上限；100 / 50 / 300 / 100 笔），想改只能改代码。100 笔时校准本身的抽样误差就有六七个百分点，完全校准的人也偶尔会判不过 10 个点的门槛。owner 可以给 agent 签更大的额度、让 agent 去下单，执照管不到这条路：它是给自己的约束，不是锁。
   测试：`license`（新：随机记录怎么合、怎么加权、并列怎么算；五项检查过和不过各自的话；阶梯和每级要什么；视图里的生效级别、服务上限、下一级还差什么；门的话；约束里的 license 怎么读、什么算收紧。服务这一边：读记录，高于记录不让签，签了以后真钱开仓按级拦，平仓和 agent 不管，考试过了升级要等 24 小时，记录变差马上降到 0，去掉也要等；随机入场的文件被改过，这一项就不判）、`practice`（收盘时存下随机入场，哈希对得上；改过的文件和不合法的名字都不读）、`plans`（字段列表）、`ui-practice`（执照面板：没签、签了、升级、等待、0 级；三个按钮签的是什么）、`ui-debrief`（约束表单保留执照，全部去掉时说的话）。
+- **命令行**（2026-11-09，用户：「升级openpaper，和bloomberg terminal看齐」的第一步；`ui/command.js`，`ui/shell.js` 的搜索面板，`ui/shell.css`，`account.html`）：顶栏的搜索框每一页都显示，也是一条命令行。
+  ① **语法**（`cmdParse`）：市场 + 功能（`AAPL DES`；反过来 `DES AAPL` 也认）、只有功能（`MOST`）、功能 + 词（`HELP chart`）。最后一个词是带市场的功能码就按它读，否则看第一个词；只收市场的功能（MOST、PORT）单独出现才算功能，`AAPL PORT` 是搜索。功能前一个种类词（COIN · STOCK · PERP · EVENT · RWA）限定种类。
+  ② **市场怎么定**：拿功能前面的词问 `/api/account/explore?q=&limit=8`——和搜索面板同一次读，`api()` 共用——匹配各出一行"市场 › 功能"，回车取第一行这个功能有东西可做的；面板的答复还不是这些词的，先读再跑（`cmdEnter`）。
+  ③ **面板**（`cmdPalette`，排在市场行上面）：完整的功能一行；半个词能补成的功能（`mo` → MOST、MOV，三个字母起也按名字补：chart → GP）；`AAPL ` 加空格列出这一个市场的全部功能，市场只在上面说一次；功能对这个市场没有东西（FA 对一个币、对 pre-IPO 合约）那一行变灰、写 "Not for this market"，按下去用它自己的话说为什么。功能单独成立时下面照旧列同名的市场（FA、GP、SIM 都是美股代码）；搜索什么都没找到不再写 "Nothing matches"。
+  ④ **跑**（`cmdRun`）：功能只打开一页（`go`）、抽屉（`openMarket`，再滚到那一段 `data-sec`：financials · company · across · chart）、票（`mkTrade` / `openTicket`）或弹层；什么都不签、不发。跑过的记进最近搜索（`account.searches`），最近里的一条按下去是功能就再跑一次。
+  ⑤ **改了的行为**：框在 Account 三页上也显示了（原来 `data-only="trading"` 藏着，`/` 先跳 Markets；那三页上窄一点，280px）；在 Markets 以外的页打字不再立刻跳去 Markets，回车才去（打的可能是这一页的功能）；Markets 上照旧跟着筛，但只按 `cmdFilter` 给的市场词。面板至少 420 宽，靠右时往回靠。
+  已知的限：市场由搜索的第一条匹配定，重名靠选行或种类词；功能表是页面里的一张常量表，agent 没有对应的工具（它们本来就有每个读的工具）。
+  测试：`ui-command`（新：解析每种写法和搜索的边界；每个功能码唯一、例子能解析回自己；问什么、筛什么；行的每种情形；HTML 转义、灰行、"Functions for AAPL" 的标题；回车的四种结果和最近搜索；每个功能打开什么；HELP 全表、筛词、转义），`page-scripts`（脚本顺序加 `command.js`）。
 - **Agents 弹层**（`ui/agents-mount.js` 的 `openAgents()`：另一个团队的 Agent 模块从这里挂进来；Desk 页的 "Every agent ›" 打开它）：放 agent 进来、交易 / 挪钱 / 付款三种额度和 earn 额度（"End earn limit" 只收回 earn 那一份）、"Everything"、撤销；Agent wallets（"Make it"、"Top up…"、"Take back…"；agent 钱包没有 Disconnect，账户握着它的钥匙和钱，清空用 "Take back…"）；最下面 "Add an agent" 一行的 "Copy agent setup command"（复制 `/api/account` 给的 `agentSetup.command`：`claude mcp add portfolio -e PORTFOLIO_URL=<这个服务> -- npx tsx <仓库的绝对路径>/src/portfolio/mcp.ts`，在哪个目录跑都行）。行为和原来一样，等对方的模块来替换。
 - 每 20 秒读一次，只重画看得见的那一屏；有弹层开着、正在签名、或者正在表单里打字时不刷新；标签页藏起来时停。
 

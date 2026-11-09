@@ -3,7 +3,7 @@
 /* THE CONTRACT. The page is plain scripts sharing one global scope, run in this order after owner.js (the device key: Owner.prepare ·
    Owner.submit · Owner.act · Owner.why · Owner.role):
      core (this file) · stream · connect · money · asset · intent · live · portfolio · memory · earn · markets · trade · chart · book ·
-     terminal · brains · desk · superagent · backtest · debrief · practice · statement · agents-mount · shell (draws and starts it).
+     terminal · brains · desk · superagent · backtest · debrief · practice · statement · agents-mount · command · shell (draws and starts it).
    Each top-level name is declared once across them all (test/unit/page-scripts.test.ts). Declare what the shell calls as top-level
    `function` declarations.
 
@@ -109,7 +109,7 @@
      [asset.js] · declineAsk(ask) [portfolio.js] · openMarket(item) [markets.js] · openPicker() / openConnect(option, opts) / connectVia(connector,
      opts) [connect.js] · openStatement() [statement.js] · openAgents() / openSettings() / openMode() [agents-mount.js; only the rail's
      "What changes ›" opens the Mode sheet] · openEarn(preset) / openSellMany(preset) [earn.js] · openBrains(ctx) [brains.js: the desk's
-     brains, their keys typed once and never kept on the page]. Ask before calling one: typeof
+     brains, their keys typed once and never kept on the page] · cmdHelp(words) [command.js: the box's functions, listed]. Ask before calling one: typeof
      openTicket === "function". A pane that throws says so in its place.
    The classes the panes draw with (ui/shell.css; colours, radii, shadows and fonts only from ui/tokens.css, Light and Black alike). The
    look is the ocean with Swiss type: Inter everywhere, labels small and bold in sentence case, numbers bold and tight with tabular figures

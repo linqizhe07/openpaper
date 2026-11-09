@@ -155,12 +155,14 @@ describe("the chrome around the mode", () => {
     expect(callers).toEqual(['$("mode-more").addEventListener("click", () => A && openMode());']);
   });
 
-  it("the top bar is the lens, the background toggle and the Statement, with the Account's header on its tabs (the mode, What changes, Settings) and the search on Markets' and Trade's; the Settings sheet is Trading · the agents' session and leverage · Background · Devices, with no Mode; the Agents sheet has the setup command and no Devices", () => {
+  it("the top bar is the lens, the background toggle and the Statement, with the Account's header on its tabs (the mode, What changes, Settings) and the search — the command line — on every tab; the Settings sheet is Trading · the agents' session and leverage · Background · Devices, with no Mode; the Agents sheet has the setup command and no Devices", () => {
     const top = html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>"));
     // the background toggle sits beside the Statement on every tab (its sun or moon follows the choice Settings → Background keeps)
     expect([...top.matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map((m) => m[1])).toEqual(["lens", "mode-more", "open-settings", "sign-out", "theme-toggle", "open-statement"]);
     expect(top).toMatch(/<div class="acct-tools" data-only="account">/);
-    expect(top).toMatch(/id="search-form"[^>]*data-only="trading"/);
+    // the box is on every tab since the command line (ui/command.js): a function typed under the Account's header goes where it says
+    expect(top).toMatch(/id="search-form" role="search" data-live>/);
+    expect(top).not.toMatch(/id="search-form"[^>]*data-only/);
     const p = page();
     p.run(OWNER);
     p.set("A", account());

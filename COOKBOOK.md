@@ -47,7 +47,7 @@
 
 - **左边的 rail**（第七轮 F1 / F5 的样子；在 Trade 里时换成交易区的 Hyperliquid 颜色，形状不变）：圆的 "A" 和名字；Markets · Trade；"Agents"（数是敲门等放行的 agent）；最下面纽约时间的钟（账户不应答时一枚 "Not answering since HH:MM"），和 **Account** 钱包按钮：净值 · 模式（"$12,480 · Guard"），旁边的数是等你批的卡加 agent 的请求（浏览器标签页的标题也带着，比如 "(2) Account"）。手机宽度上 rail 变成顶上一条：第一行圆标和 Account，第二行 Markets · Trade · Agents。
 - **Account 的头**（Portfolio · Venues · Memory 三页上）：Account · Lens（All accounts / 一个场所 / 一个 agent，表都按它筛）；右边 Mode（Guard | Beast 两个按钮，ⓘ 打开 "What changes"，第 4 条）· "Trading on · $250 a move"（或 "Read-only"）· "Settings" · 时钟图标（Statement）；下面一行三页的切换，和这一档模式的一句说明。
-- **Markets 和 Trade 的顶栏**：Lens、搜索（按 `/`，打字就去 Markets 搜；在 Account 的三页上按 `/` 先去 Markets）、时钟图标。按 `t` 打开下单票。重启过的，顶栏下面一行写着接回了什么。没有 Menu。
+- **顶栏的框**（每一页都有）：Lens、搜索框（按 `/` 或 ⌘K；打字列出匹配的市场，在 Markets 上列表跟着筛）——它也是**命令行**：`AAPL DES`、`MOST`、`HELP` 回车直达，第 2d 条——和时钟图标。按 `t` 打开下单票。重启过的，顶栏下面一行写着接回了什么。没有 Menu。
 - **几页**：Portfolio（第 2b 条）、Venues（第 2 条）、Memory（第 8c 条，照画布的 F13）、Markets（第 2c 条）、Trade（第 5 条）。
 - **弹层**：Statement（第 5 条）、Mode（第 4 条）、Settings（交易开没开和单笔上限、agent 的会话和杠杆上限、背景 Cream / Black、Devices）、Agents（第 3 条）、Receive（第 2b 条）、Move（第 7 条）、Earn（第 7c 条）、Sell many（第 5b 条）；右边的抽屉是一个市场（Portfolio 的资产行打开的也是它）或一个账户的 Details。要你确认的都是页面自己的小问话框，没有浏览器的 `prompt` / `confirm`。
 
@@ -162,6 +162,33 @@ Markets 只管看和挑，不管账户：接上、拔掉、对 agent 开关、�
 - 点一行打开**那一个抽屉**（Portfolio 的资产行打开的也是它）：价格（pre-IPO 是隐含估值）、24h（只说一次）、买卖价、成交量；永续的资金费率和杠杆；事件的倒计时和每个结果（各有 "Buy Yes" 这样的按钮）；代币化股票和 pre-IPO 的 Issuer 一栏；"Buy" / "Sell" / "Hand to agent" / ★。下面几段：K 线（接上的场所用它自己的，没接的用公开数据，5m / 1h / 1d）· Across venues（每个场所的价格，能下的有 "Trade"，只有公开行情的有 "Connect to trade"）· IPO markets（只在 pre-IPO 公司里）· You hold（你在各场所持有多少、持仓和 "Close…"、挂单和 "Cancel"、平均成本）· Agents on it（agent 在这里的卡和 "Review"、它们的单、你的意图）· On the statement（流水里相关的最近八行，"Open the Statement →"）。
 
 agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是 all · crypto · stocks · rwas · perps · preipo · predictions；pre-IPO 的行带 `implied`）、`portfolio_candles {venue, symbol, interval, range}`（`range` 是 1D · 5D · 1M · 3M · 6M · YTD · 1Y · 5Y · MAX，不写周期就用这个范围自己的；往前翻一页是 `{before, limit}`，答复的 `more` 说还有没有更早的，`ends` 说历史在哪里断、为什么）、`portfolio_book {venue, symbol, depth}`（盘口和最新成交，Trade 中间那栏）。
+
+## 2d · 命令行：顶栏的框，搜索也是功能
+
+顶栏那个框每一页都有（按 `/` 或 ⌘K / Ctrl+K 聚焦）。它还是搜索：打几个字母，下面列出匹配的市场，回车在 Markets 里筛。但它也认**功能代码**，像终端的命令行，回车直达：
+
+- **市场 + 功能**：`AAPL DES` 打开苹果那一个抽屉，`BTC GP` 去 Trade 看它的 K 线，`NVDA FA` 抽屉里直接到 Financials。市场在前、功能在后（反过来 `DES AAPL` 也认）。同名的市场（BTC 现货和 BTC 永续）下面各出一行"市场 › 功能"，回车取第一行，↓ 选别的；或者在功能前加一个种类词限定：`BTC PERP GP`、`AAPL STOCK DES`（COIN · STOCK · PERP · EVENT · RWA）。
+- **只打功能**：`MOST` 最忙的市场、`MOV` 24 小时涨跌最大、`WATCH` 关注列表和价格提醒、`PORT` Portfolio、`SA` Superagent、`BT` 回测、`SIM` 模拟机、`DEB` 复盘、`STMT` 对账单、`SET` 设置、`HELP` 全部功能的清单（`HELP chart` 只列提到 chart 的）。
+- **一个市场有哪些功能**：打 `AAPL ` 加一个空格，下面列出它能用的（DES · GP · QM · FA · CF · BUY · SELL · HAND · ALRT），再打几个字母就缩小到那几个。
+- 代码和股票代码重名的（FA、GP、SIM 都有同名的美股），单独打是功能；那只股票在下面一行，↓ 选它。
+- 这个框什么都不签、不发：功能只是打开一页、一个抽屉、一张票或一个弹层。`BUY` / `SELL` 打开的是下单票，照旧要你签名；`ALRT` 打开的是提醒的表单。
+- 在 Markets 页上打字，列表照旧跟着筛（只按市场的词筛，功能码不算）；在别的页上打字不再立刻跳去 Markets，回车才去。
+
+| 代码 | 要什么 | 做什么 |
+|---|---|---|
+| `DES` | 市场 | 那一个抽屉：价、历史、各场所的价、你持有的、提醒 |
+| `GP` | 市场 | Trade 页上它的 K 线（能下单的场所）；没场所交易的，抽屉里的价格历史 |
+| `QM` | 市场 | 抽屉里的 Across venues：每个场所的价，最好的在前 |
+| `FA` · `CF` | 美股 | 抽屉里的 Financials / Company（SEC EDGAR）；对币、合约说"不是美股" |
+| `BUY` · `SELL` | 市场 | 下单票，预设买 / 卖 |
+| `HAND` | 市场 | Hand to agent 的意图表单 |
+| `ALRT` | 市场，可省 | 这个市场的价格提醒表单；单独打是 Watching 页 |
+| `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
+| `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
+| `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
+| `PORT` · `VEN` · `MEM` · `AGT` · `STMT` · `SET` · `KEYS` · `HELP` | — | Portfolio · Venues · Memory · Agents · Statement · Settings · 快捷键 · 功能清单 |
+
+表在 `ui/command.js` 的 `CMD_GROUPS` 一处；新加一页，就在那里加一行。`?` 的快捷键表里也写着这个框。
 
 ## 3 · 让一个 agent 进来，给它交易额度
 
