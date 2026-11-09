@@ -186,6 +186,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `CN` | 市场 | 抽屉里的 News：这只股票自己的源加提到它的标题（第 2e 条） |
 | `TOP` · `N 词` | — / 词 | News 页：当天的标题 · 只看带这几个词的 |
 | `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN、DVD 可带股票） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
+| `WEI` · `GC` · `FXC` · `GLCO` | — | World 页：股指 · 收益率曲线 · 外汇 · 商品，各直达一张卡（第 2g 条） |
 | `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
 | `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
 | `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
@@ -195,7 +196,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 
 ## 2e · News：出版方自己放出的标题，不读正文
 
-Markets 下面现在有两页：**Overview**（原来的 Markets）和 **News**。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
+Markets 下面现在有四页：**Overview**（原来的 Markets）、**World**（第 2g 条）、**News** 和 **Calendar**（第 2f 条）。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
 
 News 读的是出版方**自己**放出来的 RSS 源，不带钥匙，和读公开行情一个路子（`live/news.ts` 的 `NEWS_FEEDS`，2026-11-09 逐个验过）：
 
@@ -223,7 +224,7 @@ GET /api/account/news?symbol=NVDA           一只美股：它自己的源，加
 
 ## 2f · 日历：Nasdaq 排的事，一天一读
 
-Markets 下的第三页 **Calendar**（命令行 `ECO` · `ERN` · `DVD` · `SPLT` · `IPO`）。读的是 Nasdaq 自己日历页背后的接口，和读它的报价同一台主机、同一个 UA，不带钥匙（`live/calendars.ts`，2026-11-09 逐个验过）。五种：
+Markets 下的第四页 **Calendar**（命令行 `ECO` · `ERN` · `DVD` · `SPLT` · `IPO`）。读的是 Nasdaq 自己日历页背后的接口，和读它的报价同一台主机、同一个 UA，不带钥匙（`live/calendars.ts`，2026-11-09 逐个验过）。五种：
 
 | 种类 | 一行是什么 | 备注 |
 |---|---|---|
@@ -244,6 +245,26 @@ GET /api/account/calendar                                   今天的经济数�
 GET /api/account/calendar?kind=earnings&from=2026-11-09&to=2026-11-13   一周的财报
 GET /api/account/calendar?kind=earnings&symbol=AAPL&to=2026-11-15       一只股票
 GET /api/account/calendar?kind=ipos&from=2026-11-01                     当月 IPO
+```
+
+## 2g · World：终端一屏上的四块板
+
+Markets 下的第二页 **World**（命令行 `WEI` · `GC` · `FXC` · `GLCO`，各直达一张卡）。四块板各从一个不带钥匙的公开源读来（`live/world.ts`，2026-11-09 逐个验过），每个数都写明是谁的、晚多少：
+
+| 板 | 源 | 一行是什么 | 备注 |
+|---|---|---|---|
+| Indices | Cboe 的延迟指数报价 | 标普 500 · 纳指 100 · 道指 · 罗素 2000 · 标普 100 · MSCI EAFE · MSCI 新兴市场 · VIX · VXN · VVIX · 美国十年期收益率：点位、变化、百分比、日内区间、几点的 | 晚十五分钟，卡上写着；道指是 Cboe 的 DJX 乘一百，十年期是 TNX 除以十、变化用 bp（悬停名字看换算） |
+| Yield curve | 美国财政部自己的 par 曲线 | 最新一天的曲线（实线）、一月前（虚线）、一年前（点线）；2s10s · 3m10y · 5s30s；表里每个期限对一周 / 一月 / 一年前差多少 bp | 一天一更、收盘后才有，留一小时 |
+| Currencies | Kraken 的实时价；其余用 ECB 当天的欧元参考汇率换成对美元 | 对 · 最新 · 买 / 卖 · 日内 · 标签 live 还是 fixing | Kraken 九对（EUR/USD、GBP/USD、USD/JPY、USD/CHF、USD/CAD、AUD/USD、EUR/GBP、EUR/JPY、EUR/CHF）留 10 秒；ECB 的二十种是定盘价、不是实时价，留一小时 |
+| Commodities | Hyperliquid xyz 永续的预言机价 | 金 · 银 · 铂 · 钯 · 铜 · WTI · 布伦特 · 天然气：预言机价、标记价、24h、成交额 | 全天候；是合约盯的参考价，不是商品交易所的价；退市的（玉米、小麦）不画 |
+
+- **迟到或拒绝**：五个源并行读，等 5 秒；没回来的用一小时内的上一次答复顶上，页脚写明谁在顶替、谁没答（原话）。Kraken 偶尔答 503，隔 300 ms 再问一次。读失败时四张卡留着上一次的，下面写明。
+- **什么都不估**：每个数带来源和延迟；股指的时间是 Cboe 的最后成交时间，按纽约时间写。
+- **显示时每 15 秒重读**。
+- **agent**：`portfolio_world {}`，答复和页面同一份：`indices`、`rates`、`fx`、`commodities`、`sources`、`missing`、`notes`。
+
+```
+GET /api/account/world
 ```
 
 ## 3 · 让一个 agent 进来，给它交易额度

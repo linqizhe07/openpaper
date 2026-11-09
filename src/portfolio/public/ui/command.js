@@ -69,6 +69,15 @@ const CMD_GROUPS = [
     ],
   },
   {
+    group: "The world",
+    fns: [
+      { code: "WEI", name: "World indices", takes: "", what: "The S&P 500, Nasdaq-100, Dow, Russell, MSCI EAFE and EM, the VIX — Cboe's quotes, fifteen minutes behind", eg: "WEI", run: () => (typeof wdGo === "function" ? wdGo("indices") : go("world")) },
+      { code: "GC", name: "Yield curve", takes: "", what: "The US Treasury's par curve, beside a month and a year before, with its spreads", eg: "GC", run: () => (typeof wdGo === "function" ? wdGo("rates") : go("world")) },
+      { code: "FXC", name: "Currencies", takes: "", what: "Kraken's live pairs, and the ECB's fixing for the rest", eg: "FXC", run: () => (typeof wdGo === "function" ? wdGo("fx") : go("world")) },
+      { code: "GLCO", name: "Commodities", takes: "", what: "Gold, silver, copper, oil, gas as Hyperliquid's xyz oracles price them, around the clock", eg: "GLCO", run: () => (typeof wdGo === "function" ? wdGo("commodities") : go("world")) },
+    ],
+  },
+  {
     group: "News and the calendar",
     fns: [
       { code: "TOP", name: "Top news", takes: "", what: "The day's headlines from the publishers' own feeds: the markets, the central banks, crypto", eg: "TOP", run: () => go("news") },

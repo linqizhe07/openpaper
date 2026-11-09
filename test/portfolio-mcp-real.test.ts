@@ -343,6 +343,15 @@ describe("declined asks and price history through the MCP seat", () => {
     expect(cal.items).toEqual([]);
     expect(cal.missing).toHaveLength(1);
     expect((await tool("portfolio_calendar", { from: "2026-11-01", to: "2026-11-30" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
+    // the world's boards are there and answer the same as over HTTP (no network: every source is in `missing`, each board empty)
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_world");
+    const w = (await tool("portfolio_world", {})).body as { ok: boolean; indices: unknown[]; fx: unknown[]; commodities: unknown[]; rates: unknown; sources: Array<{ id: string; readAt?: string }>; missing: Array<{ venue: string; code?: string }> };
+    expect(w.ok).toBe(true);
+    expect([w.indices, w.fx, w.commodities, w.rates]).toEqual([[], [], [], { from: "US Treasury par yield curve" }]);
+    expect(w.sources.map((x) => [x.id, x.readAt])).toEqual([["indices", undefined], ["rates", undefined], ["kraken", undefined], ["ecb", undefined], ["commodities", undefined]]);
+    expect(w.missing.map((m) => [m.venue, m.code])).toEqual([["indices", "E_VENUE_UNREACHABLE"], ["rates", "E_VENUE_UNREACHABLE"], ["kraken", "E_VENUE_UNREACHABLE"], ["ecb", "E_VENUE_UNREACHABLE"], ["commodities", "E_VENUE_UNREACHABLE"]]);
+    const wh = (await (await fetch(`${server.url}/api/account/world`)).json()) as Record<string, unknown>;
+    expect({ ...wh, asOf: "" }).toEqual({ ...(w as Record<string, unknown>), asOf: "" });
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);

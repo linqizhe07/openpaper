@@ -74,6 +74,7 @@ import { fixedHosts, holdBackMs, KEEP_MS as LISTING_KEEP_MS, publicSources, type
 import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Company, type Financials } from "./live/edgar.ts";
 import { NEWS_HOSTS, NEWS_MAX_BYTES, NEWS_TIMEOUT_MS, NewsWire, type NewsAsk, type NewsReader, type NewsView } from "./live/news.ts";
 import { CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS, NasdaqCalendars, type CalendarAsk, type CalendarReader, type CalendarView } from "./live/calendars.ts";
+import { worldDesk, type WorldReader, type WorldView } from "./live/world.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -226,7 +227,7 @@ export interface ServiceOptions {
   sec?: { env?: NodeJS.ProcessEnv | undefined; userAgent?: string | undefined } | undefined;
   /** THE KEYLESS READERS the terminal's functions read beside the markets — the news (live/news.ts) — as a test or the stand-in hands them
    * in; by default each is made over the live connection's network, behind its own fixed hosts */
-  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined } | undefined;
+  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined; world?: WorldReader | undefined } | undefined;
   /** THE DESK (account/desk.ts), on a real account: the brains its house seats may think with and how often its clock ticks (0: only when
    * asked, as in tests). The brains, by default: every provider the Brains place offers (account/brains.ts brainProviders) — Claude through
    * the Anthropic API and each OpenAI-format preset — each ready when its key is there; a scripted one in tests. `env`: the environment
@@ -1048,6 +1049,20 @@ export class PortfolioService {
   async calendar(ask: CalendarAsk = {}): Promise<CalendarView | Refusal> {
     if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
     return this.calendarReader().events(ask);
+  }
+  /** THE WORLD'S BOARDS (live/world.ts): Cboe's indices, the Treasury's curve, Kraken's and the ECB's currencies, the xyz dex's commodity
+   * oracles — the World page, and the agents' portfolio_world. A read */
+  async world(): Promise<WorldView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return this.worldReader().world();
+  }
+  private worldMade: WorldReader | undefined;
+  private worldReader(): WorldReader {
+    if (!this.worldMade) {
+      const deps = this.liveDeps();
+      this.worldMade = this.opts.readers?.world ?? worldDesk({ http: deps.http, clock: deps.clock });
+    }
+    return this.worldMade;
   }
   private calendarMade: CalendarReader | undefined;
   private calendarReader(): CalendarReader {
