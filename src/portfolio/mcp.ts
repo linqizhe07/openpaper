@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_security · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -1014,6 +1014,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ symbol, expiry }) => read(`/api/account/options?${new URLSearchParams({ symbol, ...(expiry ? { expiry } : {}) })}`),
+);
+
+server.registerTool(
+  "portfolio_security",
+  {
+    description:
+      "ONE US SHARE'S PAGE as Nasdaq's own pages write it, keyless and as written — a terminal's DES · ANR · EE · DVD · SI · HDS in one read: the company's name, description, exchange, sector, industry and whether it is in the Nasdaq-100; Nasdaq's last sale with its stamp and market status (`quote`; the account's own quote of the share is portfolio_explore's); the key figures (`stats`: previous close, the day's and the 52-week range, volume and average volume, market cap, shares outstanding, the annual dividend, yield, ex-dividend and pay dates, the one-year target, payout ratio, P/E, forward PEG, the institutional share); the analysts (`analysts`: the mean rating and how many stand behind it, the low, mean and high target, buy / hold / sell, a year of monthly consensus); the earnings (`earnings`: the last quarters' EPS against consensus with the surprise, the quarters and years ahead with the high, low, number of estimates and revisions, the P/E by year and the growth rates Nasdaq shows); the dividends paid (`dividends`); the short interest by settlement with days to cover (`shortInterest`); the insiders' trades over three and twelve months with the latest (`insiders`); the institutions (`institutions`: the share held, who increased, decreased, held, opened and sold out, the largest holders by value). An ETF has the quote, the figures, the dividends and the short interest only. A part Nasdaq has nothing for is named in `missing`. Every figure is Nasdaq's; the consensus and estimates are the analysts' as Nasdaq counts them; nothing is estimated or rated by the account. A read.",
+    inputSchema: { symbol: z.string().min(1).max(12).describe("a US share's or ETF's ticker (AAPL, BRK.B, SPY)") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ symbol }) => read(`/api/account/security?${new URLSearchParams({ symbol })}`),
 );
 
 server.registerTool(

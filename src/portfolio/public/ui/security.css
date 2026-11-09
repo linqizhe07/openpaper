@@ -1,0 +1,36 @@
+/* A SECURITY'S PAGE (ui/security.js): the head card (the ticker box, who it is, Nasdaq's last sale, the ways to its other pages, the key
+   figures as tiles, the description), then the analysts, the earnings, the dividends, the short interest and the holders, each a card.
+   The page's tokens only */
+.sc { container-type: inline-size; }
+.sc-card { margin-bottom: 20px; }
+.sc-card .sec-head { align-items: baseline; }
+.sc-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; }
+.sc-in { width: 140px; text-transform: uppercase; font-size: 15px; font-weight: 600; padding: 6px 10px; border: 1px solid var(--card-border); border-radius: var(--radius-s); background: var(--surface); color: var(--text); }
+.sc-in:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.sc-form kbd { font-family: inherit; font-weight: 600; color: var(--text); }
+.sc-who { margin: 0 0 8px; color: var(--dim); font-size: 13px; }
+.sc-quote { margin: 0 0 10px; font-size: 15px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.sc-num { font-weight: 600; font-variant-numeric: tabular-nums; }
+.sc-quote .sc-num { font-size: 26px; font-weight: 700; }
+.sc-ways { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.sc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 18px; margin: 0 0 14px; }
+.sc-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sc-stat .label { font-size: 11px; }
+.sc-stat b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sc-desc { margin: 4px 0 0; font-size: 14px; line-height: 1.55; max-width: 80ch; }
+.sc-missing { margin: 10px 0 0; }
+.sc-h3 { margin: 14px 0 8px; }
+.sc-h3:first-child { margin-top: 0; }
+.sc-table td { font-size: 13px; font-variant-numeric: tabular-nums; }
+.sc-name { font-weight: 600; }
+.sc-bar { display: flex; height: 10px; border-radius: var(--radius-pill); overflow: hidden; background: var(--surface-2); margin: 2px 0 6px; }
+.sc-bar .buy { background: var(--up); }
+.sc-bar .hold { background: var(--dim); opacity: 0.45; }
+.sc-bar .sell { background: var(--down); }
+.sc-bar-words { margin: 0 0 12px; }
+.sc-pe { margin: 10px 0 0; }
+.sc-pe .label { margin-right: 4px; }
+.sc-asof { margin: 16px 0 0; }
+.sc-foot { margin-top: 10px; }
+.sc-foot summary { cursor: pointer; }
+.sc-foot p { margin: 6px 0 0; }

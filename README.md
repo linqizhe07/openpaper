@@ -16,9 +16,10 @@ openpaper runs on your own computer. It puts your exchanges, brokers, wallets an
 - **The world.** The four boards a terminal keeps on one screen, each from a public source read without a key and each figure said with whose it is: the equity indices (Cboe's quotes, fifteen minutes behind), the US Treasury's own yield curve beside the curves a week, a month and a year before with its spreads, the currencies (Kraken's live pairs, the ECB's fixing for the rest) and the commodities as the oracle prices of Hyperliquid's xyz perpetuals (`WEI`, `GC`, `FXC`, `GLCO`).
 - **Options.** A listed chain as its venue publishes it — Cboe's delayed quotes for a US share or one of its indices (SPX, XSP, NDX, RUT, VIX), Deribit's live summary for BTC and ETH — and the figures a terminal reads off it: every expiry's at-the-money IV, put/call by open interest and volume, max pain, the at-the-money straddle and the 25-delta skew; one expiry's strikes around the money with the venue's own greeks, the smile and the term structure (`OMON`, `SKEW`).
 - **Monitor.** One screen of tiles you compose, as a terminal's launchpad: a market with its price and its day's line, a board of the World page, a topic's headlines, today's calendar, an option chain's nearest expiry in figures — each drawn from the read its page makes, the layout in the address and remembered in this browser, three presets to start from (`MON`; `AAPL MON` adds a market).
+- **A share's page.** What Nasdaq's own pages say of one US share, as written: the company and its description, Nasdaq's last sale, the key figures (ranges, volumes, market cap, dividend, P/E, PEG), the analysts' consensus and targets with a year of history, the earnings surprises and the estimates ahead, the dividends paid, the short interest, the institutions and the insiders (`AAPL DES`, `ANR`, `EE`, `DVD`, `SI`, `HDS`).
 - **A trading terminal.** Its own candle chart with years of history, an order book and a trades tape fed by the venues' streams, and the account's own lines — entries, stops, resting orders — drawn on the chart.
 - **The superagent.** A desk of AI agents that trades the paper account by itself and plays each step as it happens, on a key from any of thirteen model providers, or a model running on your machine.
-- **Your own agent over MCP.** Forty-five tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
+- **Your own agent over MCP.** Forty-six tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
 - **You sign what matters.** Every order, movement and limit is signed by a key your browser cannot export; Guard holds each request for your yes, Beast lets agents act inside their limits; a cap on every order; a hash-chained log of everything.
 - **Nothing in the middle.** No server, no account to create, no analytics: your computer reads public prices and talks to venues directly, so your own network decides what you see.
 
@@ -117,6 +118,7 @@ Where each price comes from, and how fresh it is:
 | Currencies | Kraken's public tickers for nine fiat pairs, live; the ECB's euro reference rates crossed to the dollar for twenty more, said as the day's fixing | Kraken kept 10 s; the ECB's fixing an hour | — |
 | Commodities | The oracle prices of Hyperliquid's xyz perpetuals — gold, silver, platinum, palladium, copper, WTI, Brent, natural gas — said as a perpetual's oracle, not the commodity's own exchange | Live, kept 20 s | — |
 | Options | Cboe's delayed option quotes for US shares and its indices, every IV and greek Cboe's own; Deribit's public summary for BTC and ETH options (its mark IV; Deribit publishes no greeks, so each delta is Black–Scholes's from that IV, said so) | Cboe kept a minute, 15 minutes behind; Deribit kept 30 s, live | — |
+| A share's page | Nasdaq's own pages for the share: quote, summary, profile, dividends, short interest, analyst ratings and targets, earnings surprises and forecasts, PEG, insider trades, institutional holdings — twelve reads in a paced line, every figure as Nasdaq writes it | Kept 5 minutes | — |
 | Price alerts | The market's source above | Judged every 30 s while the account runs, page open or not | — |
 
 Where no source answers, that market has no price: a paper market order is refused and a limit order waits, and the page says why.
@@ -188,7 +190,7 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
   backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
                        desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
-  mcp.ts               the MCP server an agent's seat runs (45 tools)
+  mcp.ts               the MCP server an agent's seat runs (46 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only
 src/core/ src/agent/   shared: the hash-chained ledger (agent/ledger.ts), refusal codes, hashing, jsonl

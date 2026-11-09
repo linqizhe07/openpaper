@@ -50,6 +50,10 @@ const cmdTab = (tab, sort) => () => go("markets", { tab, ...(sort ? { sort } : {
 /* a US share's ticker, or the sentence that says why a function that reads Nasdaq's calendar for a share has nothing for this market */
 const cmdShare = (code) => (item) => (typeof mkTicker === "function" && mkTicker(item) && !(typeof mkIsPreipo === "function" && mkIsPreipo(item)) ? "" : `${code} reads Nasdaq's calendar for a US share: ${item.name} is not one.`);
 
+/* a US share's ticker, or the sentence that says why a function that reads Nasdaq's page for a share has nothing for this market */
+const cmdListed = (code) => (item) => (typeof mkTicker === "function" && mkTicker(item) && !(typeof mkIsPreipo === "function" && mkIsPreipo(item)) ? "" : `${code} reads Nasdaq's page for a US share: ${item.name} is not one.`);
+/* a share's own page where the market is a US share, else its drawer */
+const cmdSecurity = (part) => (c) => (typeof scGo === "function" && typeof mkTicker === "function" && mkTicker(c.item) && !(typeof mkIsPreipo === "function" && mkIsPreipo(c.item)) ? scGo(mkTicker(c.item), part) : cmdOpen(c.item));
 /* a US share's ticker or BTC / ETH, or the sentence that says why a function that reads a listed option chain has nothing for this market */
 const cmdOptions = (code) => (item) => (typeof opSymbolOf === "function" && opSymbolOf(item) ? "" : `${code} reads a listed option chain — Cboe's for a US share, Deribit's for BTC and ETH: ${item.name} has none here.`);
 
@@ -59,7 +63,11 @@ const CMD_GROUPS = [
     group: "A market",
     note: "The market first, then the function: AAPL DES. A kind word narrows a name two markets share: BTC PERP GP.",
     fns: [
-      { code: "DES", name: "Description", takes: "market", what: "The market's page: its price, history, every venue's price, what you hold, its alerts", eg: "AAPL DES", run: (c) => cmdOpen(c.item) },
+      { code: "DES", name: "Description", takes: "market", what: "A US share's own page — the company, the figures, the analysts, the earnings, the dividends, the short interest, the holders; any other market's drawer", eg: "AAPL DES", run: cmdSecurity("des") },
+      { code: "ANR", name: "Analysts", takes: "market", what: "The analysts' consensus on a US share: the rating, buy / hold / sell, the targets against the price, a year of history", eg: "AAPL ANR", only: cmdListed("ANR"), run: cmdSecurity("anr") },
+      { code: "EE", name: "Earnings estimates", takes: "market", what: "A US share's last quarters against consensus, and the quarters and years ahead with their estimates and revisions", eg: "NVDA EE", only: cmdListed("EE"), run: cmdSecurity("ee") },
+      { code: "SI", name: "Short interest", takes: "market", what: "A US share's short interest by settlement, with days to cover", eg: "TSLA SI", only: cmdListed("SI"), run: cmdSecurity("si") },
+      { code: "HDS", name: "Holders", takes: "market", what: "Who holds a US share: the institutions, who increased and decreased, the largest holders; the insiders' trades", eg: "AAPL HDS", only: cmdListed("HDS"), run: cmdSecurity("hds") },
       { code: "GP", name: "Price chart", takes: "market", what: "Its candles on the Trade page, at the venue that trades it", eg: "BTC GP", run: (c) => cmdChart(c.item) },
       { code: "QM", name: "Quote montage", takes: "market", what: "Its price at every venue that lists it, the best first", eg: "ETH QM", run: (c) => cmdOpen(c.item, "across") },
       { code: "FA", name: "Financials", takes: "market", what: "A US company's revenue, income and earnings a share, as it filed them with the SEC", eg: "NVDA FA", only: cmdFiled("FA"), run: (c) => cmdOpen(c.item, "financials") },
@@ -89,7 +97,7 @@ const CMD_GROUPS = [
       { code: "N", name: "News search", takes: "words", what: "The headlines that carry these words", eg: "N fed rates", run: (c) => go("news", c.tail ? { q: c.tail } : {}) },
       { code: "ECO", name: "Economic calendar", takes: "", what: "Today's releases with their time, consensus and what came out, from Nasdaq's calendar", eg: "ECO", run: () => go("calendar", { kind: "economic" }) },
       { code: "ERN", name: "Earnings calendar", takes: "market?", what: "Who reports today, before the open or after the close, and the EPS expected; a share's own week", eg: "AAPL ERN", only: cmdShare("ERN"), run: (c) => go("calendar", { kind: "earnings", ...(c.item ? { symbol: mkTicker(c.item) } : {}) }) },
-      { code: "DVD", name: "Dividends", takes: "market?", what: "The shares going ex-dividend today, with the amount and the payment day; a share's own week", eg: "DVD", only: cmdShare("DVD"), run: (c) => go("calendar", { kind: "dividends", ...(c.item ? { symbol: mkTicker(c.item) } : {}) }) },
+      { code: "DVD", name: "Dividends", takes: "market?", what: "A share's dividends paid, on its own page; alone, the shares going ex-dividend today with the amount and the payment day", eg: "DVD", only: cmdShare("DVD"), run: (c) => (c.item ? cmdSecurity("dvd")(c) : go("calendar", { kind: "dividends" })) },
       { code: "SPLT", name: "Splits", takes: "", what: "The splits Nasdaq lists around today", eg: "SPLT", run: () => go("calendar", { kind: "splits" }) },
       { code: "IPO", name: "IPOs", takes: "", what: "The month's IPOs by stage: priced, expected, filed, withdrawn", eg: "IPO", run: () => go("calendar", { kind: "ipos" }) },
     ],

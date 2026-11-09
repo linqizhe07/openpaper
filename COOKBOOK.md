@@ -176,7 +176,8 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 
 | 代码 | 要什么 | 做什么 |
 |---|---|---|
-| `DES` | 市场 | 那一个抽屉：价、历史、各场所的价、你持有的、提醒 |
+| `DES` | 市场 | 美股：它自己的页（公司、关键数、分析师、财报、股息、空头、持有人，第 2j 条）；别的市场：那一个抽屉 |
+| `ANR` · `EE` · `SI` · `HDS` | 美股 | 它自己的页，滚到分析师 · 财报预期 · 空头 · 持有人（第 2j 条） |
 | `GP` | 市场 | Trade 页上它的 K 线（能下单的场所）；没场所交易的，抽屉里的价格历史 |
 | `QM` | 市场 | 抽屉里的 Across venues：每个场所的价，最好的在前 |
 | `FA` · `CF` | 美股 | 抽屉里的 Financials / Company（SEC EDGAR）；对币、合约说"不是美股" |
@@ -185,7 +186,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `ALRT` | 市场，可省 | 这个市场的价格提醒表单；单独打是 Watching 页 |
 | `CN` | 市场 | 抽屉里的 News：这只股票自己的源加提到它的标题（第 2e 条） |
 | `TOP` · `N 词` | — / 词 | News 页：当天的标题 · 只看带这几个词的 |
-| `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN、DVD 可带股票） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
+| `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN 可带股票；DVD 带股票是它自己页上的历次股息） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
 | `WEI` · `GC` · `FXC` · `GLCO` | — | World 页：股指 · 收益率曲线 · 外汇 · 商品，各直达一张卡（第 2g 条） |
 | `OMON` · `SKEW` | 市场，可省（美股、BTC、ETH） | Options 页：期权链 · 波动率偏斜；单独打是上一条链（第 2h 条） |
 | `MON` | 市场，可省 | Monitor 页；带市场时那个市场加进版面（第 2i 条） |
@@ -312,6 +313,30 @@ rail 上的 **Monitor**（命令行 `MON`）。像终端的 launchpad：一组�
 - **版面在哪**：地址里（`#/monitor?tiles=w=indices,m=coin:BTC,…`，可以直接发给人），同时记在这个浏览器里；地址没说就用记住的，都没有就是 Desk。不在账户里。
 - **重读**：显示时每 15 秒，按每块自己那一页的保留时间；读失败的块留着上一次的、写原话。
 - 没有新接口、没有新工具：agent 要这些数，照各自的工具读（`portfolio_world`、`portfolio_news`、`portfolio_calendar`、`portfolio_options`、`portfolio_explore`、`portfolio_candles`）。
+
+## 2j · Security：一只美股自己的页
+
+从一只美股进去的页（命令行 `AAPL DES`；`ANR` · `EE` · `SI` · `HDS` 滚到那一段；`AAPL DVD` 到它的股息）。Nasdaq 自己的十二个页面对这只股票说的话，一次读成一页、照它写的（`live/security.ts`，2026-11-09 逐个验过，一页两秒）：
+
+| 段 | 里面是什么 | 备注 |
+|---|---|---|
+| 头 | 名字 · 类型 · Nasdaq-100；交易所 · 板块 · 行业；Nasdaq 的最新成交和涨跌、盘态、盘后的收盘；去 Market / Options / News / Earnings calendar / Filings；十二块关键数（前收、日内区间、52 周区间、成交量和均量、市值、流通股、股息和收益率、除息和派息日、市盈率、前瞻 PEG、一年目标价、机构持股）；简介 | 账户自己的报价在 Markets 页和抽屉里；这里的是 Nasdaq 的，写明 |
+| Analysts | 评级和人数；买 / 持 / 卖一条分段条；低 / 均 / 高目标价各对现价差多少；一年逐月的共识 | 共识是 Nasdaq 跟的那些分析师的，页上写明 |
+| Earnings | 最近几季 EPS 对一致预期和惊喜；未来几季、几年的预期、高低、估计数、四周内上下修；市盈率和增长率 | |
+| Dividends | 年化 · 收益率 · 派息率 · 下次除息；历次股息（除息、金额、类型、宣布、登记、派息） | |
+| Short interest | 最新空头、占流通股的比例（页面算的，写明）、回补天数、较上期变化；逐结算日的表 | 半月一次，FINRA 会员报给 Nasdaq 的 |
+| Holders | 机构：持股比例、持有人数、增持 / 减持 / 新进 / 清仓、最大持有人；内部人：三个月和十二个月的买卖笔数、净股数、最新交易 | 13F 的季度数 |
+
+- **ETF**（SPY、QQQ）只有头、股息、空头：Nasdaq 没有它的简介、分析师、财报、持有人。
+- **缺的部分**：Nasdaq 没有的（比如 BRK.B 没有目标价）在头卡下面一行写明，其余照显示。
+- **留多久**：整页 5 分钟；上一次读的代码记在这个浏览器里。
+- **什么都不估**：每个数照 Nasdaq 写的；页面自己算的只有空头占流通股的比例和目标价对现价的差，都写明。
+- **agent**：`portfolio_security {symbol}`，答复和页面同一份。
+
+```
+GET /api/account/security?symbol=AAPL
+GET /api/account/security?symbol=SPY         ETF：四部分
+```
 
 ## 3 · 让一个 agent 进来，给它交易额度
 
