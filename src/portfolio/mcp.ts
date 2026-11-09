@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_security · portfolio_screener · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_security · portfolio_screener · portfolio_analytics · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -1036,6 +1036,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async (ask) => read(`/api/account/screener?${new URLSearchParams(Object.fromEntries(Object.entries(ask).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])))}`),
+);
+
+server.registerTool(
+  "portfolio_analytics",
+  {
+    description:
+      "ANALYTICS over a few markets' price histories, as a terminal's COMP · CORR · HVG · BETA · SEAG: `markets` as venue|symbol (the venue by its id, as portfolio_explore names a market's venues — ex|BTC/USDT, broker|AAPL), eight at most, over the bars portfolio_candles gives (`interval` 1d unless said, 1h · 4h · 1d · 1w; `range` 1Y unless said, 5Y for 1w). The answer: `comp` — every market rebased to 100 at the first bar all have, and each one's total and annualised return, annualised volatility, deepest drawdown, best and worst bar and Sharpe of its own mean; `corr` — the correlation of their bar returns, each pair over the bars both have; `hvg` — the rolling 20- and 60-bar historical volatility, annualised, with where it stands now against its range; `beta` — each market's beta to the FIRST market named, its correlation, R² and annualised alpha; `seag` — the average return by calendar month over the years seen (and how many were up) and by weekday. Returns are log returns bar to bar; bars are matched by their start time; annualisation uses the bars a year each market actually showed (`barsPerYear`). Everything is arithmetic over the venues' own bars, nothing read anew, no forecast; a market that gave no bars is named in `missing`. A read.",
+    inputSchema: { markets: z.string().min(3).max(1400).describe("venue|symbol, apart by commas; the first is what the betas are against"), interval: z.enum(["1h", "4h", "1d", "1w"]).optional(), range: z.enum(["1D", "5D", "1M", "3M", "6M", "YTD", "1Y", "5Y", "MAX"]).optional() },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ markets, interval, range }) => read(`/api/account/analytics?${new URLSearchParams({ markets, ...(interval ? { interval } : {}), ...(range ? { range } : {}) })}`),
 );
 
 server.registerTool(

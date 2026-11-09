@@ -191,6 +191,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `OMON` · `SKEW` | 市场，可省（美股、BTC、ETH） | Options 页：期权链 · 波动率偏斜；单独打是上一条链（第 2h 条） |
 | `MON` | 市场，可省 | Monitor 页；带市场时那个市场加进版面（第 2i 条） |
 | `EQS` · `IMAP` | — | Screener 页：筛选表 · 板块地图（第 2k 条） |
+| `COMP` · `CORR` · `HVG` · `BETA` · `SEAG` | 市场，可省 | Analytics 页：比较 · 相关 · 波动率 · beta · 季节性；带市场就把它加进集合（第 2l 条） |
 | `MOST` · `MOV` · `WATCH` | — | Markets：按成交量 · 按 24h 涨跌 · 关注列表 |
 | `CRYP` · `STK` · `PERP` · `PRED` · `PIPO` · `RWA` | — | Markets 的六个 tab |
 | `TKT` · `SA` · `BT` · `SIM` · `DEB` | — | 下单票 · Superagent · Backtest · Practice · Debrief |
@@ -200,7 +201,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 
 ## 2e · News：出版方自己放出的标题，不读正文
 
-Markets 下面现在有六页：**Overview**（原来的 Markets）、**World**（第 2g 条）、**News**、**Calendar**（第 2f 条）、**Options**（第 2h 条）和 **Screener**（第 2k 条）；一只美股自己的页（第 2j 条）也在 Markets 下，从股票进去。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
+Markets 下面现在有七页：**Overview**（原来的 Markets）、**World**（第 2g 条）、**News**、**Calendar**（第 2f 条）、**Options**（第 2h 条）、**Screener**（第 2k 条）和 **Analytics**（第 2l 条）；一只美股自己的页（第 2j 条）也在 Markets 下，从股票进去。命令行 `TOP` 直达，`N fed` 只看带这几个词的，`NVDA CN` 在抽屉里看一只股票自己的。
 
 News 读的是出版方**自己**放出来的 RSS 源，不带钥匙，和读公开行情一个路子（`live/news.ts` 的 `NEWS_FEEDS`，2026-11-09 逐个验过）：
 
@@ -354,6 +355,27 @@ Markets 下的第六页 **Screener**（命令行 `EQS` 看表、`IMAP` 看地图
 GET /api/account/screener?sector=Technology&capMin=10000000000&sort=changePct&limit=20
 GET /api/account/screener?industry=Semiconductors&changeMin=3
 GET /api/account/screener?q=bank&country=United%20States
+```
+
+## 2l · Analytics：几个市场放在一起算
+
+Markets 下的第七页 **Analytics**（命令行 `NVDA COMP` 把英伟达加进集合并打开比较；`CORR` · `HVG` · `BETA` · `SEAG` 切视图，带市场就先加进去）。集合写在地址里（`#/analytics?markets=ex|BTC/USDT,broker|AAPL&range=1Y&view=corr`），最多八个；从页上的搜索框找上市的市场点一下加，或从三组预设起步（US indices · Megacaps · Crypto）。全部用账户自己 K 线读已经给的 bar 算，不新读任何东西，不是预测：
+
+| 视图 | 看什么 | 怎么算 |
+|---|---|---|
+| Compare | 几条线归到 100 放一起；每个市场的总收益、年化、年化波动率、最大回撤、最好 / 最坏一根、夏普 | 第一根大家都有的 bar 起归 100；收益是相邻 bar 的对数收益；年化按这个市场在区间里实际的 bar 数（股票约 252、币 365） |
+| Correlation | 两两的收益相关矩阵，深浅上色 | 共有的 bar 上算，不足十根不算；悬停看共有几根 |
+| Volatility | 滚动 20 根的年化波动率线；20 / 60 根的现在和区间 | 窗口内收益的标准差 × √(一年的 bar 数) |
+| Beta | 每个市场对**第一个**的 beta、相关、R²、年化 alpha | 收益对收益的回归；把指数放第一个 |
+| Seasonality | 每个日历月的平均收益（几年里几年上涨）；每个星期几的平均一根 | 每月的 bar 复利成月收益、各年平均；看 5Y 才有几年可平均 |
+
+- **区间**：1M（1h bar）· 3M（4h）· 6M（4h）· YTD（1d）· 1Y（1d）· 5Y（1w）。
+- **对不齐的 bar**：bar 按起始时间对齐，股票的休市日、币的周末就不是共同 bar；线上留断口，表里按各自的 bar 算。
+- **agent**：`portfolio_analytics {markets, interval, range}`，答复和页面同一份：`comp`、`corr`、`hvg`、`beta`、`seag`、`missing`、`notes`。
+
+```
+GET /api/account/analytics?markets=broker|SPY,broker|AAPL,ex|BTC/USDT&range=1Y
+GET /api/account/analytics?markets=ex|BTC/USDT,ex|ETH/USDT&interval=1w&range=5Y
 ```
 
 ## 3 · 让一个 agent 进来，给它交易额度

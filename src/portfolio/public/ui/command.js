@@ -105,6 +105,11 @@ const CMD_GROUPS = [
   {
     group: "Markets",
     fns: [
+      { code: "COMP", name: "Compare", takes: "market?", what: "A few markets rebased together, with each one's return, volatility, drawdown and Sharpe; with a market, it joins the set", eg: "NVDA COMP", run: (c) => (typeof anShow === "function" ? anShow(c.item, "comp") : go("analytics")) },
+      { code: "CORR", name: "Correlation", takes: "market?", what: "How the markets in the set move together: the correlation of their bar returns", eg: "CORR", run: (c) => (typeof anShow === "function" ? anShow(c.item, "corr") : go("analytics", { view: "corr" })) },
+      { code: "HVG", name: "Historical volatility", takes: "market?", what: "The rolling 20- and 60-bar volatility of each market in the set, annualised", eg: "BTC HVG", run: (c) => (typeof anShow === "function" ? anShow(c.item, "hvg") : go("analytics", { view: "hvg" })) },
+      { code: "BETA", name: "Beta", takes: "market?", what: "Each market's beta, correlation and alpha to the first in the set", eg: "AAPL BETA", run: (c) => (typeof anShow === "function" ? anShow(c.item, "beta") : go("analytics", { view: "beta" })) },
+      { code: "SEAG", name: "Seasonality", takes: "market?", what: "The average return by calendar month and by weekday, over the years the bars cover", eg: "SPY SEAG", run: (c) => (typeof anShow === "function" ? anShow(c.item, "seag") : go("analytics", { view: "seag" })) },
       { code: "EQS", name: "Equity screener", takes: "", what: "Every US-listed share as Nasdaq lists it, screened by sector, industry, size, price, the day's change, volume, IPO year or words", eg: "EQS", run: () => (typeof eqShow === "function" ? eqShow("table") : go("screener")) },
       { code: "IMAP", name: "Sector map", takes: "", what: "The sectors as tiles sized by market cap and coloured by the day; a sector opens into its industries", eg: "IMAP", run: () => (typeof eqShow === "function" ? eqShow("map") : go("screener", { view: "map" })) },
       { code: "MON", name: "Monitor", takes: "market?", what: "One screen of tiles you compose — markets, the world's boards, headlines, today's calendar, an option chain; with a market, that market joins it", eg: "AAPL MON", run: (c) => (c.item && typeof monAdd === "function" ? monAdd("m", c.item.key) : go("monitor")) },

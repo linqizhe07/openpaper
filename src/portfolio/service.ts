@@ -78,6 +78,7 @@ import { worldDesk, type WorldReader, type WorldView } from "./live/world.ts";
 import { optionsDesk, type OptionsAsk, type OptionsReader, type OptionsView } from "./live/options.ts";
 import { nasdaqSecurity, type SecurityReader, type SecurityView } from "./live/security.ts";
 import { nasdaqScreener, type ScreenAsk, type ScreenerReader, type ScreenView } from "./live/screener.ts";
+import { analyticsOf, checkMarkets, type AnalyticsView, type SeriesIn } from "./live/analytics.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -1108,6 +1109,26 @@ export class PortfolioService {
       this.screenerMade = this.opts.readers?.screener ?? nasdaqScreener({ http: deps.http, clock: deps.clock });
     }
     return this.screenerMade;
+  }
+  /** ANALYTICS (live/analytics.ts): a few markets' bars from the candles read, compared, correlated, their volatility, their betas to the
+   * first, their seasonality — the Analytics page, and the agents' portfolio_analytics. A read; arithmetic over the venues' own bars */
+  async analytics(ask: { markets?: unknown; interval?: string | undefined; range?: string | undefined } = {}): Promise<AnalyticsView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    const markets = checkMarkets(ask.markets);
+    if (isRefusal(markets)) return markets;
+    const interval = String(ask.interval ?? "1d").trim() || "1d";
+    const range = String(ask.range ?? (interval === "1w" ? "5Y" : "1Y")).trim().toUpperCase();
+    if (interval !== "1d" && interval !== "1w" && interval !== "1h" && interval !== "4h") return no("E_ACCOUNT_BAD_ACTION", { message: "analytics run over 1h, 4h, 1d or 1w bars" });
+    const series: SeriesIn[] = [];
+    const missing: AnalyticsView["missing"] = [];
+    await Promise.all(markets.map(async (m) => {
+      const v = await this.candles(m.venue, m.symbol, interval, { range });
+      if (isRefusal(v)) missing.push({ key: m.key, why: v.message, code: v.code });
+      else series.push({ key: m.key, venue: v.venue, venueName: v.venueName, symbol: v.symbol, interval: v.interval, candles: v.candles });
+    }));
+    // in the order asked: the first is what the betas are against
+    series.sort((a, b) => markets.findIndex((m) => m.key === a.key) - markets.findIndex((m) => m.key === b.key));
+    return analyticsOf(series, missing, interval, range, this.liveDeps().clock());
   }
   private calendarMade: CalendarReader | undefined;
   private calendarReader(): CalendarReader {

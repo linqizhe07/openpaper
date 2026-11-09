@@ -175,6 +175,14 @@
  *                                                        market cap and the day weighed by it (the map); the countries. The list is kept
  *                                                        five minutes. Nothing is estimated. The Screener page, and the agents'
  *                                                        portfolio_screener
+ *   GET  /api/account/analytics?markets=&interval=&range=  ANALYTICS (live/analytics.ts): a few markets (venue|symbol, apart by commas,
+ *                                                        eight at most) over the bars the candles read gives (1d bars over 1Y unless
+ *                                                        said) — rebased to 100 together with each one's return, volatility, drawdown
+ *                                                        and Sharpe (COMP); the correlation of their returns (CORR); rolling 20- and
+ *                                                        60-bar historical volatility (HVG); each one's beta, correlation, R² and alpha
+ *                                                        to the first (BETA); the average return by calendar month and by weekday
+ *                                                        (SEAG). Arithmetic over the venues' own bars, nothing read anew, no forecast.
+ *                                                        The Analytics page, and the agents' portfolio_analytics
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -1067,6 +1075,15 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { symbol: 12 });
     if (!q) return;
     answerOf(res, await svc.security(q.symbol ?? ""));
+  }));
+
+  // ANALYTICS: a few markets' bars compared, correlated, their volatility, betas and seasonality (service.ts analytics, live/analytics.ts).
+  // A read; arithmetic over the bars the candles read already gives
+  app.get("/api/account/analytics", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { markets: 1400, interval: 4, range: 4 });
+    if (!q) return;
+    answerOf(res, await svc.analytics({ markets: q.markets ?? "", ...(q.interval ? { interval: q.interval } : {}), ...(q.range ? { range: q.range } : {}) }));
   }));
 
   // SCREENER: Nasdaq's list of every US-listed share, screened by the rule in the query and folded by sector and industry (service.ts

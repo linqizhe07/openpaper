@@ -372,6 +372,16 @@ describe("declined asks and price history through the MCP seat", () => {
     expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_screener");
     expect((await tool("portfolio_screener", { sector: "<b>x</b>" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
     expect((await tool("portfolio_screener", { sector: "Technology", capMin: 1e10, limit: 5 })).body).toMatchObject({ ok: false, code: "E_VENUE_UNREACHABLE" });
+    // analytics: the tool is there; markets named wrongly are refused before any bars are asked; a market of this account answers from its
+    // own bars (one bar here, so it is named in `missing` and the figures are empty), the same as over HTTP
+    expect((await client.listTools()).tools.map((x) => x.name)).toContain("portfolio_analytics");
+    expect((await tool("portfolio_analytics", { markets: "AAPL" })).body).toMatchObject({ ok: false, code: "E_ACCOUNT_BAD_ACTION" });
+    const an = (await tool("portfolio_analytics", { markets: `ex|${PERP.symbol},ex|NOPE`, interval: "1h" })).body as { ok: boolean; markets: unknown[]; missing: Array<{ key: string }>; notes: string[] };
+    expect(an.ok).toBe(true);
+    expect(an.missing.map((m) => m.key)).toContain("ex|NOPE");
+    expect(an.notes).toHaveLength(3);
+    const ah = (await (await fetch(`${server.url}/api/account/analytics?markets=${encodeURIComponent(`ex|${PERP.symbol},ex|NOPE`)}&interval=1h`)).json()) as Record<string, unknown>;
+    expect({ ...ah, asOf: "" }).toEqual({ ...(an as unknown as Record<string, unknown>), asOf: "" });
     const c = await tool("portfolio_candles", { venue: "ex", symbol: PERP.symbol, interval: "1h" });
     const http = (await (await fetch(`${server.url}/api/account/candles?venue=ex&symbol=${encodeURIComponent(PERP.symbol)}&interval=1h`)).json()) as Record<string, unknown>;
     expect(c.body).toEqual(http);
