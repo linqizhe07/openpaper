@@ -166,6 +166,15 @@
  *                                                        by settlement; the insiders' trades and the institutions' holdings. A part Nasdaq
  *                                                        has nothing for is named in `missing`. Nothing is estimated. The Security page,
  *                                                        and the agents' portfolio_security
+ *   GET  /api/account/screener?sector=&industry=&country=&capMin=&capMax=&priceMin=&priceMax=&changeMin=&changeMax=&volumeMin=&ipoFrom=&ipoTo=&q=&sort=&dir=&limit=
+ *                                                        THE SCREENER (live/screener.ts): every US-listed common share as Nasdaq's screener
+ *                                                        lists it (symbol, name, the day's last sale and change, market cap, volume,
+ *                                                        country, IPO year, sector, industry), screened by the rule in the query, sorted
+ *                                                        (market cap, the largest first, unless said), `limit` rows (100 unless said, 500
+ *                                                        at most) with how many matched of how many; every sector with its industries by
+ *                                                        market cap and the day weighed by it (the map); the countries. The list is kept
+ *                                                        five minutes. Nothing is estimated. The Screener page, and the agents'
+ *                                                        portfolio_screener
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -1058,6 +1067,15 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { symbol: 12 });
     if (!q) return;
     answerOf(res, await svc.security(q.symbol ?? ""));
+  }));
+
+  // SCREENER: Nasdaq's list of every US-listed share, screened by the rule in the query and folded by sector and industry (service.ts
+  // screener, live/screener.ts). A read; Nasdaq's figures as written, the screen arithmetic over them
+  app.get("/api/account/screener", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { sector: 80, industry: 80, country: 80, capMin: 24, capMax: 24, priceMin: 16, priceMax: 16, changeMin: 16, changeMax: 16, volumeMin: 16, ipoFrom: 4, ipoTo: 4, q: 60, sort: 16, dir: 4, limit: 3 });
+    if (!q) return;
+    answerOf(res, await svc.screener(Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== ""))));
   }));
 
   // CALENDAR: what Nasdaq's pages schedule — economic releases, earnings, dividends, splits, IPOs — a day a read, kept a quarter hour

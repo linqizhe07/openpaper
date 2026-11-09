@@ -24,6 +24,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <link rel="stylesheet" href="/ui/options.css" />
 <link rel="stylesheet" href="/ui/monitor.css" />
 <link rel="stylesheet" href="/ui/security.css" />
+<link rel="stylesheet" href="/ui/screener.css" />
 <link rel="stylesheet" href="/ui/trade.css" />
 <link rel="stylesheet" href="/ui/terminal.css" />
 <link rel="stylesheet" href="/ui/chart.css" />
@@ -140,7 +141,7 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     </nav>
     <!-- the Markets group's own row (core MARKETS_TABS, shell.js marks the one showing): the Overview, and the data pages beside it -->
     <nav class="acct-tabs" data-only="markets" aria-label="Markets">
-      <div class="seg"><a href="#/markets" data-mkt="markets">Overview</a><a href="#/world" data-mkt="world">World</a><a href="#/news" data-mkt="news">News</a><a href="#/calendar" data-mkt="calendar">Calendar</a><a href="#/options" data-mkt="options">Options</a></div>
+      <div class="seg"><a href="#/markets" data-mkt="markets">Overview</a><a href="#/world" data-mkt="world">World</a><a href="#/news" data-mkt="news">News</a><a href="#/calendar" data-mkt="calendar">Calendar</a><a href="#/options" data-mkt="options">Options</a><a href="#/screener" data-mkt="screener">Screener</a></div>
     </nav>
     <div class="banner" id="banner" hidden></div>
     <div class="notice" id="restored" hidden></div>
@@ -158,6 +159,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
     <section class="pane" data-pane="calendar" aria-labelledby="h-calendar" hidden><h1 class="sr" id="h-calendar">Calendar</h1><div id="pane-calendar"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div></section>
     <!-- a security's page: what Nasdaq's pages say of one US share — the company, the figures, the analysts, the earnings, the dividends, the short interest, the holders (ui/security.js) -->
     <section class="pane" data-pane="security" aria-labelledby="h-security" hidden><h1 class="sr" id="h-security">Security</h1><div id="pane-security"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:70%"></span></div></div></section>
+    <!-- the screener: every US-listed share as Nasdaq lists it, screened by a rule, and the sector map (ui/screener.js) -->
+    <section class="pane" data-pane="screener" aria-labelledby="h-screener" hidden><h1 class="sr" id="h-screener">Screener</h1><div id="pane-screener"><div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel" style="width:70%"></span></div></div></section>
     <!-- the options: a listed chain as its venue publishes it and the figures read off it — expiries, the smile, the strikes (ui/options.js) -->
     <section class="pane" data-pane="options" aria-labelledby="h-options" hidden><h1 class="sr" id="h-options">Options</h1><div id="pane-options"><div class="skel-rows" aria-hidden="true"><span class="skel big"></span><span class="skel"></span><span class="skel" style="width:70%"></span><span class="skel"></span></div></div></section>
     <!-- the monitor: one screen of tiles the owner composes — markets, boards, headlines, the calendar, an option chain (ui/monitor.js) -->
@@ -211,6 +214,8 @@ try { if (/^#\/(trade|superagent)(\?|$)/.test(location.hash)) document.documentE
 <script defer src="/ui/monitor.js"></script>
 <!-- a security's page (ui/security.js): one US share as Nasdaq's pages write it — description, figures, analysts, earnings, dividends, short interest, holders -->
 <script defer src="/ui/security.js"></script>
+<!-- the screener (ui/screener.js): Nasdaq's list screened by a rule, the rows, the sector map -->
+<script defer src="/ui/screener.js"></script>
 <script defer src="/ui/trade.js"></script>
 <script defer src="/ui/indicators.js"></script>
 <script defer src="/ui/chart.js"></script>

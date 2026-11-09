@@ -105,6 +105,8 @@ const CMD_GROUPS = [
   {
     group: "Markets",
     fns: [
+      { code: "EQS", name: "Equity screener", takes: "", what: "Every US-listed share as Nasdaq lists it, screened by sector, industry, size, price, the day's change, volume, IPO year or words", eg: "EQS", run: () => (typeof eqShow === "function" ? eqShow("table") : go("screener")) },
+      { code: "IMAP", name: "Sector map", takes: "", what: "The sectors as tiles sized by market cap and coloured by the day; a sector opens into its industries", eg: "IMAP", run: () => (typeof eqShow === "function" ? eqShow("map") : go("screener", { view: "map" })) },
       { code: "MON", name: "Monitor", takes: "market?", what: "One screen of tiles you compose — markets, the world's boards, headlines, today's calendar, an option chain; with a market, that market joins it", eg: "AAPL MON", run: (c) => (c.item && typeof monAdd === "function" ? monAdd("m", c.item.key) : go("monitor")) },
       { code: "MOST", name: "Most traded", takes: "", what: "Every market, the busiest first", eg: "MOST", run: cmdTab("all") },
       { code: "MOV", name: "Biggest moves", takes: "", what: "Every market by its last 24 hours", eg: "MOV", run: cmdTab("all", "movers") },

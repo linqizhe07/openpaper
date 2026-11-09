@@ -17,9 +17,10 @@ openpaper runs on your own computer. It puts your exchanges, brokers, wallets an
 - **Options.** A listed chain as its venue publishes it — Cboe's delayed quotes for a US share or one of its indices (SPX, XSP, NDX, RUT, VIX), Deribit's live summary for BTC and ETH — and the figures a terminal reads off it: every expiry's at-the-money IV, put/call by open interest and volume, max pain, the at-the-money straddle and the 25-delta skew; one expiry's strikes around the money with the venue's own greeks, the smile and the term structure (`OMON`, `SKEW`).
 - **Monitor.** One screen of tiles you compose, as a terminal's launchpad: a market with its price and its day's line, a board of the World page, a topic's headlines, today's calendar, an option chain's nearest expiry in figures — each drawn from the read its page makes, the layout in the address and remembered in this browser, three presets to start from (`MON`; `AAPL MON` adds a market).
 - **A share's page.** What Nasdaq's own pages say of one US share, as written: the company and its description, Nasdaq's last sale, the key figures (ranges, volumes, market cap, dividend, P/E, PEG), the analysts' consensus and targets with a year of history, the earnings surprises and the estimates ahead, the dividends paid, the short interest, the institutions and the insiders (`AAPL DES`, `ANR`, `EE`, `DVD`, `SI`, `HDS`).
+- **The screener.** Every US-listed share as Nasdaq lists it, screened by sector, industry, country, market cap, price, the day's change, volume, IPO year or words, sorted as you ask; and the sector map — every sector a tile sized by market cap and coloured by the day, opening into its industries (`EQS`, `IMAP`).
 - **A trading terminal.** Its own candle chart with years of history, an order book and a trades tape fed by the venues' streams, and the account's own lines — entries, stops, resting orders — drawn on the chart.
 - **The superagent.** A desk of AI agents that trades the paper account by itself and plays each step as it happens, on a key from any of thirteen model providers, or a model running on your machine.
-- **Your own agent over MCP.** Forty-six tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
+- **Your own agent over MCP.** Forty-seven tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
 - **You sign what matters.** Every order, movement and limit is signed by a key your browser cannot export; Guard holds each request for your yes, Beast lets agents act inside their limits; a cap on every order; a hash-chained log of everything.
 - **Nothing in the middle.** No server, no account to create, no analytics: your computer reads public prices and talks to venues directly, so your own network decides what you see.
 
@@ -119,6 +120,7 @@ Where each price comes from, and how fresh it is:
 | Commodities | The oracle prices of Hyperliquid's xyz perpetuals — gold, silver, platinum, palladium, copper, WTI, Brent, natural gas — said as a perpetual's oracle, not the commodity's own exchange | Live, kept 20 s | — |
 | Options | Cboe's delayed option quotes for US shares and its indices, every IV and greek Cboe's own; Deribit's public summary for BTC and ETH options (its mark IV; Deribit publishes no greeks, so each delta is Black–Scholes's from that IV, said so) | Cboe kept a minute, 15 minutes behind; Deribit kept 30 s, live | — |
 | A share's page | Nasdaq's own pages for the share: quote, summary, profile, dividends, short interest, analyst ratings and targets, earnings surprises and forecasts, PEG, insider trades, institutional holdings — twelve reads in a paced line, every figure as Nasdaq writes it | Kept 5 minutes | — |
+| The screener | Nasdaq's screener list: every US-listed common share with the day's last sale and change, market cap, volume, country, IPO year, sector and industry, read in one file | Kept 5 minutes; the day's figures as Nasdaq wrote them when read | — |
 | Price alerts | The market's source above | Judged every 30 s while the account runs, page open or not | — |
 
 Where no source answers, that market has no price: a paper market order is refused and a limit order waits, and the page says why.
@@ -190,7 +192,7 @@ src/portfolio/         the account: server.ts (the API; every /api route in its 
   public/              the page: account.html and ui/*.js, plain HTML, CSS and JavaScript with no build step
   backtest/            recorded bars as a public source, the engine that steps the paper account over them, the strategies and the
                        desk over bars, the figures, the lab's holdout and trials ledger (account-backtest.ts is its command)
-  mcp.ts               the MCP server an agent's seat runs (46 tools)
+  mcp.ts               the MCP server an agent's seat runs (47 tools)
   account-service.ts   the background service · account-check.ts  what your network reaches · home.ts  the home directory
   adapters/, venues.ts simulated venues, for --classic and the tests only
 src/core/ src/agent/   shared: the hash-chained ledger (agent/ledger.ts), refusal codes, hashing, jsonl

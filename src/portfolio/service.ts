@@ -77,6 +77,7 @@ import { CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS, NasdaqCalendars, type CalendarAsk,
 import { worldDesk, type WorldReader, type WorldView } from "./live/world.ts";
 import { optionsDesk, type OptionsAsk, type OptionsReader, type OptionsView } from "./live/options.ts";
 import { nasdaqSecurity, type SecurityReader, type SecurityView } from "./live/security.ts";
+import { nasdaqScreener, type ScreenAsk, type ScreenerReader, type ScreenView } from "./live/screener.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -229,7 +230,7 @@ export interface ServiceOptions {
   sec?: { env?: NodeJS.ProcessEnv | undefined; userAgent?: string | undefined } | undefined;
   /** THE KEYLESS READERS the terminal's functions read beside the markets — the news (live/news.ts) — as a test or the stand-in hands them
    * in; by default each is made over the live connection's network, behind its own fixed hosts */
-  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined; world?: WorldReader | undefined; options?: OptionsReader | undefined; security?: SecurityReader | undefined } | undefined;
+  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined; world?: WorldReader | undefined; options?: OptionsReader | undefined; security?: SecurityReader | undefined; screener?: ScreenerReader | undefined } | undefined;
   /** THE DESK (account/desk.ts), on a real account: the brains its house seats may think with and how often its clock ticks (0: only when
    * asked, as in tests). The brains, by default: every provider the Brains place offers (account/brains.ts brainProviders) — Claude through
    * the Anthropic API and each OpenAI-format preset — each ready when its key is there; a scripted one in tests. `env`: the environment
@@ -1093,6 +1094,20 @@ export class PortfolioService {
       this.securityMade = this.opts.readers?.security ?? nasdaqSecurity({ http: deps.http, clock: deps.clock });
     }
     return this.securityMade;
+  }
+  /** THE SCREENER (live/screener.ts): every US-listed share as Nasdaq's screener lists it, screened by the rule asked and folded by sector
+   * and industry — the Screener page, and the agents' portfolio_screener. A read; Nasdaq's figures as written */
+  async screener(ask: ScreenAsk | Record<string, unknown> = {}): Promise<ScreenView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return this.screenerReader().screen(ask);
+  }
+  private screenerMade: ScreenerReader | undefined;
+  private screenerReader(): ScreenerReader {
+    if (!this.screenerMade) {
+      const deps = this.liveDeps();
+      this.screenerMade = this.opts.readers?.screener ?? nasdaqScreener({ http: deps.http, clock: deps.clock });
+    }
+    return this.screenerMade;
   }
   private calendarMade: CalendarReader | undefined;
   private calendarReader(): CalendarReader {

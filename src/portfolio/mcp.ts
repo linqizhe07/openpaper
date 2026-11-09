@@ -9,7 +9,7 @@
  * Tools on the user's REAL accounts (the service's default) — reads: portfolio_account · portfolio_venues (where the user can connect,
  * judged from the network the Account runs on) · portfolio_overview · portfolio_live_markets ·
  * portfolio_live_compare · portfolio_live_positions · portfolio_explore · portfolio_holdings · portfolio_history · portfolio_asset ·
- * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_security · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
+ * portfolio_candles · portfolio_book · portfolio_financials · portfolio_news · portfolio_calendar · portfolio_world · portfolio_options · portfolio_security · portfolio_screener · portfolio_receive · portfolio_earn · portfolio_statement · portfolio_watchlist · portfolio_live_preview ·
  * portfolio_approval · portfolio_wait. Writes, signed with this seat's key and inside the limits the owner signed for it (Guard asks
  * the owner on a card, Beast places at once): portfolio_live_order · portfolio_live_batch · portfolio_live_amend · portfolio_live_cancel ·
  * portfolio_live_close · portfolio_live_leverage · portfolio_live_move · portfolio_live_earn · portfolio_pay. Words to the owner, granting
@@ -1025,6 +1025,17 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async ({ symbol }) => read(`/api/account/security?${new URLSearchParams({ symbol })}`),
+);
+
+server.registerTool(
+  "portfolio_screener",
+  {
+    description:
+      "THE SCREENER, keyless: every US-listed common share as Nasdaq's screener lists it — symbol, name, the day's last sale and change, market cap, volume and dollar volume, country, IPO year, sector, industry — screened by the rule given (a terminal's EQS): `sector`, `industry`, `country` by name as Nasdaq writes them; `capMin` / `capMax` in dollars; `priceMin` / `priceMax`; `changeMin` / `changeMax` the day's change in percent; `volumeMin`; `ipoFrom` / `ipoTo`; `q` words of the name or symbol; `sort` one of marketCap · changePct · volume · price · symbol · name · ipoYear · dollarVolume (market cap, the largest first, unless said) and `dir`; `limit` rows (100 unless said, 500 at most). The answer carries `rows`, `matched` of `universe`, every `sector` with its industries by market cap and the day weighed by it (the sector map, IMAP), and the `countries`. The list is Nasdaq's as written when it was read (kept five minutes; the day's figures, not live quotes — a row's market is where the account's own quote is, portfolio_explore). Nothing is estimated. A read.",
+    inputSchema: { sector: z.string().max(80).optional(), industry: z.string().max(80).optional(), country: z.string().max(80).optional(), capMin: z.number().min(0).optional().describe("market cap in dollars"), capMax: z.number().min(0).optional(), priceMin: z.number().min(0).optional(), priceMax: z.number().min(0).optional(), changeMin: z.number().optional().describe("the day's change in percent"), changeMax: z.number().optional(), volumeMin: z.number().min(0).optional(), ipoFrom: z.number().int().optional(), ipoTo: z.number().int().optional(), q: z.string().max(60).optional().describe("words of the name or the symbol"), sort: z.enum(["marketCap", "changePct", "volume", "price", "symbol", "name", "ipoYear", "dollarVolume"]).optional(), dir: z.enum(["asc", "desc"]).optional(), limit: z.number().int().min(1).max(500).optional() },
+    annotations: { readOnlyHint: true },
+  },
+  async (ask) => read(`/api/account/screener?${new URLSearchParams(Object.fromEntries(Object.entries(ask).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])))}`),
 );
 
 server.registerTool(

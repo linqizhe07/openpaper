@@ -1,0 +1,39 @@
+/* THE SCREENER (ui/screener.js): the rule as a form in a card, the rows or the map in another. The page's tokens only */
+.eq { container-type: inline-size; }
+.eq-card { margin-bottom: 20px; }
+.eq-card .sec-head { align-items: center; }
+.eq-form { display: flex; flex-direction: column; gap: 10px; }
+.eq-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; }
+.eq-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.eq-f .label { font-size: 11px; }
+.eq-f select, .eq-f input { font-size: 13px; padding: 5px 8px; border: 1px solid var(--card-border); border-radius: var(--radius-s); background: var(--surface); color: var(--text); max-width: 220px; }
+.eq-f input[type="number"] { width: 110px; }
+.eq-q input { width: 240px; max-width: 100%; }
+.eq-acts { display: inline-flex; align-items: center; gap: 12px; padding-bottom: 2px; }
+.eq-table td { font-size: 13px; font-variant-numeric: tabular-nums; }
+.eq-sym { font-weight: 700; }
+.eq-name { display: inline-block; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.eq-num { font-weight: 600; }
+.eq-map-words { margin: 0 0 8px; }
+.eq-map { width: 100%; height: auto; display: block; font-size: 13px; }
+.eq-cell rect { fill: var(--surface-2); stroke: var(--surface); stroke-width: 1; transition: opacity var(--t-1) var(--ease-out); }
+.eq-cell { cursor: pointer; outline: none; }
+.eq-cell:hover rect, .eq-cell:focus-visible rect { opacity: 0.82; }
+.eq-cell:focus-visible rect { stroke: var(--text); stroke-width: 2; }
+.eq-cell text { fill: var(--text); pointer-events: none; }
+.eq-cell-name { font-weight: 700; }
+.eq-cell-chg, .eq-cell-top { font-size: 11px; }
+.eq-cell.up1 rect { fill: color-mix(in oklab, var(--up) 22%, var(--surface-2)); }
+.eq-cell.up2 rect { fill: color-mix(in oklab, var(--up) 42%, var(--surface-2)); }
+.eq-cell.up3 rect { fill: color-mix(in oklab, var(--up) 65%, var(--surface-2)); }
+.eq-cell.dn1 rect { fill: color-mix(in oklab, var(--down) 22%, var(--surface-2)); }
+.eq-cell.dn2 rect { fill: color-mix(in oklab, var(--down) 42%, var(--surface-2)); }
+.eq-cell.dn3 rect { fill: color-mix(in oklab, var(--down) 65%, var(--surface-2)); }
+.eq-cell.up3 text, .eq-cell.dn3 text { fill: var(--surface); }
+.eq-asof { margin: 16px 0 0; }
+.eq-foot { margin-top: 10px; }
+.eq-foot summary { cursor: pointer; }
+.eq-foot p { margin: 6px 0 0; }
+@container (max-width: 760px) {
+  .eq-f select, .eq-f input, .eq-q input { max-width: 100%; }
+}
