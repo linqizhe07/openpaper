@@ -157,6 +157,15 @@
  *                                                        venue's own IVs and greeks; one expiry's rows around the money (the nearest unless
  *                                                        `expiry` names a day) and its smile. Nothing is estimated. The Options page, and
  *                                                        the agents' portfolio_options
+ *   GET  /api/account/security?symbol=                      A SECURITY'S PAGE (live/security.ts): what Nasdaq's pages say of one US share or
+ *                                                        ETF, as written — the company's name and description, exchange, sector, industry;
+ *                                                        Nasdaq's last sale and market status; the key figures (previous close, the day's
+ *                                                        and the year's range, volumes, market cap, shares outstanding, dividend, yield,
+ *                                                        P/E, PEG); the analysts' consensus, targets and a year of history; the earnings
+ *                                                        surprises and the quarters and years ahead; the dividends paid; the short interest
+ *                                                        by settlement; the insiders' trades and the institutions' holdings. A part Nasdaq
+ *                                                        has nothing for is named in `missing`. Nothing is estimated. The Security page,
+ *                                                        and the agents' portfolio_security
  *   GET  /api/account/company?symbol=AAPL                  a US company's own record as the SEC keeps it: who it is, its fiscal year end, where
  *                                                        it is incorporated, its latest annual and quarterly reports and its ten newest filings,
  *                                                        read without a key from SEC EDGAR's submissions file (live/edgar.ts) with the same
@@ -1040,6 +1049,15 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     const q = strings(req, res, { symbol: 12, expiry: 10 });
     if (!q) return;
     answerOf(res, await svc.options({ symbol: q.symbol ?? "", ...(q.expiry ? { expiry: q.expiry } : {}) }));
+  }));
+
+  // SECURITY: one US share's page as Nasdaq's pages write it — description, figures, analysts, earnings, dividends, short interest,
+  // holders (service.ts security, live/security.ts). A read; every figure Nasdaq's as written, nothing estimated
+  app.get("/api/account/security", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const q = strings(req, res, { symbol: 12 });
+    if (!q) return;
+    answerOf(res, await svc.security(q.symbol ?? ""));
   }));
 
   // CALENDAR: what Nasdaq's pages schedule — economic releases, earnings, dividends, splits, IPOs — a day a read, kept a quarter hour

@@ -76,6 +76,7 @@ import { NEWS_HOSTS, NEWS_MAX_BYTES, NEWS_TIMEOUT_MS, NewsWire, type NewsAsk, ty
 import { CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS, NasdaqCalendars, type CalendarAsk, type CalendarReader, type CalendarView } from "./live/calendars.ts";
 import { worldDesk, type WorldReader, type WorldView } from "./live/world.ts";
 import { optionsDesk, type OptionsAsk, type OptionsReader, type OptionsView } from "./live/options.ts";
+import { nasdaqSecurity, type SecurityReader, type SecurityView } from "./live/security.ts";
 import { TABS, type TabId } from "./live/categories.ts";
 import { CHAIN_BY_ID, CHAINS, type ChainName } from "./live/chain.ts";
 import { mountPayees, type PayeeWorld } from "./account/payees.ts";
@@ -228,7 +229,7 @@ export interface ServiceOptions {
   sec?: { env?: NodeJS.ProcessEnv | undefined; userAgent?: string | undefined } | undefined;
   /** THE KEYLESS READERS the terminal's functions read beside the markets — the news (live/news.ts) — as a test or the stand-in hands them
    * in; by default each is made over the live connection's network, behind its own fixed hosts */
-  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined; world?: WorldReader | undefined; options?: OptionsReader | undefined } | undefined;
+  readers?: { news?: NewsReader | undefined; calendar?: CalendarReader | undefined; world?: WorldReader | undefined; options?: OptionsReader | undefined; security?: SecurityReader | undefined } | undefined;
   /** THE DESK (account/desk.ts), on a real account: the brains its house seats may think with and how often its clock ticks (0: only when
    * asked, as in tests). The brains, by default: every provider the Brains place offers (account/brains.ts brainProviders) — Claude through
    * the Anthropic API and each OpenAI-format preset — each ready when its key is there; a scripted one in tests. `env`: the environment
@@ -1078,6 +1079,20 @@ export class PortfolioService {
       this.optionsMade = this.opts.readers?.options ?? optionsDesk({ http: deps.http, clock: deps.clock });
     }
     return this.optionsMade;
+  }
+  /** A SECURITY'S PAGE (live/security.ts): what Nasdaq's pages say of one US share — the description, the key figures, the analysts, the
+   * earnings, the dividends, the short interest, the holders — the Security page, and the agents' portfolio_security. A read, as written */
+  async security(symbol: string): Promise<SecurityView | Refusal> {
+    if (!this.account) return no("E_ACCOUNT_BAD_ACTION", { message: "the account layer is not mounted" });
+    return this.securityReader().security(symbol);
+  }
+  private securityMade: SecurityReader | undefined;
+  private securityReader(): SecurityReader {
+    if (!this.securityMade) {
+      const deps = this.liveDeps();
+      this.securityMade = this.opts.readers?.security ?? nasdaqSecurity({ http: deps.http, clock: deps.clock });
+    }
+    return this.securityMade;
   }
   private calendarMade: CalendarReader | undefined;
   private calendarReader(): CalendarReader {

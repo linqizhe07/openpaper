@@ -109,7 +109,7 @@ describe("the command line", () => {
       expect(["market", "market?", "words", ""], f.code).toContain(f.takes);
     }
     // the terminal's own mnemonics for the same things
-    for (const c of ["DES", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "ECO", "ERN", "DVD", "SPLT", "IPO", "WEI", "GC", "FXC", "GLCO", "OMON", "SKEW", "MON", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
+    for (const c of ["DES", "ANR", "EE", "SI", "HDS", "GP", "QM", "FA", "CF", "CN", "TOP", "N", "ECO", "ERN", "DVD", "SPLT", "IPO", "WEI", "GC", "FXC", "GLCO", "OMON", "SKEW", "MON", "MOST", "PORT", "ALRT", "HELP"]) expect(fns.map((f) => f.code)).toContain(c);
   });
 
   it("asks the search for a function's market alone, for the whole of a function typed alone (a market of that name is offered too), for the words before a function half typed, and for nothing after a function that takes words; the Markets list is never narrowed to a code", () => {
@@ -148,7 +148,7 @@ describe("the command line", () => {
     expect(rows("zzzz", null)).toEqual([]);
     // a market and a space: its functions, the market said once over them; a market and a function half typed: those it starts
     const aapl = body(stock("AAPL", "Apple Inc. common stock"));
-    expect(rows("aapl ", aapl).map((r) => [r.code, r.item, r.lead, r.no])).toEqual([["DES", "stock:AAPL", true, ""], ["GP", "stock:AAPL", true, ""], ["QM", "stock:AAPL", true, ""], ["FA", "stock:AAPL", true, ""], ["CF", "stock:AAPL", true, ""], ["BUY", "stock:AAPL", true, ""]]);
+    expect(rows("aapl ", aapl).map((r) => [r.code, r.item, r.lead, r.no])).toEqual([["DES", "stock:AAPL", true, ""], ["ANR", "stock:AAPL", true, ""], ["EE", "stock:AAPL", true, ""], ["SI", "stock:AAPL", true, ""], ["HDS", "stock:AAPL", true, ""], ["GP", "stock:AAPL", true, ""]]);
     expect(rows("aapl d", aapl).map((r) => r.code)).toEqual(["DES", "DVD"]);
     expect(rows("aapl ", null)).toEqual([]);
     expect(rows("apple inc", aapl)).toEqual([]);
