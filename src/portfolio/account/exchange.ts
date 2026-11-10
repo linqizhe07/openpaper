@@ -72,7 +72,7 @@ import type { KeptAuthorisation } from "./pay-real.ts";
 import { CARD_TTL_MS, modeRules, type ModeRule } from "./mode-rules.ts";
 import { TOPIC_WORDS, type MemoryStore } from "./memory.ts";
 import type { TradePlan } from "./plans.ts";
-import { activeAgents, agentStatus, applyOwner, applyReport, ASK_TTL_MS, askProblem, ASKS_PER_AGENT, ASKS_PER_HOUR, cleanName, covers, deviceKeys, EARN_NAMES, emptyState, FIRED_ALERTS_KEPT, isOwner, MAX_ASKS, nameHolder, refsOf, renewSpend, spendFor, type AccountState, type AgentKey, type AgentReport, type Alert, type AskKind, type FiredAlert, type OwnerKey, type SpendApproval, type SubAccount } from "./state.ts";
+import { activeAgents, agentStatus, applyOwner, applyReport, ASK_TTL_MS, askProblem, ASKS_PER_AGENT, ASKS_PER_HOUR, cleanName, covers, deviceKeys, EARN_NAMES, emptyState, FIRED_ALERTS_KEPT, isOwner, MAX_ASKS, nameHolder, refsOf, renewSpend, spendFor, ALERT_READER_NAMES, ALERT_READER_VENUES, alertKind, alertSeenWords, alertWords, type AccountState, type AgentKey, type AgentReport, type Alert, type AskKind, type FiredAlert, type OwnerKey, type SpendApproval, type SubAccount } from "./state.ts";
 
 const HUB = "metamask";
 /** devices that have asked to sign and wait for an owner, at most, at one time */
@@ -996,9 +996,9 @@ export class AccountEngine {
       case "setWatch":
         return a.on === "true" ? `watching ${a.symbol.trim()} at ${this.name(a.venue.trim())}` : `no longer watching ${a.symbol.trim()} at ${this.name(a.venue.trim())}`;
       case "setAlert": {
-        if (a.on !== "true") return `price alert ${a.id} removed`;
+        if (a.on !== "true") return `alert ${a.id} removed`;
         const set = this.state.alerts.find((x) => x.venue === a.venue.trim() && x.symbol === a.symbol.trim() && x.condition === a.condition && x.price === Number(a.price));
-        return `price alert${set ? ` ${set.id}` : ""}: ${a.symbol.trim()} at ${this.name(a.venue.trim())} ${a.condition === "above" ? "rises above" : "falls below"} ${figure(Number(a.price))}${set ? ` · until ${etDate(Date.parse(set.expiresAt))}` : ""}`;
+        return `${alertKind(a.condition)} alert${set ? ` ${set.id}` : ""}: ${a.symbol.trim()} ${ALERT_READER_VENUES[a.venue.trim()] ? "" : `at ${this.name(a.venue.trim())} `}${alertWords({ condition: a.condition, price: Number(a.price), symbol: a.symbol.trim() }, false, figure)}${set ? ` · until ${etDate(Date.parse(set.expiresAt))}` : ""}`;
       }
       case "setIntent": {
         if (a.validUntil === 0) return `intent ${a.id} withdrawn`;
@@ -1317,7 +1317,7 @@ export class AccountEngine {
     const fired: FiredAlert = { ...a, seen, from, firedAt: this.host.now() };
     this.state = { ...this.state, alerts: this.state.alerts.filter((x) => x.id !== id) };
     this.firedAlerts = [fired, ...this.firedAlerts].slice(0, FIRED_ALERTS_KEPT);
-    this.host.log({ kind: "note", venue: a.venue, reason: `price alert ${a.id} fired: ${a.symbol} at ${this.name(a.venue)} ${a.condition === "above" ? "rose above" : "fell below"} ${figure(a.price)} — ${figure(seen)} (${from})`, detail: { alertFired: fired } });
+    this.host.log({ kind: "note", venue: a.venue, reason: `${alertKind(a.condition)} alert ${a.id} fired: ${a.symbol} ${ALERT_READER_VENUES[a.venue] ? "" : `at ${this.name(a.venue)} `}${alertWords(a, true, figure)} — ${alertSeenWords(a.condition, seen, figure)} (${from})`, detail: { alertFired: fired } });
     return fired;
   }
 
@@ -1663,8 +1663,8 @@ export class AccountEngine {
       activeKeys: activeAgents(this.state, now).length,
       watch: this.state.watch.map((w) => ({ venue: w.venue, symbol: w.symbol, at: w.at })),
       // an alert that lapsed is gone from the page before the next signed change takes it off the state
-      alerts: this.state.alerts.filter((x) => now < Date.parse(x.expiresAt)).map((x) => ({ ...x, venueName: this.name(x.venue) })),
-      alertsFired: this.firedAlerts.map((x) => ({ ...x, venueName: this.name(x.venue) })),
+      alerts: this.state.alerts.filter((x) => now < Date.parse(x.expiresAt)).map((x) => ({ ...x, venueName: ALERT_READER_NAMES[x.venue] ?? this.name(x.venue) })),
+      alertsFired: this.firedAlerts.map((x) => ({ ...x, venueName: ALERT_READER_NAMES[x.venue] ?? this.name(x.venue) })),
       intents: this.state.intents.filter((x) => now < x.validUntil).map((x) => ({ id: x.id, agent: x.agent, agentName: x.agent === "*" ? "every agent" : this.agentName(x.agent), venue: x.venue, symbol: x.symbol, side: x.side, usd: x.usd, text: x.text, validUntil: new Date(x.validUntil).toISOString(), at: x.at, reports: x.reports, ...(x.report ? { report: { ...x.report, byName: this.agentName(x.report.by) } } : {}), byAgent: x.byAgent.map((r) => ({ ...r, byName: this.agentName(r.by) })) })),
       asks: this.waitingAsks(now).map((x) => ({ ...x })),
       declinedAsks: this.declinedAsks(now).map((x) => ({ ...x })),
@@ -1868,8 +1868,9 @@ export interface AccountPage {
   restore?: unknown;
   /** the markets the owner watches, which agents read */
   watch: Array<{ venue: string; symbol: string; at: string }>;
-  /** the owner's price alerts standing (account/state.ts Alert), each with its venue's name — and the ones that fired lately, newest first,
-   * each with the price that fired it (FiredAlert). Words to the owner, which agents read too; none is an order */
+  /** the owner's alerts standing (account/state.ts Alert: on a price, the day's move, the volume, a perpetual's funding, the news or the
+   * earnings), each with its venue's name ("the news", "the calendar" for the readers') — and the ones that fired lately, newest first, each
+   * with the figure that fired it (FiredAlert). Words to the owner, which agents read too; none is an order */
   alerts: Array<Alert & { venueName: string }>;
   alertsFired: Array<FiredAlert & { venueName: string }>;
   /** the owner's open intents — words to an agent (`agent` its address) or to every agent (`*`), none of them a limit — each with how many

@@ -55,7 +55,7 @@ function rlRows(watch, items, body) {
     const where = v ? v.name : typeof mkAtOf === "function" ? mkAtOf(item, w.venue).venueName : w.venue;
     const alerts = typeof mkAlertsOf === "function" ? mkAlertsOf(item).length : 0;
     const fired = typeof mkFiredOf === "function" ? mkFiredOf(item).length : 0;
-    const bell = alerts || fired ? `<span class="rl-bell${fired ? " warm" : ""}" title="${esc(fired ? `${plural(fired, "alert")} fired` : plural(alerts, "price alert"))}">${icon("bell", "sm")}${fired || alerts}</span>` : "";
+    const bell = alerts || fired ? `<span class="rl-bell${fired ? " warm" : ""}" title="${esc(fired ? `${plural(fired, "alert")} fired` : `${plural(alerts, "alert")} standing`)}">${icon("bell", "sm")}${fired || alerts}</span>` : "";
     const name = typeof mkShortHtml === "function" ? mkShortHtml(item) : esc(item.name);
     const av = typeof mkAv === "function" ? mkAv(item, "sm") : avatar(item.base || item.name, "sm");
     return `<button type="button" class="rl-row" data-rl-i="${i}" data-k="${esc(key)}" title="${esc(item.name)}">${av}<span class="rl-name">${name}${bell}</span><span class="rl-px"${v ? ` data-q="${esc(key)}" data-fmt="${ev ? "c-last" : "usd"}"` : ""}>${price}</span><span class="rl-where">${esc(where)}</span><span class="rl-chg">${move}</span></button>`;

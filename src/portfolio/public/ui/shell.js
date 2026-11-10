@@ -946,9 +946,10 @@ function shPushedDraw() {
   shPatch();
 }
 
-/* A PRICE ALERT FIRED (the account's `alert` event: account/state.ts FiredAlert with its venue's name — markets.js openAlertSheet set it,
-   service.ts lookAtAlerts found the price across it): said as a toast that stays a while — "Price alert · BTC/USD at Kraken rose above
-   $63,500: $63,512 (Kraken · live)" — and, where the owner asked this browser to (the alert sheet's switch, kept in this browser under
+/* AN ALERT FIRED (the account's `alert` event: account/state.ts FiredAlert with its venue's name — markets.js openAlertSheet set it,
+   service.ts lookAtAlerts found the price across it, the day's figure past it, the headlines or the earnings day): said as a toast that
+   stays a while — "Price alert · BTC/USD at Kraken rose above $63,500: $63,512 (Kraken · live)", "News alert · Bitcoin was in 3 headlines
+   (…the latest's title — its publisher)" — and, where the owner asked this browser to (the alert sheet's switch, kept in this browser under
    SH_NOTIFY_KEY, the browser's own permission asked once), as the browser's notification too, so the alert reaches the owner with the tab
    in the background; clicking it opens the Alerts list under Watching. An event contract's prices are said in cents. The account's own
    record of it — the Alerts list, the ledger's note — comes with the read that follows */
@@ -968,20 +969,28 @@ function shNotifySet(on) {
     // a private window keeps nothing: the choice holds for this visit alone
   }
 }
-/* a fired alert in one sentence: the market, where, which way it went and the figure, the price that fired it, whose price that was */
+/* a fired alert in one sentence: the market, where, what happened and the figure, what fired it, whose reading that was (markets.js
+   mkAlertFired: the alert's own measure — a price, a day's move, a volume, a funding rate, headlines, days) */
 function shAlertWords(f) {
   const sym = String(f.symbol || "");
   const ev = /:/.test(sym) && !/\//.test(sym);
-  const fig = (n) => (ev ? cents(n) : usd(n));
-  return `${sym} at ${f.venueName || nameOf(f.venue)} ${f.condition === "above" ? "rose above" : "fell below"} ${fig(f.price)}: ${fig(f.seen)}${f.from ? ` (${f.from})` : ""}`;
+  const reader = f.venue === "news" || f.venue === "calendar";
+  const what = typeof mkAlertFired === "function" ? mkAlertFired(f, { kind: ev ? "event" : "coin" }) : `${f.condition === "above" ? "rose above" : "fell below"} ${ev ? cents(f.price) : usd(f.price)}: ${ev ? cents(f.seen) : usd(f.seen)}`;
+  return `${sym}${reader ? "" : ` at ${f.venueName || nameOf(f.venue)}`} ${what}${f.from ? ` (${f.from})` : ""}`;
+}
+/* the alert's kind as the toast's title: Price alert, Move alert, Volume alert, Funding alert, News alert, Earnings alert */
+function shAlertTitle(f) {
+  const kind = typeof mkAlertKind === "function" ? mkAlertKind(f) : "price";
+  return `${kind.charAt(0).toUpperCase()}${kind.slice(1)} alert`;
 }
 function shAlertToast(f) {
   if (!f || !f.symbol) return;
   const words = shAlertWords(f);
-  toast({ html: `<b>Price alert</b> · ${esc(words)}` }, "info", { ms: 15000 });
+  const title = shAlertTitle(f);
+  toast({ html: `<b>${esc(title)}</b> · ${esc(words)}` }, "info", { ms: 15000 });
   if (!shNotifyWanted() || typeof Notification !== "function" || Notification.permission !== "granted") return;
   try {
-    const n = new Notification("Price alert", { body: words, tag: `alert-${f.id || sym}` });
+    const n = new Notification(title, { body: words, tag: `alert-${f.id || f.symbol}` });
     n.onclick = () => {
       try {
         window.focus();

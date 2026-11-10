@@ -363,9 +363,15 @@ export async function startStandin(o: StandinOptions): Promise<Standin> {
   ok("Claude Code's ask for a bigger budget", await ag({ type: "agentAsk", kind: "limit", venue: "ex", usd: "1000", text: "Raise my trading budget to $1,000 so I can finish the SOL position you asked for" }));
   ok("Claude Code's ask for a venue", await ag({ type: "agentAsk", kind: "venue", venue: "standin-pubex", usd: "", text: "Connect Stand-in Public Exchange: DOGE trades only there" }));
   for (const [venue, symbol] of [["ex", "BTC/USDT"], ["predict", "SI-FEDCUT-DEC:YES"], ["standin-pubex", "DOGE/USD"]] as const) ok(`${symbol} watched`, await own({ type: "setWatch", venue, symbol, on: "true" }));
-  // price alerts (account/state.ts Alert): one far above BTC and one far under SOL at the exchange, one on the Fed contract, one at the
+  // alerts (account/state.ts Alert): one far above BTC and one far under SOL at the exchange, one on the Fed contract, one at the
   // public exchange that is not connected — standing, so the bell, the Alerts list and the sheet can be clicked through; none fires on its own
   for (const [venue, symbol, condition, price] of [["ex", "BTC/USDT", "above", "90000"], ["ex", "SOL/USDT", "below", "80"], ["predict", "SI-FEDCUT-DEC:YES", "above", "0.8"], ["standin-pubex", "DOGE/USD", "below", "0.05"]] as const) ok(`${symbol} alert`, await own({ type: "setAlert", id: "", venue, symbol, condition, price, on: "true" }));
+  // alerts beyond the price (ALERT_CONDITIONS): BTC's day's move at the exchange (stands: the stand-in's day moves less), the news for
+  // "Bitcoin" (fires once the stand-in's wire has a headline newer than the alert: a few minutes in), AAPL's earnings within the week (the
+  // stand-in's calendar lists AAPL most days: it fires at the first look, with the day)
+  ok("BTC move alert", await own({ type: "setAlert", id: "", venue: "ex", symbol: "BTC/USDT", condition: "change-above", price: "5", on: "true" }));
+  ok("Bitcoin news alert", await own({ type: "setAlert", id: "", venue: "news", symbol: "Bitcoin", condition: "news", price: "1", on: "true" }));
+  ok("AAPL earnings alert", await own({ type: "setAlert", id: "", venue: "calendar", symbol: "AAPL", condition: "earnings", price: "7", on: "true" }));
   // memory (account/memory.ts; the canvas's F13): what Claude Code remembers about the owner — two things the owner said, and two it
   // learned, signed with its key and saying how
   ok("the owner's style", await own({ type: "setMemory", scope: agent.address, id: "", topic: "style", text: "Value over hype: no chasing what is hot this week." }));
@@ -456,12 +462,12 @@ export async function startStandin(o: StandinOptions): Promise<Standin> {
   // the superagent's own clock, as the real server runs it (service.ts watchDesk): every ten seconds, and its first cycle a few seconds
   // after the start rather than at the agent's next look. Not where prices only move when asked (tests: tickMs 0)
   const stopDesk = o.superagent && o.desk !== false && (o.tickMs ?? 3_000) > 0 ? svc.watchDesk() : undefined;
-  // the price alerts' clock, as the real server runs it (service.ts watchAlerts): every half minute each standing alert's market is
-  // priced and an alert whose figure the price reached fires — a toast on the page, the Fired list under Watching. Not where prices only
-  // move when asked (tests: tickMs 0)
+  // the alerts' clock, as the real server runs it (service.ts watchAlerts): every half minute each standing alert is looked at — its
+  // market priced, its day read, the news or the calendar asked — and one whose figure is reached fires: a toast on the page, the Fired
+  // list under Watching. Not where prices only move when asked (tests: tickMs 0)
   const stopAlerts = (o.tickMs ?? 3_000) > 0 ? svc.watchAlerts() : undefined;
 
-  const seeded: Seeded = { venues: ["ex", "predict", "wallet", "broker", ...(o.paper !== false ? ["paper", "paper-momentum"] : []), walletVenue], agent: { name: AGENT_NAME, address: agent.address, wallet: walletVenue }, orders, card, intents, asks: 2, watch: 3, alerts: 4, curvePoints };
+  const seeded: Seeded = { venues: ["ex", "predict", "wallet", "broker", ...(o.paper !== false ? ["paper", "paper-momentum"] : []), walletVenue], agent: { name: AGENT_NAME, address: agent.address, wallet: walletVenue }, orders, card, intents, asks: 2, watch: 3, alerts: 7, curvePoints };
   return {
     url: server.url,
     code,
@@ -690,7 +696,7 @@ if (isMain) {
       `  home          ${s.home}  (fresh, kept after you stop; its ledger is ${s.svc.ledgerPath()})`,
       `  trading       on, at most $${capUsd} an order or a movement`,
       `  agent wallet  ${v.agent.wallet} holds a real key made in this home, so its address is a real one: send it nothing real`,
-      `  seeded        venues ${v.venues.join(", ")} · ${Object.keys(v.orders).length} orders · ${v.agent.name} with trade, venues and payees limits and an agent wallet · 1 card waiting (${v.card}) · ${v.intents.length} intents · a report · ${v.asks} asks · ${v.watch} watched markets · ${v.alerts} price alerts · ${v.curvePoints} net worth points over 7 days`,
+      `  seeded        venues ${v.venues.join(", ")} · ${Object.keys(v.orders).length} orders · ${v.agent.name} with trade, venues and payees limits and an agent wallet · 1 card waiting (${v.card}) · ${v.intents.length} intents · a report · ${v.asks} asks · ${v.watch} watched markets · ${v.alerts} alerts · ${v.curvePoints} net worth points over 7 days`,
       ...(args.includes("--superagent") ? [`  superagent    the desk at paper-momentum (paper money), ${args.includes("--cards") ? "its autonomy off: in Guard each lead it clears waits for you on a card" : "trading on its own on paper"} · ${s.url}/#/trade?mode=superagent`] : []),
       args.includes("--no-desk") ? "  brains        every preset's real brain, none with a key in this fresh home; they reach no network here" : "  brain         a script under Claude's id (no model thinks here), beside every other preset's real brain (no key, no network)",
       ...(args.includes("--brain-refuses") ? [`  brain         refuses its key, as the API does, until ${join(s.home, ANTHROPIC_KEY_REF)} holds something else (or a key is saved for Claude on the page)`] : []),

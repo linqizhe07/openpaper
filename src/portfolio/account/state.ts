@@ -44,8 +44,46 @@ export const MAX_WATCH = 50;
 export const MAX_ALERTS = 50;
 export const ALERT_DAYS = 90;
 export const FIRED_ALERTS_KEPT = 20;
-export const ALERT_CONDITIONS = ["above", "below"] as const;
+/** what an alert watches: the price (above · below, the figure a price in the market's quote); the day's move (change-above · change-below,
+ * the figure a percent of the 24-hour change, the move's size); the day's dollar volume (volume-above); a perpetual's funding rate
+ * (funding-above · funding-below, the figure in percent per interval); the news (news: the venue is `news`, the symbol a word or a ticker,
+ * the figure how many new headlines, one at least); the earnings (earnings: the venue is `calendar`, the symbol a US share's ticker, the
+ * figure within how many days it reports, a week at most: as far as the calendar is read). Each fires once and is gone, as a price alert is */
+export const ALERT_CONDITIONS = ["above", "below", "change-above", "change-below", "volume-above", "funding-above", "funding-below", "news", "earnings"] as const;
 export type AlertCondition = (typeof ALERT_CONDITIONS)[number];
+/** the venues the news and the earnings alerts name, which are not venues: the account's own readers */
+export const ALERT_READER_VENUES: Readonly<Record<string, AlertCondition>> = { news: "news", calendar: "earnings" };
+/** those venues' names on a page and in the ledger's words */
+export const ALERT_READER_NAMES: Readonly<Record<string, string>> = { news: "the news", calendar: "the calendar" };
+/** how far ahead an earnings alert looks, in days: a week, as far as Nasdaq's calendar is read at once (live/calendars.ts CALENDAR_DAYS_MOST) */
+export const ALERT_EARNINGS_DAYS = 7;
+/** an alert's kind in a word: a price alert, a move alert, a volume alert, a funding alert, a news alert, an earnings alert */
+export const alertKind = (condition: string): string => (condition === "above" || condition === "below" ? "price" : condition.startsWith("change-") ? "move" : condition === "volume-above" ? "volume" : condition.startsWith("funding-") ? "funding" : condition);
+/** an alert in words, standing ("rises above 63,500") or fired ("rose above 63,500") */
+export function alertWords(a: { condition: string; price: number; symbol: string }, past = false, figure: (n: number) => string = (n) => String(n)): string {
+  const n = figure(a.price);
+  switch (a.condition) {
+    case "above": return `${past ? "rose" : "rises"} above ${n}`;
+    case "below": return `${past ? "fell" : "falls"} below ${n}`;
+    case "change-above": return `${past ? "rose" : "rises"} ${a.price}% or more on the day`;
+    case "change-below": return `${past ? "fell" : "falls"} ${a.price}% or more on the day`;
+    case "volume-above": return `${past ? "traded" : "trades"} more than ${n} in 24 hours`;
+    case "funding-above": return `funding ${past ? "went" : "goes"} above ${a.price}% an interval`;
+    case "funding-below": return `funding ${past ? "went" : "goes"} below ${a.price}% an interval`;
+    case "news": return `${past ? "was" : "is"} in ${a.price === 1 ? "a headline" : `${a.price} headlines`} (${a.symbol})`;
+    case "earnings": return `reports within ${a.price === 1 ? "a day" : `${a.price} days`}`;
+    default: return a.condition;
+  }
+}
+/** what fired an alert, in the alert's own measure: a price or a volume as the ledger writes figures, a move or a funding rate in percent,
+ * how many headlines, in how many days the share reports */
+export function alertSeenWords(condition: string, seen: number, figure: (n: number) => string = (n) => String(n)): string {
+  const kind = alertKind(condition);
+  if (kind === "price" || kind === "volume") return figure(seen);
+  if (kind === "move" || kind === "funding") return `${seen}%`;
+  if (kind === "news") return seen === 1 ? "1 headline" : `${seen} headlines`;
+  return seen === 0 ? "today" : seen === 1 ? "in 1 day" : `in ${seen} days`;
+}
 /** a price alert's figure as the owner signs it: a plain positive decimal (63500, 0.62), at most twelve figures before the point */
 export const ALERT_PRICE = /^\d{1,12}(\.\d{1,10})?$/;
 export const MAX_INTENTS = 20;
@@ -528,22 +566,29 @@ export function applyOwner(state: AccountState, action: OwnerAction, envelope: E
     case "setAlert": {
       const venue = action.venue.trim();
       const symbol = action.symbol.trim();
-      if (action.on !== "true" && action.on !== "") return bad('"on" is "true" to set a price alert, or "" to remove one');
+      if (action.on !== "true" && action.on !== "") return bad('"on" is "true" to set an alert, or "" to remove one');
       // alerts that lapsed are gone: they count for nothing, and one cannot be removed twice
       const live = s.alerts.filter((x) => nowMs < Date.parse(x.expiresAt));
       if (action.on === "") {
-        if (!action.id) return bad("a price alert is removed by its id");
-        return live.some((x) => x.id === action.id) ? { ...s, alerts: live.filter((x) => x.id !== action.id) } : bad(`there is no price alert "${action.id}" to remove`);
+        if (!action.id) return bad("an alert is removed by its id");
+        return live.some((x) => x.id === action.id) ? { ...s, alerts: live.filter((x) => x.id !== action.id) } : bad(`there is no alert "${action.id}" to remove`);
       }
-      if (action.id) return bad('a new price alert has the id "": to change one, remove it and set another');
-      if (!VENUE_ID.test(venue)) return bad("a price alert names its venue: lower-case letters, digits and dashes");
-      if (!symbol || charCount(symbol) > 80 || !isPlain(symbol)) return bad("a price alert names its market's symbol: 1 to 80 characters of plain text");
-      if (!(ALERT_CONDITIONS as readonly string[]).includes(action.condition)) return bad('a price alert fires "above" a price or "below" it');
+      if (action.id) return bad('a new alert has the id "": to change one, remove it and set another');
+      if (!VENUE_ID.test(venue)) return bad("an alert names its venue (or the news, or the calendar): lower-case letters, digits and dashes");
+      if (!symbol || charCount(symbol) > 80 || !isPlain(symbol)) return bad("an alert names its market's symbol — a news alert the words to look for — in 1 to 80 characters of plain text");
+      if (!(ALERT_CONDITIONS as readonly string[]).includes(action.condition)) return bad(`an alert's condition is one of ${ALERT_CONDITIONS.join(", ")}`);
       const typed = action.price.trim();
-      if (!ALERT_PRICE.test(typed) || !(Number(typed) > 0)) return bad("a price alert's price is a plain positive decimal in the market's quote (63500, 0.62)");
+      if (!ALERT_PRICE.test(typed) || !(Number(typed) > 0)) return bad("an alert's figure is a plain positive decimal: a price in the market's quote (63500, 0.62), a percent, dollars of volume, a count of headlines or a number of days");
       const price = Number(typed);
-      if (live.some((x) => x.venue === venue && x.symbol === symbol && x.condition === action.condition && x.price === price)) return bad(`a price alert for ${symbol} at ${venue} ${action.condition} ${typed} is set already`);
-      if (live.length >= MAX_ALERTS) return limit(`at most ${MAX_ALERTS} price alerts at a time: remove one first`, { max: MAX_ALERTS });
+      // the news and the earnings alerts name the account's readers, not venues; a venue's alert names neither
+      const reader = ALERT_READER_VENUES[venue];
+      if (reader && action.condition !== reader) return bad(`an alert at "${venue}" is a ${reader} alert: condition "${reader}"`);
+      if (!reader && (action.condition === "news" || action.condition === "earnings")) return bad(`a ${action.condition} alert names the venue "${action.condition === "news" ? "news" : "calendar"}"`);
+      if ((action.condition === "news" || action.condition === "earnings") && !Number.isInteger(price)) return bad(`a ${action.condition} alert's figure is a whole number: ${action.condition === "news" ? "how many headlines" : "within how many days"}`);
+      if (action.condition === "earnings" && (price > ALERT_EARNINGS_DAYS || !/^[A-Z]{1,5}([.-][A-Z])?$/.test(symbol))) return bad(`an earnings alert names a US share's ticker and a number of days, ${ALERT_EARNINGS_DAYS} at most: a week is as far as the calendar is read`);
+      if ((action.condition === "change-above" || action.condition === "change-below") && price > 1000) return bad("a day's-move alert's figure is a percent, 1000 at most");
+      if (live.some((x) => x.venue === venue && x.symbol === symbol && x.condition === action.condition && x.price === price)) return bad(`an alert for ${symbol} at ${venue} ${action.condition} ${typed} is set already`);
+      if (live.length >= MAX_ALERTS) return limit(`at most ${MAX_ALERTS} alerts at a time: remove one first`, { max: MAX_ALERTS });
       const seq = s.seq + 1;
       return { ...s, seq, alerts: [...live, { id: `alert-${String(seq).padStart(4, "0")}`, venue, symbol, condition: action.condition as AlertCondition, price, at, expiresAt: new Date(nowMs + ALERT_DAYS * DAY).toISOString() }] };
     }

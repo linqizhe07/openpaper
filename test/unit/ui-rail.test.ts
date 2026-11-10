@@ -98,7 +98,7 @@ describe("the rail's watch", () => {
     const items = html.split("<button ").slice(1);
     expect(items).toHaveLength(2);
     expect(items[0]).toContain('class="rl-row" data-rl-i="0" data-k="ex|BTC/USDT" title="Bitcoin">');
-    expect(items[0]).toContain('<span class="rl-name">Bitcoin<span class="rl-bell" title="1 price alert">');
+    expect(items[0]).toContain('<span class="rl-name">Bitcoin<span class="rl-bell" title="1 alert standing">');
     expect(items[0]).toContain('<span class="rl-px" data-q="ex|BTC/USDT" data-fmt="usd">$62,000.00</span><span class="rl-where">Exchange X</span>');
     expect(items[0]).toContain('<span class="rl-chg"><span class="up"><span aria-hidden="true">▲</span><span class="sr">up</span> 2.1%</span></span>');
     expect(items[1]).toContain('data-rl-i="1" data-k="okx-public|DOGE/USDT" title="Dogecoin">');

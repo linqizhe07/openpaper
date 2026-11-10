@@ -104,9 +104,10 @@
 .mk-bell:hover:not(:disabled) { color: var(--text); }
 .mk-bell[aria-pressed="true"] { color: var(--warn-text); }
 .mk-bell[aria-pressed="true"] svg { fill: var(--warn-fill); }
-/* THE ALERTS (markets.js mkAlertsHtml, under the watchlist; mkAlertLinesHtml in the sheet and the drawer): which way and the figure in
-   bold tabular figures, the fired ones as a feed with a tick in the up colour */
-.mk-al-cond b { font-variant-numeric: tabular-nums; font-weight: 700; }
+/* THE ALERTS (markets.js mkAlertsHtml, under the watchlist; mkAlertLinesHtml in the sheet and the drawer): what each says in tabular
+   figures, a news alert's words where no market row names them, the fired ones as a feed with a tick in the up colour */
+.mk-al-cond { font-variant-numeric: tabular-nums; font-weight: 600; }
+.mk-al-words { font-weight: 600; }
 .mk-al-t td { white-space: nowrap; }
 .mk-al-feed .mk.ok { color: var(--up); }
 .mk-al-feed > div { align-items: center; }
