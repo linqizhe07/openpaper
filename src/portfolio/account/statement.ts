@@ -8,6 +8,14 @@ import { notionalOf } from "../live/trade.ts";
 import type { LiveOrder } from "./live-orders.ts";
 import type { Payment } from "./payments.ts";
 
+/** how a worked order is worked, from the way as signed (live/trade.ts algoText): "a twap over 30 min in 6 slices", "an iceberg, 0.25 shown at a time" */
+export function workedWords(algo: string): string {
+  const m = /^(twap|vwap)\s+(\d+)m\s+(\d+)$/.exec(algo.trim());
+  if (m) return `a ${m[1]} over ${m[2]} min in ${m[3]} slices`;
+  const i = /^iceberg\s+(\S+)$/.exec(algo.trim());
+  return i ? `an iceberg, ${i[1]} shown at a time` : algo.trim();
+}
+
 export interface StatementLine {
   /** one transaction, whichever run of the account wrote it: an order's client id, or a payment's run and id */
   key: string;
@@ -83,7 +91,7 @@ export function orderLine(o: LiveOrder, agentName: (address: string) => string):
     kind: o.side,
     account: o.venue,
     accountName: o.venueName,
-    description: `${cap(o.side)} ${qty(o.qty)} ${o.base}${o.name && o.name !== o.base ? ` · ${o.name}` : ""} · ${o.type === "limit" ? `limit ${figure(o.limitPrice ?? 0)}` : o.type === "stop" ? `stop at ${figure(o.stopPrice ?? 0)}` : o.type === "stop_limit" ? `stop at ${figure(o.stopPrice ?? 0)}, limit ${figure(o.limitPrice ?? 0)}` : o.type === "trailing_stop" ? `trailing stop ${o.trailPercent !== undefined ? `${figure(o.trailPercent)}%` : figure(o.trailPrice ?? 0)}` : "market"}${o.exitOf ? ` · ${o.exitOf.kind} of ${o.exitOf.order}` : ""}${o.takeProfit !== undefined || o.stopLoss !== undefined ? ` · exits ${[o.takeProfit !== undefined ? `take-profit ${figure(o.takeProfit)}` : "", o.stopLoss !== undefined ? `stop-loss ${figure(o.stopLoss)}` : ""].filter(Boolean).join(", ")}` : ""}${o.avgPrice ? ` · at ${figure(Number(o.avgPrice.toPrecision(10)))}` : ""}${done}`,
+    description: `${cap(o.side)} ${qty(o.qty)} ${o.base}${o.name && o.name !== o.base ? ` · ${o.name}` : ""} · ${o.type === "limit" ? `limit ${figure(o.limitPrice ?? 0)}` : o.type === "stop" ? `stop at ${figure(o.stopPrice ?? 0)}` : o.type === "stop_limit" ? `stop at ${figure(o.stopPrice ?? 0)}, limit ${figure(o.limitPrice ?? 0)}` : o.type === "trailing_stop" ? `trailing stop ${o.trailPercent !== undefined ? `${figure(o.trailPercent)}%` : figure(o.trailPrice ?? 0)}` : "market"}${o.exitOf ? ` · ${o.exitOf.kind} of ${o.exitOf.order}` : ""}${o.takeProfit !== undefined || o.stopLoss !== undefined ? ` · exits ${[o.takeProfit !== undefined ? `take-profit ${figure(o.takeProfit)}` : "", o.stopLoss !== undefined ? `stop-loss ${figure(o.stopLoss)}` : ""].filter(Boolean).join(", ")}` : ""}${o.algo ? ` · worked as ${workedWords(o.algo)}` : ""}${o.avgPrice ? ` · at ${figure(Number(o.avgPrice.toPrecision(10)))}` : ""}${done}`,
     amountUsd: Number((sign * filled).toFixed(2)) || 0,
     worthUsd: Number(notionalOf(o, o.qty, o.limitPrice ?? o.price).toFixed(2)),
     ...(o.feeUsd !== undefined ? { feeUsd: o.feeUsd } : {}),

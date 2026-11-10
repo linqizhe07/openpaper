@@ -1043,15 +1043,46 @@ function tkSizeByRisk(f, entry, side) {
   return sl > 0 && risk > 0 ? Math.round((risk / sl) * 100) / 100 : 0;
 }
 
+/* HOW AN ORDER IS WORKED, where the venue works orders (live/trade.ts AlgoKind; the paper account): the ways in the ticket's words, and what
+   each does under the select */
+const TK_ALGO_NAMES = { twap: "TWAP · equal slices over time", vwap: "VWAP · slices by the day's volume", iceberg: "Iceberg · a part shown at a time" };
+const TK_ALGO_SAYS = {
+  twap: "A market order cut into equal slices, one every few minutes over the time given — the first now. One order, one id: its fills are its slices', and canceled it stops. Its analysis (the arrival, the average, the shortfall in basis points) is written on it as it fills.",
+  vwap: "The same slices, each sized by the market's own volume at that time of day (its minutes a day back; equal where the source keeps none). One order, one id; its analysis written on it as it fills.",
+  iceberg: "A limit order that shows this much at a time at your limit; the next part is shown as each fills. Canceled, the shown part goes with it and what filled stands.",
+};
+/** the way an order is worked, as the account signs it (live/trade.ts parseAlgo): "twap 30m 6" · "vwap 30m 6" · "iceberg 0.25"; "" at once.
+ * Only on the type it belongs to: a twap or a vwap on a market order, an iceberg on a limit */
+function tkAlgoText(f, t) {
+  const a = String(f.algo || "");
+  if (!a || !((t === "market" && (a === "twap" || a === "vwap")) || (t === "limit" && a === "iceberg"))) return "";
+  if (a === "iceberg") return `iceberg ${String(f.algoShow || "").trim()}`;
+  return `${a} ${String(f.algoMinutes || "").trim()}m ${String(f.algoSlices || "").trim()}`;
+}
+/** a worked order's way in a few words for a list — "TWAP 2/6", "Iceberg 0.25 shown" — from the venue's own account of it (native.algo) */
+function tkAlgoWords(o) {
+  const a = o && o.native && o.native.algo;
+  if (!a || !a.kind) return "";
+  if (a.kind === "iceberg") return `Iceberg${a.show !== undefined ? ` · ${qtyOf(a.show)} shown` : ""}`;
+  return `${a.kind.toUpperCase()}${a.slices ? ` ${a.placed}/${a.slices}` : ""}`;
+}
+/** a worked order's analysis in a line (live/tca.ts): the average, the shortfall against the arrival, the cost against the market's VWAP
+ * where read, the fees — each in basis points, a cost positive */
+function tkTcaWords(o) {
+  const c = o && o.native && o.native.tca;
+  if (!c || !(c.avgPrice > 0)) return "";
+  const bps = (n) => `${n > 0 ? "+" : ""}${Number(n).toFixed(1)} bps`;
+  return [`avg ${px(c.avgPrice)} vs arrival ${px(c.arrival)}`, `${bps(c.shortfallBps)} shortfall`, c.vsVwapBps !== undefined ? `${bps(c.vsVwapBps)} vs VWAP` : "", c.feeBps !== undefined ? `fees ${Number(c.feeBps).toFixed(1)} bps` : "", c.fills ? `${c.fills} fill${c.fills === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+}
 /** an order's draft from the ticket's fields: the market and side picked, the size in dollars or in the market's units, the limit and stop
- * (an event contract's typed in cents), the time in force and the flags the market takes */
+ * (an event contract's typed in cents), the time in force and the flags the market takes, and the way it is worked where one is picked */
 function tkOrderDraft(f, { venue, symbol, side, event }) {
   const t = f.orderType || "market";
   const amount = String(f.amount || "").trim();
   const trail = String(f.trail || "").trim();
   // a bracket's exits, on a market or limit entry, with Take profit / Stop loss ticked: each only where it is typed
   const exits = (t === "market" || t === "limit") && !!f.tpsl;
-  return { type: "liveOrder", venue, symbol, side, orderType: t, ...(f.unit === "qty" ? { qty: amount } : { usd: amount }), limitPrice: TK_LIMITED.includes(t) ? tkPriceIn(f.limitPrice, event) : "", stopPrice: TK_STOPPED.includes(t) ? tkPriceIn(f.stopPrice, event) : "", tif: f.tif || "", postOnly: t === "limit" && f.postOnly ? "true" : "", reduceOnly: f.reduceOnly ? "true" : "", extendedHours: t === "limit" && f.extendedHours ? "true" : "", trailPercent: t === "trailing_stop" && f.trailBy !== "price" ? trail : "", trailPrice: t === "trailing_stop" && f.trailBy === "price" ? trail : "", takeProfit: exits ? String(f.takeProfit || "").trim() : "", stopLoss: exits ? String(f.stopLoss || "").trim() : "" };
+  return { type: "liveOrder", venue, symbol, side, orderType: t, ...(f.unit === "qty" ? { qty: amount } : { usd: amount }), limitPrice: TK_LIMITED.includes(t) ? tkPriceIn(f.limitPrice, event) : "", stopPrice: TK_STOPPED.includes(t) ? tkPriceIn(f.stopPrice, event) : "", tif: f.tif || "", postOnly: t === "limit" && f.postOnly ? "true" : "", reduceOnly: f.reduceOnly ? "true" : "", extendedHours: t === "limit" && f.extendedHours ? "true" : "", trailPercent: t === "trailing_stop" && f.trailBy !== "price" ? trail : "", trailPrice: t === "trailing_stop" && f.trailBy === "price" ? trail : "", takeProfit: exits ? String(f.takeProfit || "").trim() : "", stopLoss: exits ? String(f.stopLoss || "").trim() : "", algo: tkAlgoText(f, t) };
 }
 
 /* what a market's sizes are counted in where it trades — its order book, its trades, a position held in it: an event's contracts; a
@@ -1196,6 +1227,8 @@ function tkTicket(panel, kind0, preset) {
       <p class="dim small tk-eh-s" data-eh-s hidden></p>
       <div class="row2" data-stop hidden><label class="fld"><span data-stop-l>Stop price</span><input name="stopPrice" inputmode="decimal" autocomplete="off" /></label></div>
       <div class="row2" data-trail hidden><label class="fld">Trail by<input name="trail" inputmode="decimal" placeholder="2" autocomplete="off" /></label><label class="fld"><span>In</span><select name="trailBy"><option value="percent">Percent</option><option value="price">Price</option></select></label></div>
+      <div class="row2 tk-algo" data-algo hidden><label class="fld"><span>Work it</span><select name="algo"><option value="">At once</option></select></label><label class="fld" data-algo-min hidden><span>Over, minutes</span><input name="algoMinutes" inputmode="numeric" placeholder="30" autocomplete="off" /></label><label class="fld" data-algo-n hidden><span>Slices</span><input name="algoSlices" inputmode="numeric" placeholder="6" autocomplete="off" /></label><label class="fld" data-algo-show hidden><span>Shown at a time</span><input name="algoShow" inputmode="decimal" placeholder="0.25" autocomplete="off" /></label></div>
+      <p class="dim small tk-algo-s" data-algo-s hidden></p>
       <div class="tk-exits" data-exits hidden><div class="row2"><label class="fld">TP price<input name="takeProfit" inputmode="decimal" placeholder="Optional" autocomplete="off" /></label><label class="fld" data-pct-f title="${esc(TK_EXIT_PCT_SAYS)}">Gain %<input name="tpPct" inputmode="decimal" placeholder="—" autocomplete="off" /></label></div><div class="row2"><label class="fld">SL price<input name="stopLoss" inputmode="decimal" placeholder="Optional" autocomplete="off" /></label><label class="fld" data-pct-f title="${esc(TK_EXIT_PCT_SAYS)}">Loss %<input name="slPct" inputmode="decimal" placeholder="—" autocomplete="off" /></label></div></div>
       <details class="tk-adv tk-plan" data-plan hidden><summary><span class="tk-adv-t">Plan</span><span class="tk-adv-s" data-plan-sum></span>${icon("chevron", "sm")}</summary><div class="tk-adv-b"><label class="fld">Why<input name="planWhy" maxlength="300" placeholder="What you see, in a sentence" autocomplete="off" /></label><div class="row2"><label class="fld">Setup<input name="planSetup" maxlength="40" list="tk-setups" placeholder="breakout, pullback…" autocomplete="off" /></label><label class="fld">How sure<select name="planSure"><option value="">—</option>${[0.5, 0.6, 0.7, 0.8, 0.9].map((x) => `<option value="${x}">${x * 100}%</option>`).join("")}</select></label></div><datalist id="tk-setups">${TK_SETUPS.map((x) => `<option value="${esc(x)}"></option>`).join("")}</datalist><div class="row2"><label class="fld">Wrong at (stop)<input name="planStop" inputmode="decimal" placeholder="The SL above" autocomplete="off" /></label><label class="fld">Right at (target)<input name="planTarget" inputmode="decimal" placeholder="The TP above" autocomplete="off" /></label></div><div class="row2"><label class="fld">Risk to the stop ($)<input name="planRisk" inputmode="decimal" placeholder="1R" autocomplete="off" /></label><button type="button" class="btn btn-sm tk-plan-size" data-plan-size>Size by risk</button></div><p class="dim small" data-plan-say></p></div></details>
       <details class="tk-adv" data-adv hidden><summary><span class="tk-adv-t">Advanced</span><span class="tk-adv-s" data-adv-sum></span>${icon("chevron", "sm")}</summary><div class="tk-adv-b"><div class="tk-more" data-more hidden><span data-tif></span><label class="chk1" data-post hidden><input type="checkbox" name="postOnly" /> Post-only</label></div></div></details>
@@ -1558,6 +1591,24 @@ function tkTicket(panel, kind0, preset) {
     q("[data-limit-l]").textContent = ev ? "Limit (¢)" : "Limit price";
     q("[data-stop-l]").textContent = ev ? "Stop (¢)" : "Stop price";
     q("[data-trail]").hidden = t !== "trailing_stop";
+    // Work it: where the market's venue works orders (Market.algos — the paper account), a twap or a vwap on a market order, an iceberg on
+    // a limit; the select's options are rewritten only when they differ, as the time in force's are
+    const algos = (mk && mk.algos) || [];
+    const ways = algos.filter((k) => (t === "limit" ? k === "iceberg" : t === "market" && k !== "iceberg"));
+    const algoRow = q("[data-algo]");
+    algoRow.hidden = !ways.length;
+    const algoSel = form.elements.algo;
+    if (algoSel) {
+      setOptions(algoSel, [["", "At once"], ...ways.map((k) => [k, TK_ALGO_NAMES[k] || k])], ways.includes(algoSel.value) ? algoSel.value : "");
+      const a = ways.length ? algoSel.value : "";
+      q("[data-algo-min]").hidden = !(a === "twap" || a === "vwap");
+      q("[data-algo-n]").hidden = !(a === "twap" || a === "vwap");
+      q("[data-algo-show]").hidden = a !== "iceberg";
+      const says = q("[data-algo-s]");
+      const said = a ? TK_ALGO_SAYS[a] : "";
+      if (says.textContent !== said) says.textContent = said;
+      says.hidden = !said;
+    }
     q("[data-exits]").hidden = !(brackets && form.elements.tpsl.checked);
     planShape();
     q("[data-post]").hidden = !(mk && mk.postOnly && t === "limit");
@@ -3058,14 +3109,14 @@ function tkOpenRow(o, owner) {
   const trigger = o.type === "stop" || o.type === "stop_limit" ? `${o.side === "buy" ? "Rises to" : "Falls to"} ${at(o.stopPrice)}` : o.type === "trailing_stop" ? `Trails ${o.trailPercent !== undefined ? esc(`${o.trailPercent}%`) : at(o.trailPrice)}` : "—";
   const r = { o };
   // keyed by the account's id for it (data-k): a pushed state is drawn over its own row, the others left as they are
-  return `<tr data-k="${esc(o.id)}"><td class="tab-nums nw" title="${esc(yourClock(o.at))}">${esc(yourClock(o.at, { year: false, seconds: false }))}</td><td class="nw">${esc(TK_TYPE_NAMES[o.type] || o.type || "—")}</td><td class="tt-c-mkt" title="${esc(`${o.name || o.base} · ${o.venueName} · ${o.id}`)}"><b>${esc(o.name || o.base)}</b>${o.paper ? ' <span class="tag paper">Paper</span>' : ""}<span class="why">${esc(o.venueName)}</span></td><td class="${o.side === "sell" ? "down" : "up"}">${o.side === "sell" ? "Sell" : "Buy"}</td><td class="r">${esc(qtyOf(left))}${unit}</td><td class="r">${esc(qtyOf(o.qty))}${unit}</td><td class="r">${o.usd !== undefined ? money(o.usd) : "—"}</td><td class="r">${o.limitPrice !== undefined ? at(o.limitPrice) : "Market"}</td><td>${o.reduceOnly ? "Yes" : "No"}</td><td class="nw">${trigger}</td><td>${tkOpenStatus(r)}</td><td>${esc(byOf(o))}</td><td class="r">${owner ? tkOpenActs(r) : ""}</td></tr>`;
+  return `<tr data-k="${esc(o.id)}"><td class="tab-nums nw" title="${esc(yourClock(o.at))}">${esc(yourClock(o.at, { year: false, seconds: false }))}</td><td class="nw">${esc(TK_TYPE_NAMES[o.type] || o.type || "—")}${tkAlgoWords(o) ? `<span class="dim small"> · ${esc(tkAlgoWords(o))}</span>` : ""}</td><td class="tt-c-mkt" title="${esc(`${o.name || o.base} · ${o.venueName} · ${o.id}`)}"><b>${esc(o.name || o.base)}</b>${o.paper ? ' <span class="tag paper">Paper</span>' : ""}<span class="why">${esc(o.venueName)}</span></td><td class="${o.side === "sell" ? "down" : "up"}">${o.side === "sell" ? "Sell" : "Buy"}</td><td class="r">${esc(qtyOf(left))}${unit}</td><td class="r">${esc(qtyOf(o.qty))}${unit}</td><td class="r">${o.usd !== undefined ? money(o.usd) : "—"}</td><td class="r">${o.limitPrice !== undefined ? at(o.limitPrice) : "Market"}</td><td>${o.reduceOnly ? "Yes" : "No"}</td><td class="nw">${trigger}</td><td>${tkOpenStatus(r)}</td><td>${esc(byOf(o))}</td><td class="r">${owner ? tkOpenActs(r) : ""}</td></tr>`;
 }
 function tkOpenWhat(r) {
   if (r.c) return `${esc(r.c.reason)}<details class="inl"><summary>details</summary><pre class="tk-pre">${esc((r.c.shown || []).map((f) => `${f.name}: ${f.value}`).join("\n"))}</pre></details>`;
   if (r.o) {
     const o = r.o;
     const ev = o.kind === "event";
-    return `${o.side === "buy" ? "Buy" : "Sell"} ${esc(qtyOf(o.qty))} ${esc(ev ? "contracts" : o.contractSize ? "contracts" : o.base)} · ${esc(ev ? (o.type === "limit" ? `limit ${tkCents(o.limitPrice)}` : "market") : typeText(o))}<span class="why">${esc([o.name, o.filledQty ? `${qtyOf(o.filledQty)} filled` : "", o.id].filter(Boolean).join(" · "))}</span>`;
+    return `${o.side === "buy" ? "Buy" : "Sell"} ${esc(qtyOf(o.qty))} ${esc(ev ? "contracts" : o.contractSize ? "contracts" : o.base)} · ${esc(ev ? (o.type === "limit" ? `limit ${tkCents(o.limitPrice)}` : "market") : typeText(o))}<span class="why">${esc([o.name, o.filledQty ? `${qtyOf(o.filledQty)} filled` : "", tkTcaWords(o), o.id].filter(Boolean).join(" · "))}</span>`;
   }
   if (r.p) return `${esc(typeof whatOf === "function" ? whatOf(r.p) : `${r.p.kind} ${r.p.id}`)}<span class="why">${esc([money(r.p.amountUsd), r.p.note, r.p.id].filter(Boolean).join(" · "))}</span>`;
   const x = r.x;
