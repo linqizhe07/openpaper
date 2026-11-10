@@ -1236,12 +1236,14 @@ const ttRoeWords = (roe) => (roe === undefined || !Number.isFinite(roe) ? "" : `
 const TT_TYPE_OF = [[/^market$/, "market"], [/^limit /, "limit"], [/^stop at .*, limit /, "stop_limit"], [/^stop at /, "stop"], [/^trailing stop /, "trailing_stop"]];
 function ttOrderRec(l) {
   const o = A && Array.isArray(A.orders) ? A.orders.find((x) => x && x.clientId && l.key === `order:${x.clientId}`) : null;
-  if (o) return { name: o.name || o.base, side: o.side, ev: o.kind === "event", type: o.type, qty: o.qty, filled: o.filledQty || 0, avg: o.avgPrice, limit: o.limitPrice, stop: o.stopPrice, reduceOnly: !!o.reduceOnly, venue: o.venue, symbol: o.symbol, like: [o.limitPrice, o.stopPrice, o.price] };
+  if (o) return { name: o.name || o.base, side: o.side, ev: o.kind === "event", type: o.type, worked: typeof tkAlgoWords === "function" && tkAlgoWords(o) ? tkAlgoWords(o) : o.algo ? String(o.algo).split(" ")[0].toUpperCase() : "", qty: o.qty, filled: o.filledQty || 0, avg: o.avgPrice, limit: o.limitPrice, stop: o.stopPrice, reduceOnly: !!o.reduceOnly, venue: o.venue, symbol: o.symbol, like: [o.limitPrice, o.stopPrice, o.price] };
   const parts = String(l.description || "").split(" · ");
   const head = /^(Buy|Sell) (-?[\d.,]+) (.+)$/.exec(parts[0] || "");
   const ti = parts.findIndex((x, i) => i > 0 && TT_TYPE_OF.some(([re]) => re.test(x)));
   const typeWords = ti > 0 ? parts[ti] : "";
   const type = typeWords ? TT_TYPE_OF.find(([re]) => re.test(typeWords))[1] : "";
+  // a worked order's way, from the line's own words ("worked as a twap over 30 min in 6 slices")
+  const worked = ((/worked as an? (twap|vwap|iceberg)\b/.exec(String(l.description || "")) || [])[1] || "").toUpperCase();
   const fig = (t) => (t === undefined ? undefined : Number(String(t).replace(/,/g, "")));
   const at = parts.map((x) => /^at (-?[\d.,]+)$/.exec(x)).find(Boolean);
   const part = parts.map((x) => /^([\d.,]+) of [\d.,]+ filled$/.exec(x)).find(Boolean);
@@ -1249,7 +1251,7 @@ function ttOrderRec(l) {
   const filled = part ? fig(part[1]) : at ? qty : 0;
   const limit = fig((/limit (-?[\d.,]+)$/.exec(typeWords) || [])[1]);
   const stop = fig((/^stop at (-?[\d.,]+)/.exec(typeWords) || [])[1]);
-  return { name: ti > 1 ? parts.slice(1, ti).join(" · ") : head ? head[3] : String(l.description || ""), side: l.kind === "sell" ? "sell" : "buy", ev: false, type, qty, filled, avg: at ? fig(at[1]) : undefined, limit, stop, reduceOnly: false, venue: "", symbol: "", like: [limit, stop] };
+  return { name: ti > 1 ? parts.slice(1, ti).join(" · ") : head ? head[3] : String(l.description || ""), side: l.kind === "sell" ? "sell" : "buy", ev: false, type, worked, qty, filled, avg: at ? fig(at[1]) : undefined, limit, stop, reduceOnly: false, venue: "", symbol: "", like: [limit, stop] };
 }
 /* a statement line in the lens: Real money or Paper by the line's own word (a paper account closed since is still Paper), one venue by its
    account, an agent's lens that agent's */
@@ -1370,7 +1372,7 @@ function ttOrders(box) {
     if (!lines.length) return void paint(box, '<p class="empty">No orders yet.</p>');
     const rows = lines.map((l) => {
       const r = ttOrderRec(l);
-      const type = `${TK_TYPE_NAMES[r.type] || "—"}${r.stop !== undefined && (r.type === "stop" || r.type === "stop_limit") ? ` at ${ttPx(r, r.stop)}` : ""}`;
+      const type = `${TK_TYPE_NAMES[r.type] || "—"}${r.stop !== undefined && (r.type === "stop" || r.type === "stop_limit") ? ` at ${ttPx(r, r.stop)}` : ""}${r.worked ? `<span class="dim small"> · ${esc(r.worked)}</span>` : ""}`;
       const price = r.limit !== undefined ? ttPx(r, r.limit) : r.type === "market" || r.type === "stop" || r.type === "trailing_stop" ? "Market" : "—";
       const st = String(l.status || "");
       return `<tr>${ttWhen(l)}<td class="nw">${type}</td>${ttMarketCell(l, r)}${ttSideCell(r)}<td class="r">${r.qty !== undefined ? esc(qtyOf(r.qty)) : "—"}</td><td class="r">${r.filled ? esc(qtyOf(r.filled)) : "0"}</td><td class="r">${l.worthUsd !== undefined ? money(l.worthUsd) : "—"}</td><td class="r">${price}</td><td class="nw tt-c-st tt-st-${/^(filled|partial|open)$/.test(st) ? "on" : /^(pending|waiting for wallet)$/.test(st) ? "wait" : "off"}">${ttCut(ttStatusWords(l))}</td>${ttByCell(l)}</tr>`;

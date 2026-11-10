@@ -145,7 +145,9 @@ interface DoorAnswer {
 /** an order as an agent reads it: what was asked, where it stands, what filled and at what */
 function orderView(o: Record<string, unknown>): Record<string, unknown> {
   const pick = ["id", "venue", "symbol", "name", "side", "type", "qty", "limitPrice", "stopPrice", "trailPercent", "trailPrice", "takeProfit", "stopLoss", "tif", "extendedHours", "status", "filledQty", "avgPrice", "feeUsd", "usd", "note", "at", "card", "paper"];
-  return Object.fromEntries(pick.filter((k) => o[k] !== undefined && o[k] !== null && o[k] !== "").map((k) => [k === "usd" ? "worthUpToUsd" : k, o[k]]));
+  const native = (o.native ?? {}) as { algo?: unknown; tca?: unknown };
+  // a worked order (live/paper.ts, live/tca.ts): how it is worked and how far it is, and its analysis — the venue's own words for it
+  return { ...Object.fromEntries(pick.filter((k) => o[k] !== undefined && o[k] !== null && o[k] !== "").map((k) => [k === "usd" ? "worthUpToUsd" : k, o[k]])), ...(o.algo ? { algo: o.algo } : {}), ...(native.algo && typeof native.algo === "object" ? { worked: native.algo } : {}), ...(native.tca && typeof native.tca === "object" ? { tca: native.tca } : {}) };
 }
 
 /** money into or out of an earn product, as an agent reads it */
@@ -605,6 +607,7 @@ const liveOrderFields = {
   trailPrice: z.number().positive().optional().describe("trailing_stop: the same, in the market's quote (give this or trailPercent)"),
   takeProfit: z.number().positive().optional().describe("a market or limit entry's exit where the market takes brackets (`brackets: true`; a paper account does): a limit the other way at this price, placed once the entry fills"),
   stopLoss: z.number().positive().optional().describe("the same for a stop the other way at this price; with takeProfit, the one that fills cancels the other"),
+  algo: z.string().max(40).optional().describe('how the order is WORKED where the market lists the way (`algos`; the paper account works orders, a venue connected live takes an order whole): "twap 30m 6" (a market order cut into 6 equal slices over 30 minutes), "vwap 30m 6" (the same slices, each sized by the market\'s volume at that time of day), "iceberg 0.25" (a limit order showing 0.25 units at a time). One order, one id: its fills are its children\'s, canceled it stops; a transaction-cost analysis (`native.tca`: the arrival, the average, the shortfall and the cost against the market\'s VWAP in basis points) is written on it as it fills'),
 };
 
 /** `paper` as a venue id, in any trading tool: the owner's one paper account (live:paper, the account's own book), so a seat can rehearse

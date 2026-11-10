@@ -682,6 +682,14 @@ agent 只能撤自己下的单；你能撤任何单（撤单从不出卡；你�
 
 **自己下单**：Trade → Perps（现货在 Crypto，事件在 Predictions）→ 搜 BTC → Where 里选纸上账户那一行（标 Paper）→ 金额 → Sign and place。签名的那句话以 "PAPER · " 开头，上限那一句不出现（`--live-cap` 管的是真钱）；`--read-only` 起的服务照样不下。Statement 里那几行标 Paper，合计不算它们，CSV 多一列 `paper`。比价（Where 的 Best、`portfolio_live_compare`）不比纸上账户。
 
+**把一单做开（算法单，只在纸上账户）**：票上 Market / Limit 下面一行 **Work it**——市价单可选 **TWAP**（等份，按时间：填 Over 多少分钟、Slices 几片，第一片马上成交，其余每隔 分钟/片 一片）或 **VWAP**（同样几片，每片大小按这个市场前一天同一段分钟的成交量定；源没有分钟 K 线就等份，单子上写明）；限价单可选 **Iceberg**（填每次露多少，露的那片按你的限价挂着，成交一片再露下一片）。签的是一张单，`algo` 一栏写 `twap 30m 6` / `vwap 30m 6` / `iceberg 0.25`（What you sign 里看得到）；一个 id，子单各自成交、各自手续费，父单的成交量和均价是子单的和；Open orders 里 Type 写 `Market · TWAP 2/6`，撤单连还没到时间的片和露着的那片一起撤，已成交的算数；到时间那一刻价过了 worst price 或盘口撑不住，那片折进下一片，最后一片也不行就以成交了的部分收场（单子上写原因）。做完写上 **TCA**（`native.tca`，Open orders 的那一行、`portfolio_account` 的 orders 里都看得到）：到达价（下单那一刻的盘口中价）、均价、相对到达价的 implementation shortfall（基点，正数是亏了）、相对这段时间市场自己的 VWAP 和 TWAP（从源的 1 分钟 K 线算，源有就有）、手续费（基点）、参与率、用了多久、几笔成交。接上的真场所不做这件事：整单发出，`algo` 填了会拒绝。
+
+```bash
+# agent 同样一句话（MCP）
+portfolio_live_order {venue: "paper", symbol: "BTC/USD", side: "buy", qty: 0.06, algo: "twap 30m 6"}
+portfolio_live_order {venue: "paper", symbol: "BTC/USD", side: "buy", qty: 0.06, orderType: "limit", limitPrice: 59000, algo: "iceberg 0.02"}
+```
+
 **模拟仓和真仓怎么分、怎么切**（真账户和纸上账户同时在账户上时）：
 - 票里 Where 上方有一条横幅，写的是这一单归哪种钱——`PAPER · no real money · Momentum · paper`（虚线框）或 `REAL MONEY · Coinbase Advanced`（实心）；横幅旁边是 **Real money | Paper** 两个按钮，一键在同一个市场的真账户和纸上账户之间翻转，金额、单型、限价都原样保留。签名按钮在纸上账户上写 **Sign and place · PAPER**，签名的那句话以 PAPER 开头。
 - 页面顶部 "All accounts ▾" 里多了 **Real money** 和 **Paper** 两档：选 Paper，Markets 每行的按钮变成 "Paper trade"、票默认选纸上账户、Portfolio 只看纸上账户（标题写 Paper，显示自开户以来的盈亏，不进净值）、Statement 只列纸上的行；选 Real money 则反过来，纸上账户根本不出现在票和按钮里。All accounts 是默认：真账户优先，只有没真账户交易的市场才给 "Paper trade"。

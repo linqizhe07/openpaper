@@ -34,6 +34,43 @@ export type OrderType = "market" | "limit" | "stop" | "stop_limit" | "trailing_s
 /** how long an order stays: until canceled · what fills at once, the rest canceled · all at once or nothing · until the session's end */
 export type TimeInForce = "gtc" | "ioc" | "fok" | "day";
 export const ORDER_TYPES: readonly OrderType[] = ["market", "limit", "stop", "stop_limit", "trailing_stop"];
+/** HOW A LARGE ORDER IS WORKED, where the venue works orders (Market.algos — the paper account does; a venue connected live takes none
+ * from here): twap — a market order cut into `slices` equal children, one every `minutes / slices` minutes; vwap — the same slices, each
+ * sized by the market's own volume at that time of day (its 1-minute bars a day back; equal where it keeps none); iceberg — a limit order
+ * that shows `show` units at a time, the next child placed as each fills. The parent is one order with one ref: its fills are its
+ * children's, its average theirs; canceled, its open child goes with it and what filled stands. Judged by the venue's own rule, child by
+ * child; a transaction-cost analysis (live/tca.ts) is written on the parent as it goes */
+export type AlgoKind = "twap" | "vwap" | "iceberg";
+export const ALGO_KINDS: readonly AlgoKind[] = ["twap", "vwap", "iceberg"];
+export interface AlgoRequest {
+  kind: AlgoKind;
+  /** twap · vwap: over how many minutes (1 to 1440) and in how many slices (2 to 200) */
+  minutes?: number | undefined;
+  slices?: number | undefined;
+  /** iceberg: how many units each child shows (less than the order's size) */
+  show?: number | undefined;
+}
+/** an algo as it is signed, in one string: "twap 30m 6" · "vwap 30m 6" · "iceberg 0.25"; "" for none. Parsed back by parseAlgo */
+export const algoText = (a: AlgoRequest | undefined): string => (!a ? "" : a.kind === "iceberg" ? `iceberg ${a.show}` : `${a.kind} ${a.minutes}m ${a.slices}`);
+export function parseAlgo(text: string): AlgoRequest | undefined | string {
+  const t = text.trim();
+  if (!t) return undefined;
+  const m = /^(twap|vwap)\s+(\d{1,4})m\s+(\d{1,3})$/.exec(t);
+  if (m) {
+    const minutes = Number(m[2]);
+    const slices = Number(m[3]);
+    if (minutes < 1 || minutes > 1440) return "a twap or a vwap runs over 1 to 1440 minutes";
+    if (slices < 2 || slices > 200) return "a twap or a vwap is cut into 2 to 200 slices";
+    return { kind: m[1] as AlgoKind, minutes, slices };
+  }
+  const i = /^iceberg\s+(\d{1,12}(?:\.\d{1,10})?)$/.exec(t);
+  if (i) {
+    const show = Number(i[1]);
+    if (!(show > 0)) return "an iceberg shows a positive size at a time";
+    return { kind: "iceberg", show };
+  }
+  return 'an algo is "twap 30m 6" (over 30 minutes in 6 slices), "vwap 30m 6", or "iceberg 0.25" (0.25 units shown at a time)';
+}
 export const TIFS: readonly TimeInForce[] = ["gtc", "ioc", "fok", "day"];
 export type MarketKind = "spot" | "perp" | "future" | "stock" | "crypto" | "event" | "token";
 
@@ -46,6 +83,8 @@ export interface Market {
   /** an entry order may carry its exits here (a BRACKET: `takeProfit` and `stopLoss`, either or both, placed by the venue once the entry
    * fills, one canceling the other) */
   brackets?: boolean | undefined;
+  /** the ways the venue works a large order here (AlgoKind; none listed: an order is sent whole) */
+  algos?: AlgoKind[] | undefined;
   /** where the 24-hour figures came from when they are not the venue's own documented reading (an exchange library's unified ticker) */
   statsFrom?: string | undefined;
   /** in words */
@@ -342,6 +381,8 @@ export interface OrderRequest {
    * other way at `stopLoss` (either or both), the one that fills canceling the other */
   takeProfit?: number | undefined;
   stopLoss?: number | undefined;
+  /** how the order is worked, where the market lists the kind in `algos`: a twap or a vwap on a market order, an iceberg on a limit */
+  algo?: AlgoRequest | undefined;
 }
 
 /** an open order changed in place: what changes, as the venue would take it (the rest stays) */

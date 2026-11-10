@@ -119,8 +119,9 @@ import { usClock } from "../account/calendar.ts";
 import { CBOE_DELAY_MS, cboeQuoteInSession, US_STOCKS_ID, usLineAt, usSession } from "./public-stocks.ts";
 import type { HubQuote, HubRange, HubTick, MarketHub } from "./stream-hub.ts";
 import { FRESH_MS as US_FRESH_MS } from "./us-quotes.ts";
-import { badOrder, CANDLE_INTERVALS, ceilTo, floorTo, HISTORY_MOST, INTERVAL_MS, inDollars, onStep, pick, type Candle, type CandleInterval, type CandlePage, type LiveTrader, type Market, type MarketKind, type MarketStats, type OrderBook, type OrderEstimate, type OrderRequest, type OrderState, type OrderStatus, type OrderType, type Position, type SessionPhase, type Side, type TimeInForce } from "./trade.ts";
+import { ALGO_KINDS, badOrder, CANDLE_INTERVALS, ceilTo, floorTo, HISTORY_MOST, INTERVAL_MS, inDollars, onStep, pick, type AlgoKind, type Candle, type CandleInterval, type CandlePage, type LiveTrader, type Market, type MarketKind, type MarketStats, type OrderBook, type OrderEstimate, type OrderRequest, type OrderState, type OrderStatus, type OrderType, type Position, type SessionPhase, type Side, type TimeInForce } from "./trade.ts";
 import { tripFill, tripFunding, tripPrice, tripRange, type ClosedTrip, type OpenTrip, type TripEnd } from "./trips.ts";
+import { sliceSizes, tcaOf, vwapWeights, type Tca } from "./tca.ts";
 import { isStable, type LiveBalance, type LiveSource, type PaperControls, type PaperEvents } from "./types.ts";
 
 export const PAPER_DEFAULT_CASH = 10_000;
@@ -299,6 +300,13 @@ export interface PaperOrder {
   /** an exit of a bracket: its entry, and the other exit (the one that fills cancels the other) */
   parent?: string | undefined;
   oco?: string | undefined;
+  /** A WORKED ORDER (OrderRequest.algo; live/tca.ts): how — a twap's or a vwap's slices, each size and when it is due (ms), how many are
+   * placed (a vwap says whether the market's volume weighted them); an iceberg's size shown at a time — the arrival (the market when it
+   * was placed: the middle of its book, else its last) and its analysis, written as its children fill. Its children carry `parent`: its
+   * fills are theirs, its average theirs, and what the whole needs is held by it alone (needOf) */
+  algo?: { kind: AlgoKind; minutes?: number | undefined; slices?: number | undefined; show?: number | undefined; sizes?: number[] | undefined; dueAt?: number[] | undefined; placed: number; weighted?: boolean | undefined } | undefined;
+  arrival?: number | undefined;
+  tca?: Tca | undefined;
   status: OrderStatus;
   filledQty: number;
   avgPrice?: number | undefined;
@@ -606,8 +614,11 @@ export interface PaperOrderSaid {
   feeUsd?: number | undefined;
   limitPrice?: number | undefined;
   stopPrice?: number | undefined;
-  /** a bracket's exit: the entry it closes */
+  /** a bracket's exit, or a worked order's child: the entry it closes, or the parent it is a slice of */
   parent?: string | undefined;
+  /** a worked order: its kind, how many children are placed of how many, an iceberg's shown size — and its analysis as it fills */
+  algo?: { kind: AlgoKind; placed: number; slices?: number | undefined; minutes?: number | undefined; show?: number | undefined; weighted?: boolean | undefined } | undefined;
+  tca?: Tca | undefined;
   note?: string | undefined;
   at: string;
   updatedAt: string;
@@ -1150,6 +1161,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       tifsByType,
       postOnly: false,
       brackets: !event,
+      ...(event ? {} : { algos: [...ALGO_KINDS] }),
       // a perpetual's leverage set here now — the open position's, else the market's (1x unless set): what an order would open at
       ...(perp ? { reduceOnly: true, contractSize: 1, maxLeverage: Math.max(1, Math.floor(pos(m.maxLeverage) ?? 1)), leverage: b.positions[symbol]?.leverage ?? levOf(symbol, Math.max(1, Math.floor(pos(m.maxLeverage) ?? b.markets[symbol]?.maxLeverage ?? 1))), marginModes: ["isolated"] } : { sellsReduce: true }),
       ...(changePct24h !== undefined ? { changePct24h } : {}),
@@ -1410,7 +1422,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
 
   const stateOf = (o: PaperOrder): OrderState => {
     const legs = (o.children ?? []).map((r) => b.orders[r]).filter((x): x is PaperOrder => !!x);
-    return { ref: o.ref, status: o.status, filledQty: o.filledQty, ...(o.avgPrice !== undefined ? { avgPrice: o.avgPrice } : {}), ...(o.feeUsd !== undefined ? { feeUsd: o.feeUsd } : {}), native: { paper: true, book: b.id, order: o.ref, type: o.type, ...(o.realizedUsd !== undefined ? { realizedUsd: o.realizedUsd } : {}), ...(o.stopPrice !== undefined ? { stopPrice: o.stopPrice } : {}), ...(o.triggeredAt ? { triggeredAt: o.triggeredAt } : {}), ...(o.expiresAt ? { expiresAt: o.expiresAt } : {}), ...(o.note ? { note: o.note } : {}), ...(legs.length ? { legs: legs.map((l) => ({ ref: l.ref, clientId: l.clientId, at: l.at, type: l.type, side: l.side, qty: l.qty, status: l.status, filledQty: l.filledQty, ...(l.feeUsd !== undefined ? { feeUsd: l.feeUsd } : {}), ...(l.limitPrice !== undefined ? { limitPrice: l.limitPrice } : {}), ...(l.stopPrice !== undefined ? { stopPrice: l.stopPrice } : {}), ...(l.avgPrice !== undefined ? { avgPrice: l.avgPrice } : {}), ...(l.filledAt ? { filledAt: l.filledAt } : {}), ...(l.note ? { note: l.note } : {}) })) } : {}) } };
+    return { ref: o.ref, status: o.status, filledQty: o.filledQty, ...(o.avgPrice !== undefined ? { avgPrice: o.avgPrice } : {}), ...(o.feeUsd !== undefined ? { feeUsd: o.feeUsd } : {}), native: { paper: true, book: b.id, order: o.ref, type: o.type, ...(o.realizedUsd !== undefined ? { realizedUsd: o.realizedUsd } : {}), ...(o.stopPrice !== undefined ? { stopPrice: o.stopPrice } : {}), ...(o.triggeredAt ? { triggeredAt: o.triggeredAt } : {}), ...(o.expiresAt ? { expiresAt: o.expiresAt } : {}), ...(o.note ? { note: o.note } : {}), ...(legs.length ? { legs: legs.map((l) => ({ ref: l.ref, clientId: l.clientId, at: l.at, type: l.type, side: l.side, qty: l.qty, status: l.status, filledQty: l.filledQty, ...(l.feeUsd !== undefined ? { feeUsd: l.feeUsd } : {}), ...(l.limitPrice !== undefined ? { limitPrice: l.limitPrice } : {}), ...(l.stopPrice !== undefined ? { stopPrice: l.stopPrice } : {}), ...(l.avgPrice !== undefined ? { avgPrice: l.avgPrice } : {}), ...(l.filledAt ? { filledAt: l.filledAt } : {}), ...(l.note ? { note: l.note } : {}) })) } : {}), ...(o.algo ? { algo: algoSaid(o) } : {}), ...(o.tca ? { tca: o.tca } : {}), ...(o.arrival !== undefined ? { arrival: o.arrival } : {}) } };
   };
   const reject = (message: string): Refusal => no("E_VENUE_REJECTED", { venue, message: `${b.name}: ${message}` });
   const record = (f: PaperFill): void => {
@@ -1481,8 +1493,10 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   };
   const orderSaid = (o: PaperOrder): PaperOrderSaid => {
     const ref = b.markets[o.symbol];
-    return { ref: o.ref, clientId: o.clientId, symbol: o.symbol, name: ref?.name ?? o.symbol, kind: ref?.kind ?? "spot", side: o.side, type: o.type, qty: o.qty, status: o.status, filledQty: o.filledQty, ...(o.avgPrice !== undefined ? { avgPrice: o.avgPrice } : {}), ...(o.feeUsd !== undefined ? { feeUsd: o.feeUsd } : {}), ...(o.limitPrice !== undefined ? { limitPrice: o.limitPrice } : {}), ...(o.stopPrice !== undefined ? { stopPrice: o.stopPrice } : {}), ...(o.parent ? { parent: o.parent } : {}), ...(o.note ? { note: o.note } : {}), at: o.at, updatedAt: o.updatedAt };
+    return { ref: o.ref, clientId: o.clientId, symbol: o.symbol, name: ref?.name ?? o.symbol, kind: ref?.kind ?? "spot", side: o.side, type: o.type, qty: o.qty, status: o.status, filledQty: o.filledQty, ...(o.avgPrice !== undefined ? { avgPrice: o.avgPrice } : {}), ...(o.feeUsd !== undefined ? { feeUsd: o.feeUsd } : {}), ...(o.limitPrice !== undefined ? { limitPrice: o.limitPrice } : {}), ...(o.stopPrice !== undefined ? { stopPrice: o.stopPrice } : {}), ...(o.parent ? { parent: o.parent } : {}), ...(o.algo ? { algo: algoSaid(o) } : {}), ...(o.tca ? { tca: o.tca } : {}), ...(o.note ? { note: o.note } : {}), at: o.at, updatedAt: o.updatedAt };
   };
+  /** a worked order's way, as told: the kind, how many of its children are placed, an iceberg's shown size */
+  const algoSaid = (o: PaperOrder): NonNullable<PaperOrderSaid["algo"]> => ({ kind: o.algo!.kind, placed: o.algo!.placed, ...(o.algo!.slices !== undefined ? { slices: o.algo!.slices } : {}), ...(o.algo!.minutes !== undefined ? { minutes: o.algo!.minutes } : {}), ...(o.algo!.show !== undefined ? { show: o.algo!.show } : {}), ...(o.algo!.weighted !== undefined ? { weighted: o.algo!.weighted } : {}) });
   const fillSaid = (f: PaperFill): PaperFillSaid => {
     const o = b.orders[f.ref];
     const ref = b.markets[f.symbol];
@@ -1588,7 +1602,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
     const ref = b.markets[o.symbol]!;
     // a bracket's exit closes what is left of its position and never more: one larger than what is held now (the position reduced, or part
     // of the holding sold, since it was placed) is trimmed to it, as a venue's reduce-only order is — and so is a close of the whole holding
-    if (o.parent || o.closesAll) {
+    if ((o.parent && !algoChild(o)) || o.closesAll) {
       const p = b.positions[o.symbol];
       const left = ref.kind === "perp" ? (p && (p.side === "long" ? "sell" : "buy") === o.side ? p.qty : undefined) : o.side === "sell" ? b.holdings[o.symbol]?.qty : undefined;
       if (left !== undefined && left > 0 && o.qty > left + 1e-12) o.qty = left;
@@ -1690,12 +1704,14 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       ? `isolated margin: the loss went ${usd(fromRest + lossPast)} past this part's share of the margin: ${usd(fromRest)} of it taken from the margin of what is left${lossPast > 0 ? `, and ${usd(lossPast)} past all of it — only the margin was lost` : ""}`
       : lossPast > 0 ? `isolated margin: the loss went ${usd(lossPast)} past the position's margin, and only the margin was lost` : "";
     if (past) o.note = past;
-    const said = [o.parent ? `${o.type === "limit" ? "take-profit" : "stop-loss"} of ${o.parent}` : "", past].filter(Boolean).join(" · ");
+    const said = [o.parent ? (algoChild(o) ? `child of ${o.parent} (${parentOf(o)!.algo!.kind})` : `${o.type === "limit" ? "take-profit" : "stop-loss"} of ${o.parent}`) : "", past].filter(Boolean).join(" · ");
     // what a close realised — a perpetual's at the price (its fee said beside it), a holding sold its proceeds less its fee and what that part
     // cost (fees in): the trade's result, said on the fill as a venue's trade history says a closed trade's
     const made: PaperFill = { ref: o.ref, symbol: o.symbol, side: o.side, qty: o.qty, price: px, feeUsd: fee, at: when, ...(realized !== undefined ? { realizedUsd: realized } : {}), ...(said ? { note: said } : {}) };
     record(made);
-    tripOf(made, o, o.parent ? (o.type === "limit" ? "take-profit" : "stop-loss") : undefined);
+    tripOf(made, o, o.parent && !algoChild(o) ? (o.type === "limit" ? "take-profit" : "stop-loss") : undefined);
+    // a worked order's child filled: the parent's fill is its children's, and an iceberg shows its next child
+    if (o.parent && algoChild(o)) onChildFilled(o, at, q);
     // one exit of a bracket filled: the other is no longer needed
     if (o.oco) {
       const sib = b.orders[o.oco];
@@ -1781,6 +1797,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   /** an order's day over at `t` (its expiresAt reached): expired, its bracket sibling canceled with it. True */
   const expire = (o: PaperOrder, t: number): boolean => {
     o.status = "expired";
+    if (o.algo) endChildren(o, `canceled: its parent ${o.ref} expired`, t);
     o.note = `${o.tif === "day" ? "a day order" : "it"} expired at the end of its session (${o.expiresAt})${o.note ? ` · ${o.note}` : ""}`;
     o.updatedAt = iso(t);
     if (o.oco) {
@@ -1818,6 +1835,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
     // on the book, so its past, told again in time order, is the book's own
     const now = req.clock();
     if (o.expiresAt && now >= Date.parse(o.expiresAt)) return expire(o, now);
+    if (o.algo) return advanceAlgo(o, now, q);
     // a rest is the session's it was earned in: once the market as this quote sees it (its line's delay behind, delayOf) is past that
     // session's end it rests no more, whether or not a look fell between the close and the open (the Mac asleep overnight, the source
     // silent out of hours) — the next session's quote past its limit takes the quote
@@ -2542,9 +2560,11 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
   /** what one order needs when it fills: a buy's cash at its held price with its fee; a perpetual order that would open or add, its margin at
    * the market's leverage and its fee (one that closes the position the other way needs none); a plain sell, its units of the holding. A
    * bracket's exits need nothing: they close what their entry bought, and go with it */
-  const needOf = (o: PaperOrder): { cash: number; units: number } => {
-    const ref = b.markets[o.symbol];
-    if (!ref || o.parent) return { cash: 0, units: 0 };
+  const needOf = (given: PaperOrder): { cash: number; units: number } => {
+    const ref = b.markets[given.symbol];
+    if (!ref || given.parent) return { cash: 0, units: 0 };
+    // a worked order holds for what is still to fill: its children, which hold nothing, fill out of it
+    const o = given.algo ? { ...given, qty: round(Math.max(0, given.qty - given.filledQty), 12) } : given;
     if (ref.kind === "perp") {
       const p = b.positions[o.symbol];
       const closes = !!p && ((p.side === "long" && o.side === "sell") || (p.side === "short" && o.side === "buy"));
@@ -2563,7 +2583,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
     let n = 0;
     const units = new Map<string, number>();
     for (const o of openAll()) {
-      if (but && (o === but || o.ref === but.ref || (but.oco && o.ref === but.oco))) continue;
+      if (but && (o === but || o.ref === but.ref || (but.oco && o.ref === but.oco) || (but.parent && o.ref === but.parent && !!o.algo))) continue;
       const need = needOf(o);
       if (!(need.cash > 0) && !(need.units > 0)) continue;
       n++;
@@ -2729,7 +2749,202 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       if (ref !== undefined && o.takeProfit !== undefined && (up ? o.takeProfit <= ref : o.takeProfit >= ref)) return badOrder(venue, b.name, `the take-profit (${fig(o.takeProfit)}) must be ${up ? "above" : "below"} the entry (${fig(ref)}) for a ${o.side}`);
       if (slRef !== undefined && o.stopLoss !== undefined && (up ? o.stopLoss >= slRef : o.stopLoss <= slRef)) return badOrder(venue, b.name, `the stop-loss (${fig(o.stopLoss)}) must be ${up ? "below" : "above"} the entry (${fig(slRef)}) for a ${o.side}${slRef !== ref ? `: a ${o.side} limited at ${fig(ref!)} crosses the book and fills there, at ${fig(slRef)}` : ""}`);
     }
+    // A WORKED ORDER (OrderRequest.algo): a twap or a vwap is a market order cut into slices over time, an iceberg a limit order shown a
+    // part at a time; no exits, no fill-at-once, no extended hours; each slice at least a step of the market
+    if (o.algo) {
+      const a = o.algo;
+      if (!m.algos?.includes(a.kind)) return badOrder(venue, b.name, `${m.name} is not worked as a ${a.kind} here`);
+      if (o.takeProfit !== undefined || o.stopLoss !== undefined) return badOrder(venue, b.name, "a worked order carries no exits: place them once it has filled");
+      if (o.tif === "ioc" || o.tif === "fok") return badOrder(venue, b.name, "a worked order is good till canceled (or for the day): its children fill one by one");
+      if (o.extendedHours) return badOrder(venue, b.name, "a worked order is for the regular session");
+      if (a.kind === "iceberg") {
+        if (o.type !== "limit") return badOrder(venue, b.name, "an iceberg is a limit order: it shows part of its size at its limit");
+        if (!(a.show !== undefined && a.show > 0 && a.show < o.qty - 1e-12)) return badOrder(venue, b.name, "an iceberg shows less than its size at a time, and more than zero");
+        if (!onStep(a.show, m.qtyStep)) return badOrder(venue, b.name, `an iceberg's shown size in ${m.name} moves in steps of ${fig(m.qtyStep ?? 1)}`);
+      } else {
+        if (o.type !== "market") return badOrder(venue, b.name, `a ${a.kind} is a market order worked over time: its slices take the quote as it comes`);
+        if (!(a.minutes !== undefined && a.minutes >= 1 && a.minutes <= 1440)) return badOrder(venue, b.name, `a ${a.kind} runs over 1 to 1440 minutes`);
+        if (!(a.slices !== undefined && Number.isInteger(a.slices) && a.slices >= 2 && a.slices <= 200)) return badOrder(venue, b.name, `a ${a.kind} is cut into 2 to 200 slices`);
+        if (o.qty < a.slices * (m.qtyStep ?? DEFAULT_QTY_STEP) - 1e-12) return badOrder(venue, b.name, `${a.slices} slices of ${fig(o.qty)} are each smaller than ${m.name}'s step of ${fig(m.qtyStep ?? 1)}: fewer slices`);
+      }
+    }
     return undefined;
+  };
+
+  // ---- WORKED ORDERS (OrderRequest.algo; live/tca.ts) ----------------------------------------------------------------------------------
+  /** the parent of a worked order's child, where the child is one */
+  const parentOf = (o: PaperOrder): PaperOrder | undefined => (o.parent ? b.orders[o.parent] : undefined);
+  const algoChild = (o: PaperOrder): boolean => !!parentOf(o)?.algo;
+  /** the market when a worked order is placed: the middle of its book, else its last */
+  const arrivalOf = (m: Listing): number | undefined => (pos(m.bid) !== undefined && pos(m.ask) !== undefined && m.ask! >= m.bid! ? round((m.bid! + m.ask!) / 2, 10) : pos(m.price));
+  /** the market's 1-minute bars over [from, to], where its source keeps any: for a vwap's weights and the analysis's benchmarks */
+  const minuteBars = async (q: Quoted, symbol: string, from: number, to: number): Promise<Candle[] | undefined> => {
+    if (!q.source.candles) return undefined;
+    const got = await inTime(q.source.candles(symbol, "1m", { since: from, until: to, limit: HISTORY_MOST }).catch(() => undefined), SOURCE_MS);
+    return got && !isRefusal(got) ? (Array.isArray(got) ? got : got.bars) : undefined;
+  };
+  /** the schedule a worked order is placed with: a twap's or a vwap's slices (sizes on the market's step, the last taking the remainder)
+   * and when each is due — the first now; a vwap's sizes weighted by the market's volume at the same minutes a day back, equal where it
+   * keeps none (said on the order); an iceberg's shown size */
+  const planAlgo = async (a: NonNullable<OrderRequest["algo"]>, qty: number, m: Market, q: Quoted, at: number): Promise<{ algo: NonNullable<PaperOrder["algo"]>; note?: string | undefined }> => {
+    if (a.kind === "iceberg") return { algo: { kind: "iceberg", show: a.show!, placed: 0 } };
+    const minutes = a.minutes!;
+    const slices = a.slices!;
+    const step = m.qtyStep ?? DEFAULT_QTY_STEP;
+    const each = (minutes * 60_000) / slices;
+    const dueAt = Array.from({ length: slices }, (_, i) => at + Math.round(i * each));
+    if (a.kind === "vwap") {
+      const bars = await minuteBars(q, m.symbol, at - DAY - 60_000, at - DAY + minutes * 60_000 + 60_000);
+      const weights = bars ? vwapWeights(bars, at, minutes, slices) : undefined;
+      if (weights) return { algo: { kind: "vwap", minutes, slices, sizes: sliceSizes(qty, slices, step, weights), dueAt, placed: 0, weighted: true } };
+      return { algo: { kind: "vwap", minutes, slices, sizes: sliceSizes(qty, slices, step), dueAt, placed: 0, weighted: false }, note: `equal slices: ${m.name}'s source keeps no volume by the minute for the same stretch a day back` };
+    }
+    return { algo: { kind: "twap", minutes, slices, sizes: sliceSizes(qty, slices, step), dueAt, placed: 0 } };
+  };
+  /** a worked order's child, on the book: the parent's side and limit, its worst price, its reduce-only; good till canceled */
+  const childOf = (p: PaperOrder, type: "market" | "limit", qty: number, at: number): PaperOrder => {
+    const child: PaperOrder = { ref: `p${++b.seq}`, clientId: `${p.clientId}-c${(p.children ?? []).length + 1}`, symbol: p.symbol, side: p.side, type, qty, ...(type === "limit" && p.limitPrice !== undefined ? { limitPrice: p.limitPrice } : {}), ...(p.worstPrice !== undefined ? { worstPrice: p.worstPrice } : {}), ...(p.reduceOnly ? { reduceOnly: true } : {}), tif: "gtc", parent: p.ref, status: "open", filledQty: 0, at: iso(at), updatedAt: iso(at) };
+    p.children = [...(p.children ?? []), child.ref];
+    b.orders[child.ref] = child;
+    track(child);
+    return child;
+  };
+  /** the open children of a worked order ended with it, in these words */
+  const endChildren = (p: PaperOrder, note: string, t: number): void => {
+    for (const r of p.children ?? []) {
+      const c = b.orders[r];
+      if (c && (c.status === "open" || c.status === "pending")) Object.assign(c, { status: "canceled", note, updatedAt: iso(t) });
+    }
+  };
+  /** the parent's fill as its children's: units, average, fees — and its analysis against the arrival; done when the whole filled */
+  const sumChildren = (p: PaperOrder, at: number): void => {
+    const kids = (p.children ?? []).map((r) => b.orders[r]).filter((c): c is PaperOrder => !!c && c.filledQty > 0 && c.avgPrice !== undefined);
+    const qty = round(kids.reduce((s, c) => s + c.filledQty, 0), 12);
+    p.filledQty = qty;
+    if (qty > 0) {
+      p.avgPrice = round(kids.reduce((s, c) => s + c.filledQty * c.avgPrice!, 0) / qty, 10);
+      p.feeUsd = round(kids.reduce((s, c) => s + (c.feeUsd ?? 0), 0), 6);
+      if (p.arrival !== undefined) p.tca = tcaOf({ side: p.side, arrival: p.arrival, arrivalAt: Date.parse(p.at), fills: kids.map((c) => ({ qty: c.filledQty, price: c.avgPrice!, feeUsd: c.feeUsd, at: Date.parse(c.filledAt ?? c.updatedAt) })) }) ?? p.tca;
+    }
+    p.updatedAt = iso(at);
+    if (qty >= p.qty - 1e-12) {
+      p.status = "filled";
+      p.filledAt = iso(at);
+      const n = kids.length;
+      p.note = `${p.algo!.kind}: ${n} ${p.algo!.kind === "iceberg" ? "shown part" : "slice"}${n === 1 ? "" : "s"} filled over ${Math.max(1, Math.round((at - Date.parse(p.at)) / 60_000))} min${p.note ? ` · ${p.note}` : ""}`;
+    }
+  };
+  /** the analysis's benchmarks — the market's own volume- and time-weighted averages over the time the order worked — read once it is done,
+   * in the background: the book told and written again with them */
+  const benchmark = (p: PaperOrder, q: Quoted): void => {
+    if (!p.tca) return;
+    const gen = generation;
+    void (async () => {
+      const bars = await minuteBars(q, p.symbol, p.tca!.arrivalAt - 60_000, p.tca!.arrivalAt + p.tca!.spanMs + 60_000);
+      if (!bars || gen !== generation || b.orders[p.ref] !== p || !p.tca) return;
+      const kids = (p.children ?? []).map((r) => b.orders[r]).filter((c): c is PaperOrder => !!c && c.filledQty > 0 && c.avgPrice !== undefined);
+      const again = tcaOf({ side: p.side, arrival: p.arrival!, arrivalAt: Date.parse(p.at), fills: kids.map((c) => ({ qty: c.filledQty, price: c.avgPrice!, feeUsd: c.feeUsd, at: Date.parse(c.filledAt ?? c.updatedAt) })), bars });
+      if (!again) return;
+      p.tca = again;
+      tell();
+      save();
+    })().catch(() => undefined);
+  };
+  /** a child filled: the parent summed; an iceberg's next part shown while any is left, at the quote the child filled at */
+  const onChildFilled = (c: PaperOrder, at: number, q: Quoted): void => {
+    const p = parentOf(c);
+    if (!p?.algo || p.status !== "open") return;
+    sumChildren(p, at);
+    if ((p.status as OrderStatus) === "filled") return benchmark(p, q);
+    if (p.algo.kind === "iceberg") showNext(p, at, q);
+  };
+  /** an iceberg's next part: a limit child of the shown size (or what is left) at the parent's limit — filled at the quote where it crosses
+   * now, else resting (a child placed by this look is judged from the next) */
+  const showNext = (p: PaperOrder, at: number, q: Quoted): void => {
+    const left = round(p.qty - p.filledQty, 12);
+    if (left <= 1e-12) return;
+    const c = childOf(p, "limit", Math.min(p.algo!.show!, left), at);
+    p.algo!.placed++;
+    const px = sideQuote(p.side, q.m);
+    const m = marketOf(q.source, q.m);
+    const fillable = px !== undefined && m.open && fresh(q) && marketTakes({ type: "limit" }, q, at) && canFillNow({ type: "limit" }, q, at);
+    const crossed = fillable && (p.side === "buy" ? px <= p.limitPrice! + 1e-12 : px >= p.limitPrice! - 1e-12);
+    if (crossed) {
+      const r = fill(c, p.side === "buy" ? Math.min(px, p.limitPrice!) : Math.max(px, p.limitPrice!), at, q);
+      if (r) Object.assign(c, { status: "rejected", note: r.message, updatedAt: iso(at) });
+    } else if (fillable) rest(c, q, at);
+  };
+  /** ONE LOOK AT A WORKED ORDER (judge): a twap or a vwap places the slice due by now, one a look — filled at the quote within the parent's
+   * worst price, the book walked for its size as a market order's is; a slice the quote cannot fill now (past the worst price, the book
+   * too thin, the market not in session) is folded into the next, and the last such ends the order with what filled — an iceberg shows
+   * its first part, or one again where none is open. True when the book changed */
+  const advanceAlgo = async (p: PaperOrder, at: number, q: Quoted): Promise<boolean> => {
+    const a = p.algo!;
+    if (p.status !== "open") return false;
+    if (a.kind === "iceberg") {
+      const open = (p.children ?? []).some((r) => b.orders[r]?.status === "open" || b.orders[r]?.status === "pending");
+      if (open) return false;
+      if (round(p.qty - p.filledQty, 12) <= 1e-12) {
+        sumChildren(p, at);
+        return true;
+      }
+      showNext(p, at, q);
+      return true;
+    }
+    const sizes = a.sizes!;
+    const i = a.placed;
+    if (i >= sizes.length) {
+      // every slice placed: what filled stands; the rest, if any, could not
+      sumChildren(p, at);
+      if (p.status === "open") {
+        p.status = "canceled";
+        p.note = `${a.kind}: ${fig(p.filledQty)} of ${fig(p.qty)} filled; the rest could not (${p.note ?? "no slice took it"})`;
+        p.updatedAt = iso(at);
+      }
+      return true;
+    }
+    if (at < a.dueAt![i]!) return false;
+    const size = sizes[i]!;
+    const m = marketOf(q.source, q.m);
+    const px = sideQuote(p.side, q.m);
+    /** this slice could not fill: folded into the next, or the order ended with it */
+    const fold = (why: string): boolean => {
+      a.placed++;
+      if (i + 1 < sizes.length) {
+        sizes[i + 1] = round(sizes[i + 1]! + size, 12);
+        p.note = `slice ${i + 1} of ${sizes.length} folded into the next: ${why}`;
+        p.updatedAt = iso(at);
+        return true;
+      }
+      sumChildren(p, at);
+      if (p.status === "open") {
+        p.status = "canceled";
+        p.note = `${a.kind}: ${fig(p.filledQty)} of ${fig(p.qty)} filled; the last slice could not: ${why}`;
+        p.updatedAt = iso(at);
+      }
+      endChildren(p, `canceled with its parent ${p.ref}`, at);
+      return true;
+    };
+    if (size <= 0) {
+      a.placed++;
+      return true;
+    }
+    if (!m.open) return fold(`${m.name} takes no orders now`);
+    if (!marketTakes({ type: "market" }, q, at) || !canFillNow({ type: "market" }, q, at)) return false;
+    if (!fresh(q)) return false;
+    if (px === undefined) return fold(`${m.name} shows no ${p.side === "buy" ? "ask" : "bid"}`);
+    if (pastWorst(p, px)) return fold(`the quote (${fig(px)}) is past the worst price the order allows (${fig(p.worstPrice!)})`);
+    const taken = await takeAt({ side: p.side, qty: size, worstPrice: p.worstPrice, symbol: p.symbol }, q);
+    if (typeof taken === "string") return fold(taken);
+    if (b.orders[p.ref] !== p) return false;
+    const c = childOf(p, "market", size, at);
+    a.placed++;
+    const r = fill(c, taken, at, q);
+    if (r) {
+      Object.assign(c, { status: "rejected", note: r.message, updatedAt: iso(at) });
+      return fold(r.message);
+    }
+    return true;
   };
 
   const trader: LiveTrader = {
@@ -2858,6 +3073,25 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
         const st = hubNow()?.quote(q.source.id, o.symbol);
         if (st && order.status === "open") judgedAt.set(order.ref, { seq: st.seq, at, ...(order.stopPrice !== undefined ? { stop: order.stopPrice } : {}) });
       };
+      // A WORKED ORDER: the parent goes on the book with its schedule, holding what the whole needs (its children hold nothing: they fill
+      // out of it), and its first slice or shown part is placed now
+      if (o.algo) {
+        const arrival = arrivalOf(q.m);
+        if (arrival === undefined) return no("E_VENUE_REJECTED", { venue, message: `${b.name}: ${m.name} shows no price just now to work the order from` });
+        const planned = await planAlgo(o.algo, o.qty, m, q, at);
+        const again = ofClient(o.clientId);
+        if (again) return stateOf(again);
+        order.algo = planned.algo;
+        order.arrival = arrival;
+        order.children = [];
+        if (planned.note) order.note = planned.note;
+        const room = roomFor(order);
+        if (room) return room;
+        onBook();
+        await advanceAlgo(order, req.clock(), q);
+        save();
+        return stateOf(order);
+      }
       if (o.type === "market") {
         if (fillable) {
           // the account's worst price holds here as a marketable limit does: a quote past it fills nothing
@@ -2938,6 +3172,12 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       if (o.status === "open") {
         o.status = "canceled";
         o.updatedAt = at;
+        // a worked order canceled: its open child goes with it, and what its children filled stands as its fill
+        if (o.algo) {
+          endChildren(o, `canceled with its parent ${o.ref}`, req.clock());
+          const kids = (o.children ?? []).map((r) => b.orders[r]).filter((c): c is PaperOrder => !!c && c.filledQty > 0);
+          o.note = `${o.algo.kind} canceled: ${fig(o.filledQty)} of ${fig(o.qty)} filled in ${kids.length} ${o.algo.kind === "iceberg" ? "part" : "slice"}${kids.length === 1 ? "" : "s"}`;
+        }
         // one exit of a bracket canceled takes the other with it (one cancels the other)
         if (o.oco) {
           const sib = b.orders[o.oco];
