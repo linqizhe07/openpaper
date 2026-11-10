@@ -1,15 +1,16 @@
 /* Markets: what there is to trade — at the venues the owner connected, and (read without a key, "Connect to trade") at the venues not
    connected — from GET /api/account/explore, in the tabs it returns: All (one table, sorted here), Crypto, Stocks, RWAs, Perps, Pre-IPO,
    Predictions (Yes/No cards whose prices are asked again only while a card is in view and the page is in view: GET /api/account/quotes),
-   and Watching — the owner's watchlist, and under it the owner's PRICE ALERTS. Over the All tab THE PULSE (after OpenStock's dashboard):
+   and Watching — the owner's watchlist, and under it the owner's ALERTS: on a price, the day's move, the volume, a perpetual's funding,
+   the news or a US share's earnings (account/state.ts ALERT_CONDITIONS). Over the All tab THE PULSE (after OpenStock's dashboard):
    the US stock market's session with a countdown, and the day in six figures — the S&P 500, Nasdaq 100, Dow and Russell 2000 by the ETFs
    that track them, Bitcoin and Ethereum — each a tile that opens the market. One market in THE ONE DRAWER (openMarket; a holding opens it
    by its key through openAsset, asset.js): its price, its history, every venue's price for it, what is held — positions to close, orders to
-   cancel, what was paid — its price alerts, what the agents are doing in it, and its lines on the statement. Markets manages no accounts:
+   cancel, what was paid — its alerts, what the agents are doing in it, and its lines on the statement. Markets manages no accounts:
    connections live under Portfolio › Accounts and the Connect picker.
    Every button does what it says through the account's own door: an order opens the ticket and is signed there; ★ is a signed setWatch; 🔔
-   opens the alert sheet, whose Set is a signed setAlert (the account itself prices the market every half minute and says the alert when it
-   fires: service.ts watchAlerts, shell.js shAlertToast) and whose Remove is a signed setAlert too; "Connect to trade" opens that connection's
+   opens the alert sheet, whose Set is a signed setAlert (the account itself looks every half minute — the market's price and day, the
+   news, the calendar — and says the alert when it fires: service.ts watchAlerts, shell.js shAlertToast) and whose Remove is a signed setAlert too; "Connect to trade" opens that connection's
    own form; Cancel is a signed liveCancel (core cancelOrder); Close… is the Trade pane's signed close. Where a venue refuses, its own words
    are shown, and what fixes it. Nothing here is a sample. */
 
@@ -398,12 +399,12 @@ function mkStar(item, i, since) {
   const can = on || !!mkWatchTarget(item);
   return can ? `<button type="button" class="icon-btn mk-star" data-act="watch" data-i="${i}" data-fk="watch:${esc(item.key)}" aria-pressed="${String(on)}" aria-label="${on ? "Stop watching" : "Watch"} ${esc(item.name)}"${since ? ` title="Watching since ${esc(nyDay(since))}"` : ""}${mkDis()}>${icon("star")}</button>` : "";
 }
-/* 🔔: the row's price alerts — pressed while one stands on it, how many in its title — opens the alert sheet (openAlertSheet); drawn
+/* 🔔: the row's alerts — pressed while one stands on it, how many in its title — opens the alert sheet (openAlertSheet); drawn
    wherever ★ is, for the same markets */
 function mkBell(item, i) {
   const n = mkAlertsOf(item).length;
   if (!n && !mkWatchTarget(item)) return "";
-  return `<button type="button" class="icon-btn mk-bell" data-act="alert" data-i="${i}" data-fk="alert:${esc(item.key)}" aria-pressed="${String(n > 0)}" aria-label="${n ? `${plural(n, "price alert")} on` : "Set a price alert for"} ${esc(item.name)}" title="${n ? `${plural(n, "price alert")} standing: set another, or remove one` : "Price alert: be told when it rises above, or falls below, a price"}"${mkDis()}>${icon("bell")}</button>`;
+  return `<button type="button" class="icon-btn mk-bell" data-act="alert" data-i="${i}" data-fk="alert:${esc(item.key)}" aria-pressed="${String(n > 0)}" aria-label="${n ? `${plural(n, "alert")} on` : "Set an alert for"} ${esc(item.name)}" title="${n ? `${plural(n, "alert")} standing: set another, or remove one` : "Alert: be told when its price crosses a line, when it moves, trades or funds past one, when it is in the news, or before it reports"}"${mkDis()}>${icon("bell")}</button>`;
 }
 /* ★ and 🔔 together, a row's first cell */
 const mkKeys = (item, i, since) => `<span class="mk-keys">${mkStar(item, i, since)}${mkBell(item, i)}</span>`;
@@ -484,7 +485,7 @@ const mkVolCell = (item) => (item.volumeUsd24h !== undefined ? mkVol(item.volume
  * short name, its lead outcome in cents; its question and its countdown are in its hover card */
 function mkTable(items, empty) {
   const cols = [
-    { label: "", sr: "Watch, price alert", cls: "mk-c-keys", cell: (x) => mkKeys(x.item, x.i) },
+    { label: "", sr: "Watch, alert", cls: "mk-c-keys", cell: (x) => mkKeys(x.item, x.i) },
     { label: "Market", cls: "mk-c-name", cell: (x) => mkNameBtn(x.item, x.i) },
     { label: "Where", cls: "mk-c-where", cell: (x) => mkWhere(x.item) },
     { label: "Price", r: true, cell: (x) => mkPriceCell(x.item) },
@@ -530,7 +531,7 @@ const mkSkelCards = (n) => `<div class="cards-grid" aria-hidden="true">${Array.f
 const mkSkel = () => `<div class="mk-block" aria-busy="true"><span class="sr" role="status">Reading the markets…</span>${mkSkelCards(3)}<div class="skel-rows" aria-hidden="true"><span class="skel"></span><span class="skel"></span><span class="skel"></span><span class="skel" style="width:60%"></span></div></div>`;
 
 /* the tabs the explore read returned, in its order (a legacy `now` is All; All first either way), "All results" while searching, then
-   Watching (when anything is watched, or a price alert stands or fired) */
+   Watching (when anything is watched, or an alert stands or fired) */
 function mkTabIds(body) {
   const from = ((body && body.tabs) || []).map((t) => (t.id === "now" ? ["all", "All"] : [t.id, t.label]));
   return from.some(([id]) => id === "all") ? from : [["all", "All"], ...from];
@@ -601,7 +602,7 @@ function mkWatchingHtml(lens) {
   }).filter((x) => mkInLens(x.item, lens));
   if (!rows.length) return '<div class="card"><p class="empty">Nothing watched. Press ★ on a market to watch it: your agents read the watchlist.</p></div>';
   const cols = [
-    { label: "", sr: "Watch, price alert", cls: "mk-c-keys", cell: (x) => mkKeys(x.item, x.i, x.w.at) },
+    { label: "", sr: "Watch, alert", cls: "mk-c-keys", cell: (x) => mkKeys(x.item, x.i, x.w.at) },
     { label: "Market", cls: "mk-c-name", cell: (x) => mkNameBtn(x.item, x.i) },
     { label: "Where", cls: "mk-c-where", cell: (x) => mkWhere(x.item) },
     { label: "Price", r: true, cell: (x) => {
@@ -618,67 +619,109 @@ function mkWatchingHtml(lens) {
   return `<div class="card">${table(cols, rows.map((x) => ({ ...x, i: mkReg(x.item) })), { cls: "mk-t", rowAttr: (x) => `data-k="${esc(`${x.w.venue}|${x.w.symbol}`)}"${mkVenue(x.w.venue) ? ` data-pairs="${esc(`${x.w.venue}|${x.w.symbol}`)}"` : ""}` })}</div>`;
 }
 
-// ---- price alerts (account/state.ts Alert): the owner's, signed as setAlert; agents read them too -------------------------------------
+// ---- alerts (account/state.ts Alert): the owner's, signed as setAlert; agents read them too -------------------------------------
 
-/* an alert is on one of this row's markets (any venue, any outcome), as a watch is: the standing ones, and the ones that fired */
-const mkAlertsOf = (item) => (A && Array.isArray(A.alerts) && item && item.at ? A.alerts.filter((x) => mkIsWatch(item, x)) : []);
-const mkFiredOf = (item) => (A && Array.isArray(A.alertsFired) && item && item.at ? A.alertsFired.filter((x) => mkIsWatch(item, x)) : []);
+/* an alert is on one of this row's markets (any venue, any outcome), as a watch is — or, a news or an earnings alert, names the row's
+   ticker or name (the readers are no venue: its venue is `news` or `calendar`) — the standing ones, and the ones that fired */
+const mkIsReaderVenue = (v) => v === "news" || v === "calendar";
+const mkIsReaderAlert = (item, x) => mkIsReaderVenue(x.venue) && !!item && (x.symbol === item.base || x.symbol === item.name) && (x.venue === "news" || item.kind === "stock");
+const mkAlertsOf = (item) => (A && Array.isArray(A.alerts) && item && item.at ? A.alerts.filter((x) => mkIsWatch(item, x) || mkIsReaderAlert(item, x)) : []);
+const mkFiredOf = (item) => (A && Array.isArray(A.alertsFired) && item && item.at ? A.alertsFired.filter((x) => mkIsWatch(item, x) || mkIsReaderAlert(item, x)) : []);
 /* an alert's figure as the market says its prices: cents for an event contract, dollars for the rest */
 const mkAlertFig = (item, n) => (item && item.kind === "event" ? mkCents(n) : mkUsd(n));
 /* a figure as the account signs it: a plain decimal, at most ten places, no exponent and no trailing zeros */
 const mkPlain = (n) => Number(n).toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
-/** which way, in words: on a standing alert, what it will say; on a fired one, what happened */
-const mkAlertWay = (x, past = false) => (x.condition === "above" ? (past ? "rose above" : "Rises above") : past ? "fell below" : "Falls below");
+/** an alert's kind in a word, as the account says it (account/state.ts alertKind): price · move · volume · funding · news · earnings */
+const mkAlertKind = (x) => (x.condition === "above" || x.condition === "below" ? "price" : /^change-/.test(x.condition) ? "move" : x.condition === "volume-above" ? "volume" : /^funding-/.test(x.condition) ? "funding" : x.condition);
+/** where an alert looks: its venue's name, or the reader's ("the news", "the calendar") */
+const mkAlertWhere = (x) => x.venueName || (x.venue === "news" ? "the news" : x.venue === "calendar" ? "the calendar" : nameOf(x.venue));
+/** a percent as an alert says it: 3%, 0.01%, +4.2% where signed */
+const mkAlertPct = (n, signed = false) => `${signed && n > 0 ? "+" : ""}${mkPlain(Math.round(n * 1e6) / 1e6)}%`;
+/** what an alert says, figure and all: standing, what it will tell ("Rises above $63,500", "Rises 3% or more on the day", "Is in 3
+ * headlines"); fired, what happened ("rose above $63,500"). A price alert's figure is said as the market's prices are (mkAlertFig) */
+function mkAlertSays(x, item, past = false) {
+  switch (x.condition) {
+    case "above": return `${past ? "rose" : "Rises"} above ${mkAlertFig(item, x.price)}`;
+    case "below": return `${past ? "fell" : "Falls"} below ${mkAlertFig(item, x.price)}`;
+    case "change-above": return `${past ? "rose" : "Rises"} ${mkAlertPct(x.price)} or more on the day`;
+    case "change-below": return `${past ? "fell" : "Falls"} ${mkAlertPct(x.price)} or more on the day`;
+    case "volume-above": return `${past ? "traded" : "Trades"} more than ${mkVol(x.price)} in 24 hours`;
+    case "funding-above": return `${past ? "funding went" : "Funding goes"} above ${mkAlertPct(x.price)} an interval`;
+    case "funding-below": return `${past ? "funding went" : "Funding goes"} below ${mkAlertPct(x.price)} an interval`;
+    case "news": return `${past ? "was" : "Is"} in ${x.price === 1 ? "a headline" : `${x.price} headlines`}`;
+    case "earnings": return `${past ? "reports" : "Reports"} within ${x.price === 1 ? "a day" : `${x.price} days`}`;
+    default: return x.condition;
+  }
+}
+/** a fired alert, in words, with what fired it in the alert's own measure: the price seen, the day's move, the 24-hour volume, the funding;
+ * a news alert how many headlines there were, an earnings alert in how many days the share reports */
+function mkAlertFired(f, item) {
+  const kind = mkAlertKind(f);
+  if (kind === "news") return `was in ${plural(f.seen, "headline")}`;
+  if (kind === "earnings") return `reports ${f.seen === 0 ? "today" : `in ${plural(f.seen, "day")}`}`;
+  const seen = kind === "price" ? mkAlertFig(item, f.seen) : kind === "move" ? mkAlertPct(f.seen, true) : kind === "volume" ? mkVol(f.seen) : mkAlertPct(f.seen);
+  return `${mkAlertSays(f, item, true)}: ${seen}`;
+}
 /** this market's alerts, as lines: the standing ones (each with Remove, a signed setAlert with on "" — only for a browser that signs) and
- * the fired ones, newest first, each with the price that fired it and whose price that was. "" where it has none */
+ * the fired ones, newest first, each with what fired it and where that was read. "" where it has none */
 function mkAlertLinesHtml(item) {
   const standing = mkAlertsOf(item);
   const fired = mkFiredOf(item).slice(0, 5);
   if (!standing.length && !fired.length) return "";
   const owner = owns();
   const lines = [
-    ...standing.map((x) => `<div><span class="mk" aria-hidden="true">·</span><div><div class="t1">${esc(mkAlertWay(x))} ${esc(mkAlertFig(item, x.price))}</div><div class="t2">${esc(x.venueName || nameOf(x.venue))} · since ${esc(nyDay(x.at))} · until ${esc(nyDay(x.expiresAt))} · ${esc(x.id)}</div></div>${owner ? `<button type="button" class="btn btn-sm btn-ghost" data-act="alert-off" data-id="${esc(x.id)}" data-fk="alert-off:${esc(x.id)}">Remove</button>` : ""}</div>`),
-    ...fired.map((f) => `<div><span class="mk ok" aria-hidden="true">✓</span><div><div class="t1">${esc(mkAlertWay(f, true))} ${esc(mkAlertFig(item, f.price))}: ${esc(mkAlertFig(item, f.seen))}</div><div class="t2">${esc(f.venueName || nameOf(f.venue))} · ${esc(nyDay(f.firedAt))} ${esc(nyTime(f.firedAt))} New York${f.from ? ` · ${esc(f.from)}` : ""}</div></div></div>`),
+    ...standing.map((x) => `<div><span class="mk" aria-hidden="true">·</span><div><div class="t1">${esc(mkAlertSays(x, item))}</div><div class="t2">${esc(mkAlertWhere(x))} · since ${esc(nyDay(x.at))} · until ${esc(nyDay(x.expiresAt))} · ${esc(x.id)}</div></div>${owner ? `<button type="button" class="btn btn-sm btn-ghost" data-act="alert-off" data-id="${esc(x.id)}" data-fk="alert-off:${esc(x.id)}">Remove</button>` : ""}</div>`),
+    ...fired.map((f) => `<div><span class="mk ok" aria-hidden="true">✓</span><div><div class="t1">${esc(mkAlertFired(f, item))}</div><div class="t2">${esc(mkAlertWhere(f))} · ${esc(nyDay(f.firedAt))} ${esc(nyTime(f.firedAt))} New York${f.from ? ` · ${esc(f.from)}` : ""}</div></div></div>`),
   ];
   return `<div class="feed mk-al-feed">${lines.join("")}</div>`;
 }
-/* the price now of an alert's market, for the Alerts list: fresh from its venue where that is connected (the poll moves it in place: data-q),
-   else as the Markets list read the row; and how far the figure is from it */
+/* what the alert's figure is now, for the Alerts list: a price alert's market priced fresh from its venue where that is connected (the poll
+   moves it in place: data-q), else as the Markets list read the row, and how far the figure is from it; a move, volume or funding alert's
+   figure as the row lists it; a news or an earnings alert has no now */
 function mkAlertNowCell(r) {
-  const ev = r.item.kind === "event";
+  const kind = mkAlertKind(r.x);
+  const it = r.item;
+  if (kind === "move") return it.changePct24h !== undefined ? chg(it.changePct24h) : "—";
+  if (kind === "volume") return it.volumeUsd24h !== undefined ? mkVol(it.volumeUsd24h) : "—";
+  if (kind === "funding") return it.fundingRate !== undefined ? esc(mkAlertPct(it.fundingRate * 100)) : "—";
+  if (kind !== "price") return `<span class="dim small">${kind === "news" ? "since it was set" : "the week ahead"}</span>`;
+  const ev = it.kind === "event";
   const m = mkVenue(r.x.venue) ? mkFresh(`${r.x.venue}|${r.x.symbol}`) : null;
-  const now = m ? (m.price ?? m.ask) : mkPriceOf(r.item);
+  const now = m ? (m.price ?? m.ask) : mkPriceOf(it);
   const n = Number(now);
   const dist = Number.isFinite(n) && n > 0 ? ((r.x.price - n) / n) * 100 : null;
   const live = mkVenue(r.x.venue) ? ` data-q="${esc(`${r.x.venue}|${r.x.symbol}`)}" data-fmt="${ev ? "c-last" : "usd"}"` : "";
   return `<span${live}>${ev ? mkCents(now) : mkUsd(now)}</span>${dist !== null ? `<span class="dim small"> · ${dist > 0 ? "+" : ""}${dist.toFixed(1)}% to go</span>` : ""}`;
 }
+/* a news alert's words, or an earnings alert's ticker, where Markets lists no row for them: enough of a row for the list */
+const mkWordsRow = (x) => ({ key: `alert:${x.id}`, kind: "words", name: x.symbol, tabs: [], at: [] });
 /** THE ALERTS, under the watchlist on the Watching tab: each standing alert — its market (the row Markets lists, else a row of its own, as
- * a watched market no read carries), which way and the figure, the price now, since and until when — and Remove; then the ones that fired,
- * newest first. What the account says of them: checked about every 30 seconds while it runs, each standing 90 days. "" with none at all */
+ * a watched market no read carries; a news alert's words, an earnings alert's ticker, where no row names them), what it says and where it
+ * looks, the figure now, since and until when — and Remove; then the ones that fired, newest first. What the account says of them: looked
+ * at about every 30 seconds while it runs, each standing 90 days. "" with none at all */
 function mkAlertsHtml(lens) {
   const alerts = A.alerts || [];
   const fired = A.alertsFired || [];
   if (!alerts.length && !fired.length) return "";
   const body = (MKT.got.get(MKT_ALL) || {}).good;
   const all = mkRows(body);
-  const rowOf = (x) => all.find((r) => mkIsWatch(r, x)) || mkPseudo(x, body);
+  const rowOf = (x) => all.find((r) => mkIsWatch(r, x) || mkIsReaderAlert(r, x)) || (mkIsReaderVenue(x.venue) ? mkWordsRow(x) : mkPseudo(x, body));
   const rows = alerts.map((x) => ({ x, item: rowOf(x) })).filter((r) => mkInLens(r.item, lens));
   const owner = owns();
   const cols = [
-    { label: "Market", cls: "mk-c-name", cell: (r) => mkNameBtn(r.item, r.i) },
-    { label: "Tells you when", cell: (r) => `<span class="mk-al-cond">${esc(mkAlertWay(r.x))} <b>${esc(mkAlertFig(r.item, r.x.price))}</b></span>` },
+    { label: "Market", cls: "mk-c-name", cell: (r) => (r.item.kind === "words" ? `<span class="mk-al-words">${esc(r.item.name)}</span>` : mkNameBtn(r.item, r.i)) },
+    { label: "Tells you when", cell: (r) => `<span class="mk-al-cond">${esc(mkAlertSays(r.x, r.item))}</span><span class="dim small"> · ${esc(mkAlertWhere(r.x))}</span>` },
     { label: "Now", r: true, cell: (r) => mkAlertNowCell(r) },
     { label: "Since", cell: (r) => `<span class="dim small">${esc(nyDay(r.x.at))} · until ${esc(nyDay(r.x.expiresAt))}</span>` },
     { label: "", sr: "Actions", r: true, cell: (r) => (owner ? `<div class="acts"><button type="button" class="btn btn-sm btn-ghost" data-act="alert-off" data-id="${esc(r.x.id)}" data-fk="alert-off:${esc(r.x.id)}">Remove</button></div>` : "") },
   ];
   const standing = rows.length
     ? table(cols, rows.map((r) => ({ ...r, i: mkReg(r.item) })), { cls: "mk-t mk-al-t", rowAttr: (r) => `data-k="${esc(r.x.id)}"${mkVenue(r.x.venue) ? ` data-pairs="${esc(`${r.x.venue}|${r.x.symbol}`)}"` : ""}` })
-    : `<p class="empty">${alerts.length ? "No price alert in this lens." : "No price alert standing. Press 🔔 on a market to be told when it crosses a price."}</p>`;
+    : `<p class="empty">${alerts.length ? "No alert in this lens." : "No alert standing. Press 🔔 on a market to be told when its price crosses a line, when it moves, trades or funds past one, when it is in the news, or before it reports."}</p>`;
   const firedHtml = fired.length
-    ? `<div class="feed mk-al-feed">${fired.slice(0, 8).map((f) => { const it = rowOf(f); return `<div><span class="mk ok" aria-hidden="true">✓</span><div><div class="t1">${esc(f.symbol)} at ${esc(f.venueName || nameOf(f.venue))} ${esc(mkAlertWay(f, true))} ${esc(mkAlertFig(it, f.price))}: ${esc(mkAlertFig(it, f.seen))}</div><div class="t2">${esc(nyDay(f.firedAt))} ${esc(nyTime(f.firedAt))} New York${f.from ? ` · ${esc(f.from)}` : ""}</div></div></div>`; }).join("")}</div>`
+    ? `<div class="feed mk-al-feed">${fired.slice(0, 8).map((f) => { const it = rowOf(f); return `<div><span class="mk ok" aria-hidden="true">✓</span><div><div class="t1">${esc(f.symbol)}${mkIsReaderVenue(f.venue) ? "" : ` at ${esc(mkAlertWhere(f))}`} ${esc(mkAlertFired(f, it))}</div><div class="t2">${esc(nyDay(f.firedAt))} ${esc(nyTime(f.firedAt))} New York${f.from ? ` · ${esc(f.from)}` : ""}</div></div></div>`; }).join("")}</div>`
     : "";
-  return `<section class="sec" aria-label="Price alerts"><div class="sec-head"><h2 class="h2">Price alerts</h2><span class="dim small">${esc(plural(alerts.length, "alert"))} standing · checked about every 30 seconds while the account runs · each stands 90 days</span></div>${standing}${firedHtml ? `<h3 class="label">Fired</h3>${firedHtml}` : ""}</section>`;
+  return `<section class="sec" aria-label="Alerts"><div class="sec-head"><h2 class="h2">Alerts</h2><span class="dim small">${esc(plural(alerts.length, "alert"))} standing · looked at about every 30 seconds while the account runs · each stands 90 days</span></div>${standing}${firedHtml ? `<h3 class="label">Fired</h3>${firedHtml}` : ""}</section>`;
 }
 
 // ---- the pulse (after OpenStock's dashboard): the session and the day in six figures, over the All tab -------------------------------
@@ -980,59 +1023,131 @@ async function mkAlertOff(id) {
   if (!x || !owns()) return;
   await own({ type: "setAlert", id: x.id, venue: x.venue, symbol: x.symbol, condition: x.condition, price: mkPlain(x.price), on: "" });
 }
-/** THE ALERT SHEET for one market (🔔 on a row, Alert in the drawer): Rises above | Falls below, the figure — the price now to start with;
- * an event contract's in cents — how far from the price now, and a warning where the price is there already (it fires at the next look,
- * within half a minute). Prepared by the account as it is typed and shown field by field before the signature (core quoteDialog): Set is a
- * signed setAlert through the account's door. Under the form, this market's alerts standing (each with Remove) and the ones that fired. A
- * switch asks this browser to show alerts as its own notifications too (the browser's permission asked once; kept in this browser alone:
- * shell.js SH_NOTIFY_KEY). The market the alert names is the one ★ would watch: at the first connected venue, else at the venue its public
- * prices would be once connected (mkWatchTarget) */
-function openAlertSheet(item) {
-  if (!A || !item) return;
+/** THE ALERT SHEET for one market (🔔 on a row, Alert in the drawer). What it watches is picked first — the PRICE (Rises above | Falls below
+ * a price: the price now to start with, an event contract's in cents, how far from the price now, and a warning where the price is there
+ * already: it fires at the next look, within half a minute); the DAY'S MOVE (rises or falls so many percent on the day, by the venue's own
+ * 24-hour change); the VOLUME (more than so many dollars in 24 hours); a perpetual's FUNDING (goes above or below so many percent an
+ * interval); the NEWS (so many new headlines carrying the words, put out after the alert is set — a US share's ticker reads its own feed
+ * too; the alert's venue is the news reader, `news`); a US share's EARNINGS (reports within so many days, a week at most: as far as the
+ * calendar is read; the venue `calendar`). Prepared by the account as it is typed and shown field by field before the signature (core
+ * quoteDialog): Set is a signed setAlert through the account's door. Under the form, this market's alerts standing (each with Remove) and
+ * the ones that fired. A switch asks this browser to show alerts as its own notifications too (the browser's permission asked once; kept
+ * in this browser alone: shell.js SH_NOTIFY_KEY). The market a venue's alert names is the one ★ would watch: at the first connected venue,
+ * else at the venue its public prices would be once connected (mkWatchTarget). The sheet's own reckoning — what this market can be watched
+ * for, the draft a form's fields make, what the preparation shows — is three functions of its own (mkAlertSheetOf, mkAlertDraft,
+ * mkAlertShow), so the words can be checked without a sheet */
+const MK_ALERT_TICKER = /^[A-Z]{1,5}([.-][A-Z])?$/;
+/* what this market can be watched for, and what each kind's form says: its two ways (or one), the figure's label, what the field starts
+   with and its placeholder. A venue's figures where a venue lists it (the price; the day's move and the volume, but an event contract's,
+   said in cents and contracts; a perpetual's funding), the news for any market, the earnings for a US share */
+function mkAlertSheetOf(item) {
   const t = mkWatchTarget(item);
   const had = mkAlertsOf(item);
-  if (!t && !had.length) return void toast("No venue lists this market right now, so no price alert can name it.", "info");
+  const was = had.find((x) => !mkIsReaderVenue(x.venue));
   const ev = item.kind === "event";
-  const venue = t ? t.venue : had[0].venue;
-  const symbol = t ? t.symbol : had[0].symbol;
-  const venueName = (item.at.find((a) => a.venue === venue || mkVenueOfLeg(item, a.venue) === venue) || {}).venueName || (had[0] && had[0].venueName) || nameOf(venue);
+  const ticker = item.kind === "stock" && MK_ALERT_TICKER.test(String(item.base || "")) ? item.base : "";
+  const kinds = [...(t || was ? [["price", "Price"], ...(ev ? [] : [["move", "Day's move"], ["volume", "Volume"]]), ...(item.kind === "perp" ? [["funding", "Funding"]] : [])] : []), ["news", "News"], ...(ticker ? [["earnings", "Earnings"]] : [])];
+  const venue = t ? t.venue : was ? was.venue : "";
+  const symbol = t ? t.symbol : was ? was.symbol : "";
+  const venueName = venue ? (item.at.find((a) => a.venue === venue || mkVenueOfLeg(item, a.venue) === venue) || {}).venueName || (was && was.venueName) || nameOf(venue) : "";
   const now = Number(mkPriceOf(item));
   const hasNow = Number.isFinite(now) && now > 0;
-  // what the field starts with: the price now, as the owner types one (cents for an event contract: 62 for 62¢)
+  // what the price field starts with: the price now, as the owner types one (cents for an event contract: 62 for 62¢)
   const start = hasNow ? (ev ? mkPlain(Math.round(now * 10000) / 100) : mkPlain(Number(now.toPrecision(8)))) : "";
+  const forms = {
+    price: { conds: [["above", "Rises above"], ["below", "Falls below"]], label: ev ? "Price, in cents (62 is 62¢)" : "Price, in dollars", start, hint: ev ? "62" : "63500" },
+    move: { conds: [["above", "Rises"], ["below", "Falls"]], label: "By this much or more on the day, in percent", start: "5", hint: "5" },
+    volume: { conds: null, label: "More than this many dollars in 24 hours", start: item.volumeUsd24h !== undefined ? mkPlain(Math.round(item.volumeUsd24h)) : "", hint: "1000000" },
+    funding: { conds: [["above", "Goes above"], ["below", "Goes below"]], label: "Funding, in percent an interval", start: item.fundingRate !== undefined ? mkPlain(Math.round(item.fundingRate * 1e6) / 1e4) : "", hint: "0.01" },
+    news: { conds: null, label: "How many new headlines, at least", start: "1", hint: "1" },
+    earnings: { conds: null, label: "Within how many days (7 at most)", start: "7", hint: "7" },
+  };
+  return { item, kinds, first: kinds[0][0], forms, venue, symbol, venueName, ticker, ev, now, hasNow, words: ticker || item.name || item.base || symbol || "" };
+}
+/* the setAlert a form's fields make (kind, condition above|below, price, words), or what is still to type, in words */
+function mkAlertDraft(c, f) {
+  const kind = c.forms[f.kind] && c.kinds.some((k) => k[0] === f.kind) ? f.kind : c.first;
+  const typed = String(f.price || "").trim();
+  const said = String(f.words || "").trim();
+  const fmt = (n) => mkAlertFig(c.item, n);
+  if (kind === "news" && !said) return "Type the words to look for in headlines: a US share's ticker, or a word or two.";
+  if (!typed) return kind === "price" ? `Type the price you want to be told at${c.hasNow ? ` (now ${fmt(c.now)})` : ""}.` : kind === "move" ? "Type the move, in percent: 5 for a 5% day." : kind === "volume" ? "Type the dollars traded in 24 hours: 1000000 for a million." : kind === "funding" ? "Type the funding rate, in percent an interval: 0.01." : kind === "news" ? "Type how many new headlines: 1 to be told at the first." : "Type within how many days: 7 for a week.";
+  if (!/^\d{1,12}(\.\d{1,10})?$/.test(typed) || !(Number(typed) > 0)) return kind === "price" && c.ev ? "A price in cents is a plain positive number: 62 for 62¢, 0.5 for half a cent." : "A plain positive number: 63500, or 0.1212.";
+  const n = Number(typed);
+  if ((kind === "news" || kind === "earnings") && !Number.isInteger(n)) return kind === "news" ? "A whole number of headlines." : "A whole number of days.";
+  if (kind === "earnings" && n > 7) return "A week is as far as the calendar is read: 7 days at most.";
+  if (kind === "move" && n > 1000) return "A day's move is a percent: 1000 at most.";
+  const below = f.condition === "below";
+  const condition = kind === "price" ? (below ? "below" : "above") : kind === "move" ? (below ? "change-below" : "change-above") : kind === "volume" ? "volume-above" : kind === "funding" ? (below ? "funding-below" : "funding-above") : kind;
+  const price = kind === "price" && c.ev ? mkPlain(n / 100) : typed;
+  const at = kind === "news" ? { venue: "news", symbol: said } : kind === "earnings" ? { venue: "calendar", symbol: c.ticker } : { venue: c.venue, symbol: c.symbol };
+  return { type: "setAlert", id: "", ...at, condition, price, on: "true" };
+}
+/* what the prepared alert will do, over the signature: the market and the figure in large, then where it stands now, then what every
+   alert is — looked at every half minute, said once, placing nothing */
+function mkAlertShow(c, a) {
+  const item = c.item;
+  const kind = mkAlertKind(a);
+  const target = Number(a.price);
   const fmt = (n) => mkAlertFig(item, n);
-  const cond = (form) => (form.elements.condition && form.elements.condition.value === "below" ? "below" : "above");
+  const tail = '<div class="path">The account looks about every 30 seconds while it runs, whether or not this page is open, and says the alert once; it stands 90 days, then lapses. It places nothing: your agents read it as what you watch for, never as an instruction.</div>';
+  if (kind === "price") {
+    const dist = c.hasNow ? ((target - c.now) / c.now) * 100 : null;
+    const met = c.hasNow && (a.condition === "above" ? target <= c.now : target >= c.now);
+    const where = !c.hasNow ? "No price was read for it just now: the alert stands, and fires once a read reaches the price." : met ? `The price is ${a.condition === "above" ? "at or above" : "at or below"} this already: it fires at the account's next look, within half a minute.` : `Now ${fmt(c.now)} · ${dist > 0 ? "+" : ""}${dist.toFixed(2)}% away.`;
+    return `<div class="big"><span>${esc(item.name)} ${a.condition === "above" ? "rises above" : "falls below"}</span><span>${esc(fmt(target))}</span></div><div class="path${met ? " warn-t" : ""}">${esc(where)}</div>${tail}`;
+  }
+  if (kind === "move") return `<div class="big"><span>${esc(item.name)} ${a.condition === "change-above" ? "rises" : "falls"} on the day by</span><span>${esc(mkAlertPct(target))} or more</span></div><div class="path">${esc(item.changePct24h !== undefined ? `Today ${mkAlertPct(item.changePct24h, true)} so far, by the venue's own 24-hour change.` : "Judged by the venue's own 24-hour change, once it lists one.")}</div>${tail}`;
+  if (kind === "volume") return `<div class="big"><span>${esc(item.name)} trades more than</span><span>${esc(mkVol(target))} in 24 hours</span></div><div class="path">${esc(item.volumeUsd24h !== undefined ? `Now ${mkVol(item.volumeUsd24h)} in 24 hours, by the venue's own count.` : "Judged by the venue's own 24-hour volume, once it lists one.")}</div>${tail}`;
+  if (kind === "funding") return `<div class="big"><span>${esc(item.name)} funding goes ${a.condition === "funding-above" ? "above" : "below"}</span><span>${esc(mkAlertPct(target))} an interval</span></div><div class="path">${esc(item.fundingRate !== undefined ? `Now ${mkAlertPct(item.fundingRate * 100)} an interval.` : "Judged by the venue's own funding rate, once it lists one.")}</div>${tail}`;
+  if (kind === "news") return `<div class="big"><span>“${esc(a.symbol)}” is in</span><span>${esc(target === 1 ? "a headline" : `${target} headlines`)}</span></div><div class="path">${esc(`Headlines from the account's news feeds that carry the words, put out after the alert is set${MK_ALERT_TICKER.test(a.symbol) ? " — a ticker reads the share's own Nasdaq feed too" : ""}; the latest of them is named when it fires.`)}</div>${tail}`;
+  return `<div class="big"><span>${esc(a.symbol)} reports within</span><span>${esc(target === 1 ? "a day" : `${target} days`)}</span></div><div class="path">${esc(`Nasdaq's earnings calendar, from today ${target === 1 ? "alone" : `to ${target - 1} days on`}; the alert names the day, and whether it is before the open or after the close.`)}</div>${tail}`;
+}
+function openAlertSheet(item) {
+  if (!A || !item) return;
+  const c = mkAlertSheetOf(item);
+  const fmt = (n) => mkAlertFig(item, n);
+  const k0 = c.forms[c.first];
   const d = quoteDialog({
-    title: "Price alert",
-    sub: `You are told when ${esc(item.name)} crosses the price — on this page as it happens, and as this browser's notification if you ask. It places nothing.`,
-    fields: `<div class="who mk-al-who">${mkAv(item)}<div><b>${esc(item.name)}</b><span class="dim">${esc(venueName)} · ${esc(symbol)} · now ${esc(hasNow ? fmt(now) : "no price read")}</span></div></div>
+    title: "Alert",
+    sub: "You are told when it happens — on this page as it happens, and as this browser's notification if you ask. It places nothing.",
+    fields: `<div class="who mk-al-who">${mkAv(item)}<div><b>${esc(item.name)}</b><span class="dim">${esc(c.venue ? `${c.venueName} · ${c.symbol} · now ${c.hasNow ? fmt(c.now) : "no price read"}` : "no venue lists it now: the news alone")}</span></div></div>
+      <input type="hidden" name="kind" value="${esc(c.first)}" />
       <input type="hidden" name="condition" value="above" />
-      <div><div class="label">Tell me when it</div><div data-al-cond></div></div>
-      <label class="fld">${ev ? "Price, in cents (62 is 62¢)" : "Price, in dollars"}<input name="price" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="${esc(start || (ev ? "62" : "63500"))}" value="${esc(start)}" /></label>
+      ${c.kinds.length > 1 ? '<div><div class="label">Watch its</div><div data-al-kind></div></div>' : ""}
+      <div data-al-condw><div class="label">Tell me when it</div><div data-al-cond></div></div>
+      <label class="fld" data-al-words hidden>Words in the headline (a US ticker reads the share's own news too)<input name="words" autocomplete="off" spellcheck="false" maxlength="80" value="${esc(c.words)}" /></label>
+      <label class="fld"><span data-al-figl>${esc(k0.label)}</span><input name="price" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="${esc(k0.start || k0.hint)}" value="${esc(k0.start)}" /></label>
       <label class="chk1"><input type="checkbox" name="notify"${typeof shNotifyWanted === "function" && shNotifyWanted() ? " checked" : ""} /> Also show it as this browser's own notification</label>`,
-    draft: (form) => {
-      const typed = String(formFields(form).price || "").trim();
-      if (!typed) return `Type the price you want to be told at${hasNow ? ` (now ${fmt(now)})` : ""}.`;
-      if (!/^\d{1,12}(\.\d{1,10})?$/.test(typed) || !(Number(typed) > 0)) return ev ? "A price in cents is a plain positive number: 62 for 62¢, 0.5 for half a cent." : "A price is a plain positive number: 63500, or 0.1212.";
-      const price = ev ? mkPlain(Number(typed) / 100) : typed;
-      return { type: "setAlert", id: "", venue, symbol, condition: cond(form), price, on: "true" };
-    },
-    show: (p) => {
-      const a = p.action;
-      const target = Number(a.price);
-      const dist = hasNow ? ((target - now) / now) * 100 : null;
-      const met = hasNow && (a.condition === "above" ? target <= now : target >= now);
-      const where = !hasNow ? "No price was read for it just now: the alert stands, and fires once a read reaches the price." : met ? `The price is ${a.condition === "above" ? "at or above" : "at or below"} this already: it fires at the account's next look, within half a minute.` : `Now ${fmt(now)} · ${dist > 0 ? "+" : ""}${dist.toFixed(2)}% away.`;
-      return `<div class="big"><span>${esc(item.name)} ${a.condition === "above" ? "rises above" : "falls below"}</span><span>${esc(fmt(target))}</span></div><div class="path${met ? " warn-t" : ""}">${esc(where)}</div><div class="path">The account prices it about every 30 seconds while it runs, whether or not this page is open, and says the alert once; it stands 90 days, then lapses. It places nothing: your agents read it as what you watch for, never as an instruction.</div>`;
-    },
-    done: (r) => saidOf(r.body) || "Price alert set",
+    draft: (form) => mkAlertDraft(c, formFields(form)),
+    show: (p) => mkAlertShow(c, p.action),
+    done: (r) => saidOf(r.body) || "Alert set",
     go: "Sign and set the alert",
   });
   const form = d.form;
-  form.querySelector("[data-al-cond]").innerHTML = seg([["above", "Rises above"], ["below", "Falls below"]], "above", (v) => {
-    form.elements.condition.value = v;
+  const condWrap = form.querySelector("[data-al-condw]");
+  const condBox = form.querySelector("[data-al-cond]");
+  const wordsFld = form.querySelector("[data-al-words]");
+  const figLabel = form.querySelector("[data-al-figl]");
+  // the kind picked: its ways (or none), the figure's label and start, the words field for the news; then prepared again
+  const setKind = (kind) => {
+    const k = c.forms[kind];
+    form.elements.kind.value = kind;
+    form.elements.condition.value = "above";
+    condWrap.hidden = !k.conds;
+    condBox.innerHTML = k.conds ? seg(k.conds, "above", (v) => {
+      form.elements.condition.value = v;
+      d.requote();
+    }, { label: "Tell me when it" }) : "";
+    wordsFld.hidden = kind !== "news";
+    figLabel.textContent = k.label;
+    form.elements.price.placeholder = k.start || k.hint;
+    form.elements.price.value = k.start;
     d.requote();
-  }, { label: "Tell me when it" });
+  };
+  const kindBox = form.querySelector("[data-al-kind]");
+  if (kindBox) kindBox.innerHTML = seg(c.kinds, c.first, setKind, { label: "Watch its" });
+  setKind(c.first);
   // the notification switch: the browser's permission is asked as it is turned on, and a browser that gives none leaves it off and says so
   form.elements.notify.addEventListener("change", async (e) => {
     const on = !!e.target.checked;
@@ -2003,9 +2118,9 @@ function mkDrawerParts(o) {
   // a dollar held (a stablecoin, cash) is compared with nothing: a dollar is a dollar
   const across = it.kind === "stable" || it.kind === "cash" ? "" : `<section class="sec" aria-label="Across venues"><h2 class="h2">Across venues</h2>${mkAcrossHtml(o)}</section>`;
   const lines = `<section class="sec" aria-label="On the statement"><div class="sec-head"><h2 class="h2">On the statement</h2>${typeof openStatement === "function" ? '<button type="button" class="link" data-act="statement" data-fk="d-statement">Open the Statement →</button>' : ""}</div>${mkLinesHtml(o)}</section>`;
-  // its price alerts (standing, with Remove; fired), where it has any — "Set another" opens the sheet
+  // its alerts (standing, with Remove; fired), where it has any — "Set another" opens the sheet
   const alertLines = mkAlertLinesHtml(it);
-  const alerts = alertLines ? `<section class="sec" aria-label="Price alerts"><div class="sec-head"><h2 class="h2">Price alerts</h2>${mkWatchTarget(it) ? `<button type="button" class="link" data-act="alert" data-fk="d-alert2"${mkDis()}>Set another →</button>` : ""}</div>${alertLines}</section>` : "";
+  const alerts = alertLines ? `<section class="sec" aria-label="Alerts"><div class="sec-head"><h2 class="h2">Alerts</h2>${mkWatchTarget(it) ? `<button type="button" class="link" data-act="alert" data-fk="d-alert2"${mkDis()}>Set another →</button>` : ""}</div>${alertLines}</section>` : "";
   // a US share's own filed figures from the SEC (mkFinHtml), with the company's filings there one click away
   const finOk = o.fin && o.fin.ok !== false && typeof o.fin.filingsUrl === "string" && /^https:\/\/www\.sec\.gov\//.test(o.fin.filingsUrl) ? o.fin : null;
   const coOk = o.co && o.co.ok !== false ? o.co : null;

@@ -73,7 +73,7 @@ import { exploreAcross, type Exploration, type ExploreSort, type ExploreVenue } 
 import { fixedHosts, holdBackMs, KEEP_MS as LISTING_KEEP_MS, publicSources, type PublicSource } from "./live/public-markets.ts";
 import { SEC_HOSTS, SEC_TICKER, SEC_TIMEOUT_MS, SecEdgar, secUserAgent, type Company, type Financials } from "./live/edgar.ts";
 import { NEWS_HOSTS, NEWS_MAX_BYTES, NEWS_TIMEOUT_MS, NewsWire, type NewsAsk, type NewsReader, type NewsView } from "./live/news.ts";
-import { CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS, NasdaqCalendars, type CalendarAsk, type CalendarReader, type CalendarView } from "./live/calendars.ts";
+import { CALENDAR_DAYS_MOST, CALENDAR_HOSTS, CALENDAR_TIMEOUT_MS, NasdaqCalendars, type CalendarAsk, type CalendarReader, type CalendarView } from "./live/calendars.ts";
 import { worldDesk, type WorldReader, type WorldView } from "./live/world.ts";
 import { optionsDesk, type OptionsAsk, type OptionsReader, type OptionsView } from "./live/options.ts";
 import { nasdaqSecurity, type SecurityReader, type SecurityView } from "./live/security.ts";
@@ -101,7 +101,7 @@ import { agentWalletKey, agentWalletKeyPath, hasKey } from "./account/keystore.t
 import { agentWalletSource, agentWalletVenue } from "./live/agent-wallet.ts";
 import { guardedHttp, type PayHttp } from "./live/guarded-http.ts";
 import { publicSender } from "./live/chain.ts";
-import { agentStatus, type FiredAlert, type SubAccount } from "./account/state.ts";
+import { agentStatus, ALERT_READER_NAMES, type Alert, type FiredAlert, type SubAccount } from "./account/state.ts";
 import { publicChain } from "./live/chain.ts";
 import { realMm } from "./live/metamask.ts";
 import { publicPrices } from "./live/prices.ts";
@@ -2924,9 +2924,12 @@ export class PortfolioService {
     every.unref?.();
     return () => clearInterval(every);
   }
-  /** one look at the standing price alerts (watchAlerts's, or a test's): each alert's market priced once — alerts on one market share the
-   * read — and each alert whose condition the price meets fired: "above" fires at the figure or over it, "below" at the figure or under it.
-   * A market nothing prices now leaves its alerts standing for the next look. Answers the alerts that fired, in the order they stood */
+  /** one look at the standing alerts (watchAlerts's, or a test's), each kind by its own read: a price alert's market priced once — alerts
+   * on one market share the read — and fired when the price meets it ("above" at the figure or over it, "below" at it or under); a
+   * day's-move, volume or funding alert judged on the market's own 24-hour figures as its venue lists them now; a news alert on the
+   * headlines that carry its words (or name its share) put out since it was set, fired at the count asked; an earnings alert on Nasdaq's
+   * earnings calendar from today to the day it names. A market or a reader that answers nothing now leaves its alerts standing for the
+   * next look. Answers the alerts that fired, in the order they stood */
   async lookAtAlerts(): Promise<FiredAlert[]> {
     const a = this.account;
     if (!a || this.alertsLooking) return [];
@@ -2936,26 +2939,91 @@ export class PortfolioService {
     this.alertsLooking = true;
     try {
       const keyOf = (x: { venue: string; symbol: string }) => `${x.venue}|${x.symbol}`;
-      const markets = [...new Map(standing.map((x) => [keyOf(x), { venue: x.venue, symbol: x.symbol }])).values()];
-      const prices = new Map<string, { price: number; from: string }>();
-      await Promise.all(markets.map(async (m) => {
-        const p = await this.priceNow(m.venue, m.symbol).catch(() => undefined);
-        if (p) prices.set(keyOf(m), p);
-      }));
+      const unique = (xs: Alert[]) => [...new Map(xs.map((x) => [keyOf(x), { venue: x.venue, symbol: x.symbol }])).values()];
+      const priced = standing.filter((x) => x.condition === "above" || x.condition === "below");
+      const figured = standing.filter((x) => x.condition === "change-above" || x.condition === "change-below" || x.condition === "volume-above" || x.condition === "funding-above" || x.condition === "funding-below");
       const fired: FiredAlert[] = [];
-      for (const x of standing) {
+      const fire = (x: Alert, seen: number, from: string) => {
+        const f = a.fireAlert(x.id, seen, from);
+        if (!f) return;
+        fired.push(f);
+        this.stream.emit("alert", { ...f, venueName: ALERT_READER_NAMES[f.venue] ?? this.nameOf(f.venue), at: f.firedAt });
+      };
+      const prices = new Map<string, { price: number; from: string }>();
+      const figures = new Map<string, { changePct24h?: number | undefined; volumeUsd24h?: number | undefined; fundingRate?: number | undefined; from: string }>();
+      await Promise.all([
+        ...unique(priced).map(async (m) => {
+          const p = await this.priceNow(m.venue, m.symbol).catch(() => undefined);
+          if (p) prices.set(keyOf(m), p);
+        }),
+        ...unique(figured).map(async (m) => {
+          const g = await this.figuresNow(m.venue, m.symbol).catch(() => undefined);
+          if (g) figures.set(keyOf(m), g);
+        }),
+      ]);
+      for (const x of priced) {
         const p = prices.get(keyOf(x));
         if (!p) continue;
         if (!(x.condition === "above" ? p.price >= x.price : p.price <= x.price)) continue;
-        const f = a.fireAlert(x.id, p.price, p.from);
-        if (!f) continue;
-        fired.push(f);
-        this.stream.emit("alert", { ...f, venueName: this.nameOf(f.venue), at: f.firedAt });
+        fire(x, p.price, p.from);
+      }
+      for (const x of figured) {
+        const g = figures.get(keyOf(x));
+        if (!g) continue;
+        const fundingPct = g.fundingRate !== undefined ? g.fundingRate * 100 : undefined;
+        if (x.condition === "change-above" && g.changePct24h !== undefined && g.changePct24h >= x.price) fire(x, Math.round(g.changePct24h * 100) / 100, g.from);
+        else if (x.condition === "change-below" && g.changePct24h !== undefined && g.changePct24h <= -x.price) fire(x, Math.round(g.changePct24h * 100) / 100, g.from);
+        else if (x.condition === "volume-above" && g.volumeUsd24h !== undefined && g.volumeUsd24h >= x.price) fire(x, Math.round(g.volumeUsd24h), g.from);
+        else if (x.condition === "funding-above" && fundingPct !== undefined && fundingPct >= x.price) fire(x, Math.round(fundingPct * 1e6) / 1e6, g.from);
+        else if (x.condition === "funding-below" && fundingPct !== undefined && fundingPct <= x.price) fire(x, Math.round(fundingPct * 1e6) / 1e6, g.from);
+      }
+      // the news: the headlines with the alert's words (a ticker: the share's own feed and the headlines that name it) since it was set
+      for (const x of standing.filter((y) => y.condition === "news")) {
+        const ticker = /^[A-Z]{1,5}([.-][A-Z])?$/.test(x.symbol);
+        const n = await this.news(ticker ? { symbol: x.symbol, limit: 60 } : { q: x.symbol, limit: 60 }).catch(() => undefined);
+        if (!n || isRefusal(n)) continue;
+        const since = Date.parse(x.at);
+        const fresh = n.items.filter((h) => h.at !== undefined && Date.parse(h.at) > since).sort((h1, h2) => Date.parse(h2.at!) - Date.parse(h1.at!));
+        if (fresh.length >= x.price) fire(x, fresh.length, `${fresh[0]!.title} — ${fresh[0]!.sourceName}`);
+      }
+      // the earnings: Nasdaq's calendar from today (New York) to the day the alert names, the share's rows alone
+      for (const x of standing.filter((y) => y.condition === "earnings")) {
+        const today = new Date(now).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+        const to = new Date(Date.parse(`${today}T12:00:00Z`) + Math.min(CALENDAR_DAYS_MOST - 1, x.price - 1) * 86_400_000).toISOString().slice(0, 10);
+        const c = await this.calendar({ kind: "earnings", symbol: x.symbol, from: today, to }).catch(() => undefined);
+        if (!c || isRefusal(c)) continue;
+        const first = c.items.find((i) => i.kind === "earnings");
+        if (!first) continue;
+        const days = Math.round((Date.parse(`${first.day}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86_400_000);
+        fire(x, days, `${x.symbol} reports on ${first.day}${first.when === "pre" ? " before the open" : first.when === "post" ? " after the close" : ""} (Nasdaq's calendar)`);
       }
       return fired;
     } finally {
       this.alertsLooking = false;
     }
+  }
+  /** ONE MARKET'S DAY, for the alerts on its move, volume or funding — the venue's own 24-hour change (percent), dollar volume and, a
+   * perpetual's, funding rate (a fraction an interval), as priceNow reads the market: at a venue connected live, the venue's own market; at
+   * a venue that is not connected, the public source's one-market line, else its listings searched for the symbol. Undefined where nothing
+   * lists it now; a figure the market does not carry is left out, and the alert on it stands */
+  private async figuresNow(venue: string, symbol: string): Promise<{ changePct24h?: number | undefined; volumeUsd24h?: number | undefined; fundingRate?: number | undefined; from: string } | undefined> {
+    const of = (m: { changePct24h?: number | undefined; volumeUsd24h?: number | undefined; fundingRate?: number | undefined; quoteFrom?: string | undefined }, from: string) => ({ ...(m.changePct24h !== undefined ? { changePct24h: m.changePct24h } : {}), ...(m.volumeUsd24h !== undefined ? { volumeUsd24h: m.volumeUsd24h } : {}), ...(m.fundingRate !== undefined ? { fundingRate: m.fundingRate } : {}), from: m.quoteFrom ?? from });
+    const live = this.liveVenues.get(venue);
+    if (live && this.adapters.get(venue)?.account.watchOnly) {
+      const m = await this.liveMarket(venue, symbol);
+      return isRefusal(m) ? undefined : of(m, live.name);
+    }
+    const src = this.publicMarkets().find((s) => s.id === venue || s.connectTo === venue || s.alsoVia?.some((v) => v.connectTo === venue));
+    if (!src) return undefined;
+    if (src.line) {
+      const l = await src.line(symbol);
+      if (l && !isRefusal(l)) return of(l, src.name);
+    }
+    const base = symbol.split(/[/@:]/)[0]?.replace(/-(PERP|USD[CT]?|SWAP)$/i, "") ?? symbol;
+    const listed = await src.listings({ q: base, limit: 60 });
+    if (isRefusal(listed)) return undefined;
+    const l = listed.find((x) => x.symbol === symbol);
+    return l ? of(l, src.name) : undefined;
   }
   private alertsLooking = false;
   /** ONE MARKET'S PRICE NOW, for a price alert: at a venue connected live, the venue's own (liveMarket: a few seconds old at most — its last

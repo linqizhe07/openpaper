@@ -1386,7 +1386,7 @@ describe("the one drawer", () => {
     // the watched BTC is the row Markets lists; the Kraken market no read carries is a row of its own that still prices, opens and connects
     expect(html).toContain('data-fk="open:coin:BTC"');
     expect(html).toContain("ETH/USD");
-    expect([...html.matchAll(/<th scope="col"[^>]*>(?:<span class="sr">)?([^<]*)/g)].map((m) => m[1])).toEqual(["Watch, price alert", "Market", "Where", "Price", "24h", "Actions"]);
+    expect([...html.matchAll(/<th scope="col"[^>]*>(?:<span class="sr">)?([^<]*)/g)].map((m) => m[1])).toEqual(["Watch, alert", "Market", "Where", "Price", "24h", "Actions"]);
     // a watched outcome is said beside its price (not under the name: a row is one line, its name's card says the rest)
     p.set("A", account({ watch: [{ venue: "kalshi", symbol: "KXFED-DEC:NO", at: "2026-10-06T04:00:00.000Z" }] }));
     const ev = p.run<string>("MKT.reg = []; mkWatchingHtml(lensNow())");
@@ -1633,9 +1633,10 @@ describe("after connect, a venue that refuses this network is a state Markets sa
   });
 });
 
-/** PRICE ALERTS AND THE PULSE (after OpenStock; markets.js): the bell beside ★, the alert sheet's Remove, the Alerts list under Watching, and
- * the pulse over All — the session line from the stocks' own session words and the six tiles, only for rows the read has */
-describe("price alerts and the pulse", () => {
+/** ALERTS AND THE PULSE (after OpenStock; markets.js): the bell beside ★, the alert sheet's Remove, the Alerts list under Watching — alerts
+ * on a price, the day's move, the volume, a perpetual's funding, the news and the earnings (account/state.ts ALERT_CONDITIONS), each in its
+ * own words — and the pulse over All: the session line from the stocks' own session words and the six tiles, only for rows the read has */
+describe("alerts and the pulse", () => {
   const alertOn = (over: Record<string, unknown> = {}) => ({ id: "alert-0001", venue: "okx", venueName: "OKX", symbol: "DOGE/USDT", condition: "above", price: 0.2, at: "2026-10-05T04:00:00.000Z", expiresAt: "2027-01-03T04:00:00.000Z", ...over });
   /* an index ETF as the US stocks line lists it, out of its session before the open */
   const spy = (session: unknown = { open: false, opensAt: "2026-10-06T13:30:00.000Z", closesAt: "2026-10-06T20:00:00.000Z" }) => ({
@@ -1654,14 +1655,14 @@ describe("price alerts and the pulse", () => {
     const p = page(() => ({}));
     p.set("A", account());
     p.set("ITEMS", { btc, doge });
-    expect(p.run("mkBell(ITEMS.doge, 0)")).toContain('class="icon-btn mk-bell" data-act="alert" data-i="0" data-fk="alert:coin:DOGE" aria-pressed="false" aria-label="Set a price alert for DOGE"');
+    expect(p.run("mkBell(ITEMS.doge, 0)")).toContain('class="icon-btn mk-bell" data-act="alert" data-i="0" data-fk="alert:coin:DOGE" aria-pressed="false" aria-label="Set an alert for DOGE" title="Alert: be told when its price crosses a line, when it moves, trades or funds past one, when it is in the news, or before it reports"');
     expect(p.run("mkKeys(ITEMS.btc, 1)")).toContain('data-fk="watch:coin:BTC"');
     expect(p.run("mkKeys(ITEMS.btc, 1)")).toContain('data-fk="alert:coin:BTC"');
     // the table's first cell holds both
     expect(p.run("mkTable([ITEMS.btc], '')")).toContain('<span class="mk-keys"><button type="button" class="icon-btn mk-star"');
     // an alert on DOGE at OKX, where only OKX's public prices list DOGE: the bell is pressed on that row, not on BTC's
     p.set("A", account({ alerts: [alertOn()] }));
-    expect(p.run("mkBell(ITEMS.doge, 0)")).toContain('aria-pressed="true" aria-label="1 price alert on DOGE"');
+    expect(p.run("mkBell(ITEMS.doge, 0)")).toContain('aria-pressed="true" aria-label="1 alert on DOGE" title="1 alert standing: set another, or remove one"');
     expect(p.run("mkBell(ITEMS.btc, 1)")).toContain('aria-pressed="false"');
     expect(p.run("mkAlertsOf(ITEMS.doge).map((x) => x.id)")).toEqual(["alert-0001"]);
     expect(p.run("mkAlertsOf(ITEMS.btc)")).toEqual([]);
@@ -1671,12 +1672,12 @@ describe("price alerts and the pulse", () => {
     await settle();
     expect(p.run("JSON.stringify(DRAFTS)")).toBe(JSON.stringify([{ type: "setAlert", id: "alert-0001", venue: "okx", symbol: "DOGE/USDT", condition: "above", price: "0.2", on: "" }]));
     expect(p.run("[mkPlain(63500), mkPlain(0.62), mkPlain(1e-7), mkPlain(0.1 + 0.2)]")).toEqual(["63500", "0.62", "0.0000001", "0.3"]);
-    // the drawer's Alert button counts them, and its Price alerts part lists them with Remove
+    // the drawer's Alert button counts them, and its Alerts part lists them with Remove
     p.run("MKT.open = { item: ITEMS.doge, range: '1M', interval: '1h', ipo: [] }");
     const parts = p.run<Record<string, string>>("mkDrawerParts(MKT.open)");
     expect(parts.head).toContain('data-act="alert" data-fk="d-alert" aria-pressed="true"');
     expect(parts.head).toContain("1 Alert</button>");
-    expect(parts.alerts).toContain('aria-label="Price alerts"');
+    expect(parts.alerts).toContain('aria-label="Alerts"');
     expect(parts.alerts).toContain("Rises above $0.2</div><div class=\"t2\">OKX · since Mon 5 Oct · until Sat 2 Jan · alert-0001</div>");
     expect(parts.alerts).toContain('data-fk="alert-off:alert-0001"');
     // a row with no alert has an empty part, and the button says Alert
@@ -1699,10 +1700,10 @@ describe("price alerts and the pulse", () => {
     const html = p.run<string>("EL.innerHTML");
     expect(html).toContain('data-tab="watching"');
     expect(html).toContain("Nothing watched.");
-    expect(html).toContain('aria-label="Price alerts"');
-    expect(html).toContain("2 alerts standing · checked about every 30 seconds while the account runs · each stands 90 days");
-    expect(html).toContain('<span class="mk-al-cond">Rises above <b>$0.2</b></span>');
-    expect(html).toContain('<span class="mk-al-cond">Falls below <b>50¢</b></span>');
+    expect(html).toContain('aria-label="Alerts"');
+    expect(html).toContain("2 alerts standing · looked at about every 30 seconds while the account runs · each stands 90 days");
+    expect(html).toContain('<span class="mk-al-cond">Rises above $0.2</span><span class="dim small"> · OKX</span>');
+    expect(html).toContain('<span class="mk-al-cond">Falls below 50¢</span><span class="dim small"> · Kalshi</span>');
     expect(html).toContain("Mon 5 Oct · until Sat 2 Jan");
     expect(html).toContain('data-fk="alert-off:alert-0001"');
     expect(html).toContain('data-fk="alert-off:alert-0002"');
@@ -1717,6 +1718,126 @@ describe("price alerts and the pulse", () => {
     expect(p.run<string>("EL.innerHTML")).not.toContain("alert-off:");
     expect(p.run<string>("EL.innerHTML")).not.toContain(">Remove</button>");
     p.run('Owner.role = "owner"');
+  });
+
+  it("says every kind of alert in words — the price, the day's move, the volume, a perpetual's funding, the news, the earnings — standing and fired, each in its own measure, and where it looks; a news or an earnings alert is on the row its words name", () => {
+    const p = page(() => ({}));
+    p.set("A", account());
+    p.set("ITEMS", { btc, btcPerp, fed, spy: spy() });
+    const says = (over: Record<string, unknown>, item = "btc", past = false) => p.run<string>(`mkAlertSays(${JSON.stringify(alertOn(over))}, ITEMS.${item}, ${past})`);
+    expect(says({ condition: "above", price: 63500 })).toBe("Rises above $63,500.00");
+    expect(says({ condition: "below", price: 0.5 }, "fed", true)).toBe("fell below 50¢");
+    expect(says({ condition: "change-above", price: 5 })).toBe("Rises 5% or more on the day");
+    expect(says({ condition: "change-below", price: 2.5 }, "btc", true)).toBe("fell 2.5% or more on the day");
+    expect(says({ condition: "volume-above", price: 1_000_000 })).toBe("Trades more than $1M in 24 hours");
+    expect(says({ condition: "funding-above", price: 0.01 }, "btcPerp")).toBe("Funding goes above 0.01% an interval");
+    expect(says({ condition: "funding-below", price: 0.005 }, "btcPerp", true)).toBe("funding went below 0.005% an interval");
+    expect(says({ condition: "news", price: 1 })).toBe("Is in a headline");
+    expect(says({ condition: "news", price: 3 }, "btc", true)).toBe("was in 3 headlines");
+    expect(says({ condition: "earnings", price: 7 }, "spy")).toBe("Reports within 7 days");
+    expect(says({ condition: "earnings", price: 1 }, "spy", true)).toBe("reports within a day");
+    // fired: what fired it, in the alert's own measure — a news alert how many headlines, an earnings alert in how many days
+    const fired = (over: Record<string, unknown>, item = "btc") => p.run<string>(`mkAlertFired(${JSON.stringify({ ...alertOn(over), firedAt: "2026-10-06T04:30:00.000Z", from: "x" })}, ITEMS.${item})`);
+    expect(fired({ condition: "above", price: 62000, seen: 62140 })).toBe("rose above $62,000.00: $62,140.00");
+    expect(fired({ condition: "change-above", price: 5, seen: 6.42 })).toBe("rose 5% or more on the day: +6.42%");
+    expect(fired({ condition: "change-below", price: 5, seen: -7.1 })).toBe("fell 5% or more on the day: -7.1%");
+    expect(fired({ condition: "volume-above", price: 1e9, seen: 1.9e9 })).toBe("traded more than $1B in 24 hours: $1.9B");
+    expect(fired({ condition: "funding-above", price: 0.01, seen: 0.0123 }, "btcPerp")).toBe("funding went above 0.01% an interval: 0.0123%");
+    expect(fired({ venue: "news", venueName: "the news", symbol: "Bitcoin", condition: "news", price: 2, seen: 3 })).toBe("was in 3 headlines");
+    expect(fired({ venue: "calendar", venueName: "the calendar", symbol: "SPY", condition: "earnings", price: 7, seen: 5 }, "spy")).toBe("reports in 5 days");
+    expect(fired({ venue: "calendar", venueName: "the calendar", symbol: "SPY", condition: "earnings", price: 7, seen: 0 }, "spy")).toBe("reports today");
+    // the kind, as the account names it, and where the alert looks
+    expect(["above", "below", "change-above", "change-below", "volume-above", "funding-above", "funding-below", "news", "earnings"].map((condition) => p.run(`mkAlertKind({ condition: ${JSON.stringify(condition)} })`))).toEqual(["price", "price", "move", "move", "volume", "funding", "funding", "news", "earnings"]);
+    expect(p.run('[mkAlertWhere({ venue: "news" }), mkAlertWhere({ venue: "calendar" }), mkAlertWhere({ venue: "okx", venueName: "OKX" }), mkAlertWhere({ venue: "ex" })]')).toEqual(["the news", "the calendar", "OKX", "Exchange X"]);
+    // a news or an earnings alert is on the row its words name — a share's ticker, a coin's name — never on another
+    const reader = (item: string, over: Record<string, unknown>) => p.run<boolean>(`mkIsReaderAlert(ITEMS.${item}, ${JSON.stringify(alertOn(over))})`);
+    expect(reader("spy", { venue: "calendar", symbol: "SPY", condition: "earnings", price: 7 })).toBe(true);
+    expect(reader("btc", { venue: "calendar", symbol: "BTC", condition: "earnings", price: 7 })).toBe(false);
+    expect(reader("btc", { venue: "news", symbol: "Bitcoin", condition: "news", price: 1 })).toBe(true);
+    expect(reader("btc", { venue: "news", symbol: "BTC", condition: "news", price: 1 })).toBe(true);
+    expect(reader("btc", { venue: "news", symbol: "Ethereum", condition: "news", price: 1 })).toBe(false);
+    p.set("A", account({ alerts: [alertOn({ venue: "news", venueName: "the news", symbol: "Bitcoin", condition: "news", price: 1 })] }));
+    expect(p.run("mkAlertsOf(ITEMS.btc).map((x) => x.id)")).toEqual(["alert-0001"]);
+    expect(p.run("mkBell(ITEMS.btc, 1)")).toContain('aria-pressed="true" aria-label="1 alert on Bitcoin"');
+    expect(p.run("mkAlertLinesHtml(ITEMS.btc)")).toContain('<div class="t1">Is in a headline</div><div class="t2">the news · since Mon 5 Oct · until Sat 2 Jan · alert-0001</div>');
+  });
+
+  it("the alert sheet's own reckoning: what each market can be watched for, the setAlert each kind's fields make — the venue's market, or the news, or the calendar — what is still to type, what each field starts with, and what the preparation shows", () => {
+    const p = page(() => ({}));
+    p.set("A", account());
+    p.set("ITEMS", { btc, btcPerp, fed, spy: spy() });
+    const kinds = (item: string) => p.run<string[]>(`mkAlertSheetOf(ITEMS.${item}).kinds.map((k) => k[0])`);
+    expect(kinds("btc")).toEqual(["price", "move", "volume", "news"]);
+    expect(kinds("btcPerp")).toEqual(["price", "move", "volume", "funding", "news"]);
+    expect(kinds("fed")).toEqual(["price", "news"]);
+    expect(kinds("spy")).toEqual(["price", "move", "volume", "news", "earnings"]);
+    const draft = (item: string, f: Record<string, string>) => p.run(`mkAlertDraft(mkAlertSheetOf(ITEMS.${item}), ${JSON.stringify(f)})`);
+    const at = { ex: { venue: "ex", symbol: "BTC/USDT" } };
+    expect(draft("btc", { kind: "price", condition: "above", price: "63500" })).toEqual({ type: "setAlert", id: "", ...at.ex, condition: "above", price: "63500", on: "true" });
+    expect(draft("fed", { kind: "price", condition: "below", price: "50" })).toEqual({ type: "setAlert", id: "", venue: "kalshi", symbol: "KXFED-DEC:YES", condition: "below", price: "0.5", on: "true" });
+    expect(draft("btc", { kind: "move", condition: "below", price: "5" })).toEqual({ type: "setAlert", id: "", ...at.ex, condition: "change-below", price: "5", on: "true" });
+    expect(draft("btc", { kind: "move", condition: "above", price: "5" })).toEqual({ type: "setAlert", id: "", ...at.ex, condition: "change-above", price: "5", on: "true" });
+    expect(draft("btc", { kind: "volume", condition: "above", price: "1000000" })).toEqual({ type: "setAlert", id: "", ...at.ex, condition: "volume-above", price: "1000000", on: "true" });
+    expect(draft("btcPerp", { kind: "funding", condition: "below", price: "0.01" })).toEqual({ type: "setAlert", id: "", venue: "ex", symbol: "BTC/USDT:USDT", condition: "funding-below", price: "0.01", on: "true" });
+    expect(draft("btc", { kind: "news", condition: "above", price: "2", words: " Bitcoin ETF " })).toEqual({ type: "setAlert", id: "", venue: "news", symbol: "Bitcoin ETF", condition: "news", price: "2", on: "true" });
+    expect(draft("spy", { kind: "earnings", condition: "above", price: "7" })).toEqual({ type: "setAlert", id: "", venue: "calendar", symbol: "SPY", condition: "earnings", price: "7", on: "true" });
+    // a kind this market has not (a coin's earnings) falls back to the first
+    expect(draft("btc", { kind: "earnings", condition: "above", price: "7" })).toEqual({ type: "setAlert", id: "", ...at.ex, condition: "above", price: "7", on: "true" });
+    // what is still to type, or wrong
+    expect(draft("btc", { kind: "price", condition: "above", price: "" })).toBe("Type the price you want to be told at (now $62,140.00).");
+    expect(draft("btc", { kind: "move", condition: "above", price: "" })).toBe("Type the move, in percent: 5 for a 5% day.");
+    expect(draft("btc", { kind: "news", condition: "above", price: "1", words: "" })).toBe("Type the words to look for in headlines: a US share's ticker, or a word or two.");
+    expect(draft("btc", { kind: "news", condition: "above", price: "", words: "Bitcoin" })).toBe("Type how many new headlines: 1 to be told at the first.");
+    expect(draft("btc", { kind: "news", condition: "above", price: "1.5", words: "Bitcoin" })).toBe("A whole number of headlines.");
+    expect(draft("spy", { kind: "earnings", condition: "above", price: "8" })).toBe("A week is as far as the calendar is read: 7 days at most.");
+    expect(draft("spy", { kind: "earnings", condition: "above", price: "2.5" })).toBe("A whole number of days.");
+    expect(draft("btc", { kind: "move", condition: "above", price: "1001" })).toBe("A day's move is a percent: 1000 at most.");
+    expect(draft("fed", { kind: "price", condition: "above", price: "abc" })).toBe("A price in cents is a plain positive number: 62 for 62¢, 0.5 for half a cent.");
+    expect(draft("btc", { kind: "volume", condition: "above", price: "-1" })).toBe("A plain positive number: 63500, or 0.1212.");
+    // what each field starts with: the price now, the day's volume, the funding now, a week, one headline; the words a ticker or the name
+    expect(p.run("[mkAlertSheetOf(ITEMS.btc).forms.price.start, mkAlertSheetOf(ITEMS.fed).forms.price.start, mkAlertSheetOf(ITEMS.btc).forms.volume.start, mkAlertSheetOf(ITEMS.btcPerp).forms.funding.start, mkAlertSheetOf(ITEMS.spy).forms.earnings.start, mkAlertSheetOf(ITEMS.btc).forms.news.start]")).toEqual(["62140", "62", "1900000000", "0.01", "7", "1"]);
+    expect(p.run("[mkAlertSheetOf(ITEMS.spy).words, mkAlertSheetOf(ITEMS.btc).words, mkAlertSheetOf(ITEMS.spy).ticker, mkAlertSheetOf(ITEMS.btc).ticker]")).toEqual(["SPY", "Bitcoin", "SPY", ""]);
+    expect(p.run("mkAlertSheetOf(ITEMS.fed).forms.price.label")).toBe("Price, in cents (62 is 62¢)");
+    // what the preparation shows, kind by kind
+    const show = (item: string, a: Record<string, unknown>) => p.run<string>(`mkAlertShow(mkAlertSheetOf(ITEMS.${item}), ${JSON.stringify(a)})`);
+    expect(show("btc", { condition: "above", price: "63500", symbol: "BTC/USDT" })).toContain("<span>Bitcoin rises above</span><span>$63,500.00</span></div><div class=\"path\">Now $62,140.00 · +2.19% away.</div>");
+    expect(show("btc", { condition: "below", price: "63500", symbol: "BTC/USDT" })).toContain('<div class="path warn-t">The price is at or below this already: it fires at the account&#39;s next look, within half a minute.</div>');
+    expect(show("btc", { condition: "change-above", price: "5" })).toContain("<span>Bitcoin rises on the day by</span><span>5% or more</span></div><div class=\"path\">Today +2.1% so far, by the venue&#39;s own 24-hour change.</div>");
+    expect(show("btc", { condition: "volume-above", price: "1000000" })).toContain("<span>Bitcoin trades more than</span><span>$1M in 24 hours</span></div><div class=\"path\">Now $1.9B in 24 hours, by the venue&#39;s own count.</div>");
+    expect(show("btcPerp", { condition: "funding-above", price: "0.02" })).toContain("<span>BTC perpetual funding goes above</span><span>0.02% an interval</span></div><div class=\"path\">Now 0.01% an interval.</div>");
+    expect(show("btc", { condition: "news", price: "2", symbol: "Bitcoin ETF" })).toContain("<span>“Bitcoin ETF” is in</span><span>2 headlines</span></div><div class=\"path\">Headlines from the account&#39;s news feeds that carry the words, put out after the alert is set; the latest of them is named when it fires.</div>");
+    expect(show("spy", { condition: "news", price: "1", symbol: "SPY" })).toContain("<span>“SPY” is in</span><span>a headline</span>");
+    expect(show("spy", { condition: "news", price: "1", symbol: "SPY" })).toContain("a ticker reads the share&#39;s own Nasdaq feed too");
+    expect(show("spy", { condition: "earnings", price: "7", symbol: "SPY" })).toContain("<span>SPY reports within</span><span>7 days</span></div><div class=\"path\">Nasdaq&#39;s earnings calendar, from today to 6 days on; the alert names the day, and whether it is before the open or after the close.</div>");
+    expect(show("spy", { condition: "earnings", price: "1", symbol: "SPY" })).toContain("<span>SPY reports within</span><span>a day</span></div><div class=\"path\">Nasdaq&#39;s earnings calendar, from today alone;");
+    for (const a of [{ condition: "above", price: "1" }, { condition: "news", price: "1", symbol: "x" }]) expect(show("btc", a)).toContain("The account looks about every 30 seconds while it runs, whether or not this page is open, and says the alert once; it stands 90 days, then lapses. It places nothing: your agents read it as what you watch for, never as an instruction.");
+  });
+
+  it("the Watching tab lists a news alert by its words and a funding or move alert on its market's row — where each looks after what it says, the figure now in its own measure, none for the news — and a fired news alert with the headline that fired it", async () => {
+    const p = page((path) => (path.startsWith("/api/account/explore") ? exploreF5 : {}));
+    p.set("A", account({
+      alerts: [
+        alertOn({ id: "alert-0005", venue: "news", venueName: "the news", symbol: "Bitcoin ETF", condition: "news", price: 2 }),
+        alertOn({ id: "alert-0006", venue: "ex", venueName: "Exchange X", symbol: "BTC/USDT:USDT", condition: "funding-above", price: 0.02 }),
+        alertOn({ id: "alert-0007", venue: "ex", venueName: "Exchange X", symbol: "BTC/USDT", condition: "change-below", price: 5 }),
+        alertOn({ id: "alert-0008", venue: "ex", venueName: "Exchange X", symbol: "BTC/USDT", condition: "volume-above", price: 3e9 }),
+      ],
+      alertsFired: [{ ...alertOn({ id: "alert-0004", venue: "news", venueName: "the news", symbol: "Bitcoin", condition: "news", price: 1 }), seen: 2, from: "Bitcoin ETF inflows set a record — Stand-in Wire", firedAt: "2026-10-06T04:40:00.000Z" }],
+    }));
+    p.run(`ROUTE.tab = "markets"; ${PANE}`);
+    p.run('renderMarkets({ el: EL, owner: true, lens: lensNow(), params: { tab: "watching" } })');
+    await settle();
+    await settle();
+    p.run('renderMarkets({ el: EL, owner: true, lens: lensNow(), params: { tab: "watching" } })');
+    const html = p.run<string>("EL.innerHTML");
+    expect(html).toContain("4 alerts standing");
+    expect(html).toContain('<td class="mk-c-name"><span class="mk-al-words">Bitcoin ETF</span></td><td><span class="mk-al-cond">Is in 2 headlines</span><span class="dim small"> · the news</span></td><td class="r"><span class="dim small">since it was set</span></td>');
+    expect(html).toContain('<span class="mk-al-cond">Funding goes above 0.02% an interval</span><span class="dim small"> · Exchange X</span></td><td class="r">0.01%</td>');
+    expect(html).toContain('<span class="mk-al-cond">Falls 5% or more on the day</span><span class="dim small"> · Exchange X</span></td><td class="r"><span class="up"><span aria-hidden="true">▲</span><span class="sr">up</span> 2.1%</span></td>');
+    expect(html).toContain('<span class="mk-al-cond">Trades more than $3B in 24 hours</span><span class="dim small"> · Exchange X</span></td><td class="r">$1.9B</td>');
+    expect(html).toContain('data-fk="alert-off:alert-0005"');
+    // the fired news alert: the words, no venue, how many headlines, the latest one
+    expect(html).toContain('<div class="t1">Bitcoin was in 2 headlines</div><div class="t2">Tue 6 Oct 00:40 New York · Bitcoin ETF inflows set a record — Stand-in Wire</div>');
   });
 
   it("the pulse over All: the US session from the stocks' own session words with a countdown on the page's clock, a tile for each of the six the reads have, none for one they have not, and nothing while searching", async () => {

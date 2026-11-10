@@ -10,7 +10,9 @@ import type { Payment } from "../../src/portfolio/account/payments.ts";
 import { MONEY_TYPES, shownFields, signAgent, signOwner, simKey, STEER_TYPES, type AgentAction, type OwnerAction, type SimKey } from "../../src/portfolio/account/sign.ts";
 import { paymentLine } from "../../src/portfolio/account/statement.ts";
 import { ALERT_DAYS, ASK_TTL_MS, ASKS_PER_HOUR, cleanName, MAX_ALERTS, MAX_INTENTS, MAX_REPORTS, MAX_WATCH, spendFor } from "../../src/portfolio/account/state.ts";
+import type { CalendarAsk, CalendarReader } from "../../src/portfolio/live/calendars.ts";
 import { register, type LiveDeps } from "../../src/portfolio/live/index.ts";
+import type { Headline, NewsAsk, NewsReader } from "../../src/portfolio/live/news.ts";
 import type { Listing, PublicSource } from "../../src/portfolio/live/public-markets.ts";
 import type { LiveTrader, Market, OrderState } from "../../src/portfolio/live/trade.ts";
 import { PortfolioService } from "../../src/portfolio/service.ts";
@@ -29,7 +31,7 @@ const cc = simKey("agent:claude-code");
 const codex = simKey("agent:codex");
 const stranger = simKey("agent:stranger");
 
-const BTC: Market = { symbol: "BTC/USDT", name: "BTC/USDT", kind: "spot", base: "BTC", quote: "USDT", price: 60_000, bid: 59_990, ask: 60_010, minQty: 0.0001, qtyStep: 0.0001, priceStep: 0.1, open: true, types: ["market", "limit"] };
+const BTC: Market = { symbol: "BTC/USDT", name: "BTC/USDT", kind: "spot", base: "BTC", quote: "USDT", price: 60_000, bid: 59_990, ask: 60_010, minQty: 0.0001, qtyStep: 0.0001, priceStep: 0.1, open: true, types: ["market", "limit"], changePct24h: -6.5, volumeUsd24h: 2.5e9 };
 const states = new Map<string, OrderState>();
 const trader: LiveTrader = {
   can: true,
@@ -63,12 +65,12 @@ const fresh = () => {
 };
 
 /** one run of the real account on `home`, `at` ms after the start, the owner an address given at start; its clock can be moved */
-async function run(home: string, at = 0, o: { real?: boolean; /** the keyless public sources beside the connected venues (none unless said) */ publicMarkets?: PublicSource[] } = {}) {
+async function run(home: string, at = 0, o: { real?: boolean; /** the keyless public sources beside the connected venues (none unless said) */ publicMarkets?: PublicSource[]; /** the news and the calendar, for the alerts on them (none unless said) */ readers?: { news?: NewsReader; calendar?: CalendarReader } } = {}) {
   let t = START + at;
   let n = 0;
   const liveDeps: Partial<LiveDeps> = { clock: () => t, http: async () => ({ status: 599, body: undefined, text: "" }), price: async () => undefined };
   const real = o.real !== false;
-  const svc = await PortfolioService.create({ home, now: () => new Date(t).toISOString(), venues: "frontline", ...(real ? { real: true, liveDeps, liveWrites: { capUsd: 1000, pairingCode: "K7QX-M2PA" } } : {}), ...(o.publicMarkets ? { publicMarkets: o.publicMarkets } : {}), account: { owners: [{ id: owner.address, kind: "eoa" as const, label: "owner", addedAt: new Date(START).toISOString() }] } });
+  const svc = await PortfolioService.create({ home, now: () => new Date(t).toISOString(), venues: "frontline", ...(real ? { real: true, liveDeps, liveWrites: { capUsd: 1000, pairingCode: "K7QX-M2PA" } } : {}), ...(o.publicMarkets ? { publicMarkets: o.publicMarkets } : {}), ...(o.readers ? { readers: o.readers } : {}), account: { owners: [{ id: owner.address, kind: "eoa" as const, label: "owner", addedAt: new Date(START).toISOString() }] } });
   await svc.restoring;
   const engine = svc.account!;
   const nonce = () => t + ++n;
@@ -120,11 +122,13 @@ describe("the owner's watchlist", () => {
   });
 });
 
-/** PRICE ALERTS (after OpenStock's alerts; account/state.ts Alert): words to the owner, signed as setAlert and read by agents, never an
- * order. The account itself prices each standing alert's market (service.ts lookAtAlerts) — at its venue when connected, else from the
+/** ALERTS (after OpenStock's alerts; account/state.ts Alert): words to the owner, signed as setAlert and read by agents, never an order.
+ * The account itself prices each standing price alert's market (service.ts lookAtAlerts) — at its venue when connected, else from the
  * venue's public side — and fires the alert when the price is at the figure or across it: it leaves the standing ones, stays among the fired
- * with the price that fired it, gets a note on the ledger (which a restart reads back) and reaches the pages as an `alert` event */
-describe("the owner's price alerts", () => {
+ * with the price that fired it, gets a note on the ledger (which a restart reads back) and reaches the pages as an `alert` event. The
+ * alerts beyond the price — the day's move, the volume, a perpetual's funding, the news, the earnings — are looked at the same way, each by
+ * its own read (the venue's day figures, the news reader, the calendar) */
+describe("the owner's alerts", () => {
   const alert = (o: Partial<{ id: string; venue: string; symbol: string; condition: string; price: string; on: string }> = {}) => ({ type: "setAlert" as const, id: "", venue: "ex", symbol: "BTC/USDT", condition: "above", price: "61000", on: "true", ...o });
   const exName = async (x: Awaited<ReturnType<typeof run>>) => (await x.page()).venues.find((v) => v.id === "ex")!.name;
 
@@ -186,6 +190,86 @@ describe("the owner's price alerts", () => {
     // the next alert takes the next id: the fired ones used theirs
     ok(await x.own(alert({ price: "65000" })));
     expect(x.engine.state.alerts.map((a) => a.id)).toEqual(["alert-0001", "alert-0004", "alert-0005"]);
+  });
+
+  it("watches more than the price — the day's move, the volume, a perpetual's funding by the venue's own figures (a public source's where the venue is not connected), the news by the headlines put out since it was set, the earnings by Nasdaq's calendar a week ahead — each in its own words, and refuses what is malformed", async () => {
+    const perp: Listing = { symbol: "BTC-PERP", name: "BTC-PERP", kind: "perp", base: "BTC", quote: "USD", price: 60_100, open: true, types: ["market", "limit"], fundingRate: 0.00025, changePct24h: 1.2, volumeUsd24h: 9e8 };
+    const hl: PublicSource = { id: "hyperliquid", name: "Hyperliquid", kind: "exchange", connectTo: "hyperliquid", connector: "live:hyperliquid", listings: async () => [perp] };
+    const headlines: Headline[] = [];
+    const newsAsks: NewsAsk[] = [];
+    const news: NewsReader = {
+      async headlines(ask = {}) {
+        newsAsks.push(ask);
+        const words = String(ask.q ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+        const items = ask.symbol ? headlines.filter((h) => h.symbol === ask.symbol) : headlines.filter((h) => words.every((w) => h.title.toLowerCase().includes(w)));
+        return { asOf: new Date(START).toISOString(), items, total: items.length, sources: [], missing: [], topics: [], notes: [] };
+      },
+      clear() {},
+    };
+    const calAsks: CalendarAsk[] = [];
+    const calendar: CalendarReader = {
+      async events(ask = {}) {
+        calAsks.push(ask);
+        const items = ask.symbol === "AAPL" ? [{ kind: "earnings" as const, day: "2026-10-08", symbol: "AAPL", name: "Apple Inc.", when: "post" as const }] : [];
+        return { asOf: new Date(START).toISOString(), kind: "earnings", from: ask.from ?? "", to: ask.to ?? "", items, total: items.length, days: [], missing: [], notes: [] };
+      },
+      clear() {},
+    };
+    const x = await account(fresh(), 0, { publicMarkets: [hl], readers: { news, calendar } });
+    const name = await exName(x);
+    ok(await x.own(alert({ condition: "change-below", price: "5" }))); // BTC −6.5% on the day at Ex: fires
+    ok(await x.own(alert({ condition: "change-above", price: "5" }))); // stands
+    ok(await x.own(alert({ condition: "volume-above", price: "2000000000" }))); // $2.5B traded: fires
+    ok(await x.own(alert({ condition: "funding-above", price: "0.01" }))); // Ex's spot market carries no funding: stands
+    ok(await x.own(alert({ venue: "hyperliquid", symbol: "BTC-PERP", condition: "funding-above", price: "0.02" }))); // 0.025% an interval, from Hyperliquid's listing: fires
+    ok(await x.own(alert({ venue: "hyperliquid", symbol: "BTC-PERP", condition: "funding-below", price: "0.02" }))); // stands
+    ok(await x.own(alert({ venue: "news", symbol: "Bitcoin ETF", condition: "news", price: "2" }))); // words: the headlines that carry them
+    ok(await x.own(alert({ venue: "news", symbol: "AAPL", condition: "news", price: "1" }))); // a ticker: the share's own feed
+    ok(await x.own(alert({ venue: "calendar", symbol: "AAPL", condition: "earnings", price: "7" }))); // AAPL reports in three days: fires
+    ok(await x.own(alert({ venue: "calendar", symbol: "NVDA", condition: "earnings", price: "7" }))); // the week's calendar has no NVDA: stands
+    const page = await x.page();
+    expect(page.alerts.map((a) => [a.id, a.venue, a.venueName, a.symbol, a.condition, a.price])).toEqual([
+      ["alert-0001", "ex", name, "BTC/USDT", "change-below", 5], ["alert-0002", "ex", name, "BTC/USDT", "change-above", 5], ["alert-0003", "ex", name, "BTC/USDT", "volume-above", 2e9], ["alert-0004", "ex", name, "BTC/USDT", "funding-above", 0.01],
+      ["alert-0005", "hyperliquid", "hyperliquid", "BTC-PERP", "funding-above", 0.02], ["alert-0006", "hyperliquid", "hyperliquid", "BTC-PERP", "funding-below", 0.02],
+      ["alert-0007", "news", "the news", "Bitcoin ETF", "news", 2], ["alert-0008", "news", "the news", "AAPL", "news", 1], ["alert-0009", "calendar", "the calendar", "AAPL", "earnings", 7], ["alert-0010", "calendar", "the calendar", "NVDA", "earnings", 7],
+    ]);
+    // each set is said in its own words on the ledger
+    const said = () => x.svc.ledgerRows().filter((r) => r.kind === "action" && r.tool === "setAlert" && !String(r.reason).startsWith("setAlert taken")).map((r) => String(r.reason).replace(/ · until .*$/, ""));
+    expect(said()).toEqual([
+      `move alert alert-0001: BTC/USDT at ${name} falls 5% or more on the day`, `move alert alert-0002: BTC/USDT at ${name} rises 5% or more on the day`, `volume alert alert-0003: BTC/USDT at ${name} trades more than 2,000,000,000 in 24 hours`, `funding alert alert-0004: BTC/USDT at ${name} funding goes above 0.01% an interval`,
+      "funding alert alert-0005: BTC-PERP at hyperliquid funding goes above 0.02% an interval", "funding alert alert-0006: BTC-PERP at hyperliquid funding goes below 0.02% an interval",
+      "news alert alert-0007: Bitcoin ETF is in 2 headlines (Bitcoin ETF)", "news alert alert-0008: AAPL is in a headline (AAPL)", "earnings alert alert-0009: AAPL reports within 7 days", "earnings alert alert-0010: NVDA reports within 7 days",
+    ]);
+    // malformed: a news condition at a venue, a price condition at the news, half a headline, eight days, a move past 1000%, an earnings alert on words rather than a ticker
+    expect(code(await x.own(alert({ condition: "news", price: "1" })))).toBe("E_ACCOUNT_BAD_ACTION");
+    expect(code(await x.own(alert({ venue: "news", symbol: "Bitcoin", condition: "above", price: "1" })))).toBe("E_ACCOUNT_BAD_ACTION");
+    expect(code(await x.own(alert({ venue: "news", symbol: "Bitcoin", condition: "news", price: "1.5" })))).toBe("E_ACCOUNT_BAD_ACTION");
+    expect(code(await x.own(alert({ venue: "calendar", symbol: "AAPL", condition: "earnings", price: "8" })))).toBe("E_ACCOUNT_BAD_ACTION");
+    expect(code(await x.own(alert({ venue: "calendar", symbol: "Apple Inc", condition: "earnings", price: "7" })))).toBe("E_ACCOUNT_BAD_ACTION");
+    expect(code(await x.own(alert({ condition: "change-above", price: "1001" })))).toBe("E_ACCOUNT_BAD_ACTION");
+    // the first look: the day's figures and the calendar fire theirs; no headline is out yet
+    const first = await x.svc.lookAtAlerts();
+    expect(first.map((f) => [f.id, f.seen, f.from])).toEqual([["alert-0001", -6.5, name], ["alert-0003", 2.5e9, name], ["alert-0005", 0.025, "Hyperliquid"], ["alert-0009", 3, "AAPL reports on 2026-10-08 after the close (Nasdaq's calendar)"]]);
+    expect(newsAsks).toEqual([{ q: "Bitcoin ETF", limit: 60 }, { symbol: "AAPL", limit: 60 }]);
+    expect(calAsks).toEqual([{ kind: "earnings", symbol: "AAPL", from: "2026-10-05", to: "2026-10-11" }, { kind: "earnings", symbol: "NVDA", from: "2026-10-05", to: "2026-10-11" }]);
+    // ten minutes on, three headlines are out — two of them since the alert was set, one from before it — and the share's feed has one
+    x.pass(10 * 60_000);
+    const wire = { source: "standin-wire", sourceName: "Stand-in Wire", topics: [] as never[] };
+    headlines.push({ id: "h0", title: "An old Bitcoin ETF headline", at: new Date(START - 60_000).toISOString(), ...wire }, { id: "h1", title: "Bitcoin ETF inflows set a record", at: new Date(START + 5 * 60_000).toISOString(), ...wire }, { id: "h2", title: "A second Bitcoin ETF headline", at: new Date(START + 8 * 60_000).toISOString(), ...wire }, { id: "h3", title: "Apple's quarter, in brief", at: new Date(START + 6 * 60_000).toISOString(), symbol: "AAPL", ...wire });
+    const second = await x.svc.lookAtAlerts();
+    expect(second.map((f) => [f.id, f.seen, f.from])).toEqual([["alert-0007", 2, "A second Bitcoin ETF headline — Stand-in Wire"], ["alert-0008", 1, "Apple's quarter, in brief — Stand-in Wire"]]);
+    expect((await x.page()).alerts.map((a) => a.id)).toEqual(["alert-0002", "alert-0004", "alert-0006", "alert-0010"]);
+    expect((await x.page()).alertsFired.map((f) => [f.id, f.venueName, f.seen])).toEqual([["alert-0008", "the news", 1], ["alert-0007", "the news", 2], ["alert-0009", "the calendar", 3], ["alert-0005", "hyperliquid", 0.025], ["alert-0003", name, 2.5e9], ["alert-0001", name, -6.5]]);
+    // the ledger's notes, each in the alert's own measure
+    const notes = x.svc.ledgerRows().filter((r) => r.kind === "note" && !!(r.detail as { alertFired?: unknown } | undefined)?.alertFired).map((r) => r.reason);
+    expect(notes).toEqual([
+      `move alert alert-0001 fired: BTC/USDT at ${name} fell 5% or more on the day — -6.5% (${name})`,
+      `volume alert alert-0003 fired: BTC/USDT at ${name} traded more than 2,000,000,000 in 24 hours — 2,500,000,000 (${name})`,
+      "funding alert alert-0005 fired: BTC-PERP at hyperliquid funding went above 0.02% an interval — 0.025% (Hyperliquid)",
+      "earnings alert alert-0009 fired: AAPL reports within 7 days — in 3 days (AAPL reports on 2026-10-08 after the close (Nasdaq's calendar))",
+      "news alert alert-0007 fired: Bitcoin ETF was in 2 headlines (Bitcoin ETF) — 2 headlines (A second Bitcoin ETF headline — Stand-in Wire)",
+      "news alert alert-0008 fired: AAPL was in a headline (AAPL) — 1 headline (Apple's quarter, in brief — Stand-in Wire)",
+    ]);
   });
 
   it("prices a market at a venue that is not connected from the venue's public side (its listings), in that source's words, and leaves an alert standing where nothing prices its market", async () => {

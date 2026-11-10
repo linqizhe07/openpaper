@@ -169,7 +169,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 顶栏那个框每一页都有（按 `/` 或 ⌘K / Ctrl+K 聚焦）。它还是搜索：打几个字母，下面列出匹配的市场，回车在 Markets 里筛。但它也认**功能代码**，像终端的命令行，回车直达：
 
 - **市场 + 功能**：`AAPL DES` 打开苹果那一个抽屉，`BTC GP` 去 Trade 看它的 K 线，`NVDA FA` 抽屉里直接到 Financials。市场在前、功能在后（反过来 `DES AAPL` 也认）。同名的市场（BTC 现货和 BTC 永续）下面各出一行"市场 › 功能"，回车取第一行，↓ 选别的；或者在功能前加一个种类词限定：`BTC PERP GP`、`AAPL STOCK DES`（COIN · STOCK · PERP · EVENT · RWA）。
-- **只打功能**：`MOST` 最忙的市场、`MOV` 24 小时涨跌最大、`WATCH` 关注列表和价格提醒、`PORT` Portfolio、`SA` Superagent、`BT` 回测、`SIM` 模拟机、`DEB` 复盘、`STMT` 对账单、`SET` 设置、`HELP` 全部功能的清单（`HELP chart` 只列提到 chart 的）。
+- **只打功能**：`MOST` 最忙的市场、`MOV` 24 小时涨跌最大、`WATCH` 关注列表和提醒、`PORT` Portfolio、`SA` Superagent、`BT` 回测、`SIM` 模拟机、`DEB` 复盘、`STMT` 对账单、`SET` 设置、`HELP` 全部功能的清单（`HELP chart` 只列提到 chart 的）。
 - **一个市场有哪些功能**：打 `AAPL ` 加一个空格，下面列出它能用的（DES · GP · QM · FA · CF · BUY · SELL · HAND · ALRT），再打几个字母就缩小到那几个。
 - 代码和股票代码重名的（FA、GP、SIM 都有同名的美股），单独打是功能；那只股票在下面一行，↓ 选它。
 - 这个框什么都不签、不发：功能只是打开一页、一个抽屉、一张票或一个弹层。`BUY` / `SELL` 打开的是下单票，照旧要你签名；`ALRT` 打开的是提醒的表单。
@@ -184,7 +184,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `FA` · `CF` | 美股 | 抽屉里的 Financials / Company（SEC EDGAR）；对币、合约说"不是美股" |
 | `BUY` · `SELL` | 市场 | 下单票，预设买 / 卖 |
 | `HAND` | 市场 | Hand to agent 的意图表单 |
-| `ALRT` | 市场，可省 | 这个市场的价格提醒表单；单独打是 Watching 页 |
+| `ALRT` | 市场，可省 | 这个市场的提醒表单（价格、当天涨跌、成交额、资金费率、新闻、财报，第 2n 条）；单独打是 Watching 页 |
 | `CN` | 市场 | 抽屉里的 News：这只股票自己的源加提到它的标题（第 2e 条） |
 | `TOP` · `N 词` | — / 词 | News 页：当天的标题 · 只看带这几个词的 |
 | `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN 可带股票；DVD 带股票是它自己页上的历次股息） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
@@ -398,6 +398,34 @@ Account 头下的第四页 **Risk**（命令行 `RISK`）。持仓读的每一�
 ```
 GET /api/account/risk
 ```
+
+## 2n · 提醒：价格之外
+
+Markets 里每行 ★ 旁边的 🔔 打开提醒表（抽屉里是 "Alert"，命令行 `BTC ALRT`）。先选**看什么**，再填数，签一个 `setAlert`；账户自己**每 30 秒**看一次，页开不开都看，到了说一次（页上一条长 toast，开了开关还有浏览器通知），然后这条提醒就没了（站 90 天不响就过期）。它什么都不下单：agent 读它只当你在盯什么。
+
+| 看什么 | 条件（`condition`） | 数 | 谁来判 |
+|---|---|---|---|
+| 价格 | `above` · `below` | 一个价（事件合约按美分填，签的是美元） | 市场自己的场所，接上的用它的价，没接的用公开源 |
+| 当天涨跌 | `change-above` · `change-below` | 百分数（5 是 5%），最多 1000 | 场所自己的 24 小时涨跌 |
+| 成交额 | `volume-above` | 24 小时成交的美元数 | 场所自己的 24 小时成交额 |
+| 资金费率（永续） | `funding-above` · `funding-below` | 每期的百分数（0.01 是 0.01%） | 场所自己的资金费率 |
+| 新闻 | `news`，场所写 `news` | 至少几条新标题（整数） | News 的源（第 2e 条）：提醒设下之后放出的、带这几个词的标题；填美股代码的话还读它自己的源 |
+| 财报 | `earnings`，场所写 `calendar` | 几天之内（整数，最多 7） | Nasdaq 的财报日历（第 2f 条）：从今天读到那天，列了这只股就响，说出是哪天、盘前还是盘后 |
+
+- 事件合约只能设价格和新闻（它的一天是美分和张数，不是百分数和美元）；资金费率只有永续有；财报只有美股有（表里只在它能用时才列出那一项）。
+- Watching 页底下的 **Alerts** 列每一条：它说的话、在哪看、现在的数（价、涨跌、成交额、资金费率；新闻和财报没有"现在"）、从哪天到哪天、Remove；下面是响过的，各按自己的量说：`BTC/USDT at Kraken rose above $63,500: $63,512`、`Bitcoin was in 3 headlines`（后面是最新那条标题和出版方）、`AAPL reports in 3 days`。
+- 账本上一行 `move alert alert-0007 fired: BTC/USDT at Ex fell 5% or more on the day — -6.5% (Ex)`，重启照样读回来。
+- 一次最多 50 条；同一市场同一条件同一数不能设两条。
+- **agent**：`portfolio_watchlist` 里 `alerts`（每条带 `condition`）和 `alertsFired`（带响时的数）；agent 不能设提醒——那是主人签的。
+
+```bash
+# 自己签（页面替你做；这里是动作的形状）
+{ type: "setAlert", id: "", venue: "ex",       symbol: "BTC/USDT",  condition: "change-below",  price: "5",   on: "true" }
+{ type: "setAlert", id: "", venue: "news",     symbol: "Bitcoin ETF", condition: "news",        price: "2",   on: "true" }
+{ type: "setAlert", id: "", venue: "calendar", symbol: "AAPL",      condition: "earnings",      price: "7",   on: "true" }
+```
+
+会被拒：`news` 条件写在一个场所上、或场所写 `news` 却不是 `news` 条件 · 新闻 / 财报的数不是整数 · 财报超过 7 天、代码不像美股代码 · 涨跌超过 1000 `E_ACCOUNT_BAD_ACTION` · 第 51 条 `E_ACCOUNT_LIMIT`。
 
 ## 3 · 让一个 agent 进来，给它交易额度
 
@@ -1128,6 +1156,7 @@ Portfolio 右边一栏最上面的 **Waiting for you**：卡按 agent 分组，�
 **你说**
 
 - **关注**：Markets 里点 ★（`setWatch`）。最多 50 个，没接的场所的市场也能关注。
+- **提醒**：★ 旁边的 🔔（`setAlert`，第 2n 条）：价格、当天涨跌、成交额、资金费率、新闻、财报。agent 在 `portfolio_watchlist` 里读到它们——你在盯什么，不是指令。
 - **意图**：Portfolio 的快捷操作 "Hand to agent"、下单票的 "Hand to agent instead"（带着这张票的种类、场所、市场、方向、结果和美元数）、市场抽屉的 "Hand to agent"、Earn 弹层的 "Hand to agent"。在 Trade 屏上这张表占右边的面板，顶上是这一面的标签（只是页面上的，签的东西里没有它），"Do it myself instead" 回到票；别处是一个弹层。填给哪个 agent（或 "Every agent"）、在哪、什么市场、哪个方向、大约多少美元、你的话（最多 200 字）、到什么时候，点 "Sign and hand over"（`setIntent`）。美元只是引导，什么都不限。最多同时开 20 个，最长 180 天。
 - **附一份额度**：同一张表里可以勾上，给这个 agent 一份交易额度（交 earn 的事时是 earn 额度），每单、总额、期限和意图一样长。它会**替换**这个 agent 现在那一份（每个 agent 每一样只有一份），表上写着现在那份是多少。话和额度是两段 "What you sign"、两次签名：先签话、拿到它的 id（`intent-0003`），再签带着这个 id 的额度（`approveSpend.intent`）；Agents 列表和额度摘要里写 " · for intent-0003"。
 - 开着的意图列在 Portfolio 的 **Agents at work**，带每个 agent 最新的回报。"Change words" 改话（结束时间跟着它的额度不变）；"Withdraw" 收回：先确认，再签两样，话（`validUntil` 为 0）和随它给的额度（预算 0）。页面按额度上的 `intent` 认出是哪份额度（老的没带 id 的，按同一个 agent、同一个结束时间）；第二个签名被拒时，话没了、额度还在，页面把拒绝摆出来。
