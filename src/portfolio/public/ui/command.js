@@ -95,6 +95,7 @@ const CMD_GROUPS = [
     fns: [
       { code: "TOP", name: "Top news", takes: "", what: "The day's headlines from the publishers' own feeds: the markets, the central banks, crypto", eg: "TOP", run: () => go("news") },
       { code: "N", name: "News search", takes: "words", what: "The headlines that carry these words", eg: "N fed rates", run: (c) => go("news", c.tail ? { q: c.tail } : {}) },
+      { code: "ASK", name: "Ask the desk", takes: "words", what: "Ask your desk's Head a question: it answers from the floor's own figures — the leads, the last scan, what it read — never a guess", eg: "ASK why no lead today", run: (c) => cmdAsk(c.tail) },
       { code: "ECO", name: "Economic calendar", takes: "", what: "Today's releases with their time, consensus and what came out, from Nasdaq's calendar", eg: "ECO", run: () => go("calendar", { kind: "economic" }) },
       { code: "ERN", name: "Earnings calendar", takes: "market?", what: "Who reports today, before the open or after the close, and the EPS expected; a share's own week", eg: "AAPL ERN", only: cmdShare("ERN"), run: (c) => go("calendar", { kind: "earnings", ...(c.item ? { symbol: mkTicker(c.item) } : {}) }) },
       { code: "DVD", name: "Dividends", takes: "market?", what: "A share's dividends paid, on its own page; alone, the shares going ex-dividend today with the amount and the payment day", eg: "DVD", only: cmdShare("DVD"), run: (c) => (c.item ? cmdSecurity("dvd")(c) : go("calendar", { kind: "dividends" })) },
@@ -326,4 +327,19 @@ function cmdHelpHtml(words) {
 }
 function cmdHelp(words) {
   openSheet(cmdHelpHtml(words), { title: "Functions" });
+}
+
+/* ASK: the owner's question to the desk, answered by its Head from the floor's own figures (POST /api/account/desk/ask; account/desk.ts
+   askHead): a sheet with the question and "Asking the Head…", then the answer with when it was said — or the account's refusal in its own
+   words (no desk hired, no Head seat, a brain that did not answer). Nothing is signed: words to the desk, never an order */
+async function cmdAsk(words) {
+  const q = String(words || "").trim();
+  if (!q) return void toast("Type the question after ASK: ASK why no lead today", "info");
+  const body = openSheet(`<p class="dim small">You asked the desk</p><p class="cmd-ask-q">${esc(q)}</p><div class="cmd-ask-a" data-ask aria-live="polite"><span class="dim">Asking the Head…</span></div>`, { title: "Ask the desk" });
+  const r = await postJson("/api/account/desk/ask", { question: q });
+  const box = body && body.querySelector ? body.querySelector("[data-ask]") : null;
+  if (!box || !box.isConnected) return;
+  const refused = !r || r.status !== 200 || !r.body || r.body.ok === false || !r.body.answer;
+  if (refused) return void (box.innerHTML = `<div class="msg no">${esc((r && r.body && ((r.body.refusal && r.body.refusal.message) || r.body.error)) || "The desk did not answer.")}</div>`);
+  box.innerHTML = `<p>${esc(r.body.answer)}</p><p class="dim small">The Head, from the floor's own figures${r.body.at ? ` · ${esc(nyTime(r.body.at))} New York` : ""}</p>`;
 }

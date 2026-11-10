@@ -2815,7 +2815,17 @@ export class PortfolioService {
       nonce: () => this.account!.nextNonce(),
       venueName: (id) => this.nameOf(id),
       log: (row) => void this.ledger.append(unaddressedRow(row)),
+      // the desk reads what the account reads — the headlines and the calendar (live/news.ts, live/calendars.ts) — on a live account;
+      // never in the lab (liveDeps.paperBars: a desk stepped over recorded bars would read today's news into a past day's cycle, and the
+      // readers' pacing would slow every replayed cycle)
+      ...(this.opts.liveDeps?.paperBars ? {} : { news: (ask) => this.news(ask), calendar: (ask) => this.calendar(ask) }),
     };
+  }
+  /** THE OWNER ASKS THE DESK (POST /api/account/desk/ask; the command line's ASK): the Head's answer from the floor's own figures, the
+   * question and the answer both on the floor (account/desk.ts askHead). Refused where the account keeps no desk */
+  async deskAsk(question: string): Promise<{ answer: string; at: string } | Refusal> {
+    if (!this.desk) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no desk: start it with real venues and hire one" });
+    return this.desk.askHead(question);
   }
   /** How one of the desk's brains stands now that its key changed (account/brain-keys.ts), as the page, the feed and a seat read it — the
    * desk's own standing (Desk.catalog), which is the brain's word about itself (a key file is read again at every check, so a key just

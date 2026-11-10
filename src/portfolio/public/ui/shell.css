@@ -808,3 +808,6 @@ html, body { transition: background-color 0.2s ease-in-out; }
   [data-q][data-fmt], [data-q][data-fmt]::after, .rl-row, .rl-line, .mk-tile { transition: none; }
   :is(.btn, .icon-btn, .seg button, .rail-nav a, .rail-links button, .menu button, .rl-row, .mk-tile, .tabs button):active:not(:disabled) { transform: none; }
 }
+/* ASK (command.js cmdAsk): the question in bold, the Head's answer as a paragraph */
+.cmd-ask-q { font-weight: 600; margin: 4px 0 12px; }
+.cmd-ask-a p { margin: 0 0 8px; }
