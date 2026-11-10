@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 72,
+      "title": "Worked orders on the paper account: TWAP, VWAP, iceberg, and a transaction-cost analysis on each",
+      "mergedAt": "2026-11-10T01:26:20Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/72",
+      "branch": "feat/algos"
+    },
+    {
       "number": 71,
       "title": "Alerts beyond the price: the day's move, the volume, a perpetual's funding, the news and the earnings",
       "mergedAt": "2026-11-10T00:57:05Z",
