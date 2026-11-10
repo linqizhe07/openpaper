@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 73,
+      "title": "The desk reads the news and the calendar, and the owner asks it (ASK)",
+      "mergedAt": "2026-11-10T01:53:32Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/73",
+      "branch": "feat/desk-reads"
+    },
+    {
       "number": 72,
       "title": "Worked orders on the paper account: TWAP, VWAP, iceberg, and a transaction-cost analysis on each",
       "mergedAt": "2026-11-10T01:26:20Z",
