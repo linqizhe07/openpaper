@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 71,
+      "title": "Alerts beyond the price: the day's move, the volume, a perpetual's funding, the news and the earnings",
+      "mergedAt": "2026-11-10T00:57:05Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/71",
+      "branch": "feat/alerts"
+    },
+    {
       "number": 70,
       "title": "The world on perpetuals: Hyperliquid's HIP-3 contracts on shares, indices, commodities, currencies and rates, listed, charted and tradable on paper",
       "mergedAt": "2026-11-10T00:23:18Z",
