@@ -87,6 +87,8 @@
  *                                                        the equity's last points, the funnel, the last leads, the seats and the
  *                                                        objective, the brain's standing with its fix — the room's tail only, all of one
  *                                                        moment
+ *   POST /api/account/desk/ask {question}               the owner asks the desk (the command line's ASK): the Head answers from the floor's own
+ *                                                        figures, and the question and the answer go on the floor (account/desk.ts askHead)
  *   GET  /api/account/desk/seat?address=                 the desk as one seat reads it (portfolio_desk): its charter, the room's last lines
  *   POST /api/account/brain-key {envelope, apiKey}       A BRAIN'S KEY, typed by the owner on the page (account/brain-keys.ts): the owner's
  *                                                        signed setBrainKey (provider, base URL, model, the key's fingerprint — never the
@@ -933,6 +935,13 @@ export async function startPortfolioServer(opts: PortfolioServerOptions): Promis
     if (q.since !== "" && !/^\d{1,15}$/.test(q.since)) return void bad(res, "since is the room's last seq the page has: a whole number, 0 or more, in digits");
     const feed = await svc.desk.feed(q.since === "" ? 0 : Number(q.since));
     res.json(feed ? { ok: true, ...feed } : { ok: true, desk: null });
+  }));
+  // the owner asks the desk (the command line's ASK): the Head answers from the floor's own figures; both go on the floor
+  app.post("/api/account/desk/ask", wrap(async (req, res) => {
+    if (!mounted(res)) return;
+    const body = req.body as { question?: unknown } | undefined;
+    if (!body || typeof body !== "object" || typeof body.question !== "string") return void bad(res, "need {question}: what you ask the desk, in 1 to 300 characters");
+    answerOf(res, await svc.deskAsk(body.question));
   }));
   app.get("/api/account/desk/seat", wrap(async (req, res) => {
     if (!mounted(res)) return;

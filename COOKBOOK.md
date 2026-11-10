@@ -187,6 +187,7 @@ agent 读同样的东西：`portfolio_explore {tab, q, sort, limit}`（`tab` 是
 | `ALRT` | 市场，可省 | 这个市场的提醒表单（价格、当天涨跌、成交额、资金费率、新闻、财报，第 2n 条）；单独打是 Watching 页 |
 | `CN` | 市场 | 抽屉里的 News：这只股票自己的源加提到它的标题（第 2e 条） |
 | `TOP` · `N 词` | — / 词 | News 页：当天的标题 · 只看带这几个词的 |
+| `ASK 问题` | 问题 | 问你的 Desk：Head 只用桌上自己的数回答（第 3b 条） |
 | `ECO` · `ERN` · `DVD` · `SPLT` · `IPO` | — （ERN 可带股票；DVD 带股票是它自己页上的历次股息） | Calendar 页：经济数据 · 财报 · 除息 · 拆股 · IPO（第 2f 条） |
 | `WEI` · `GC` · `FXC` · `GLCO` | — | World 页：股指 · 收益率曲线 · 外汇 · 商品，各直达一张卡（第 2g 条） |
 | `OMON` · `SKEW` | 市场，可省（美股、BTC、ETH） | Options 页：期权链 · 波动率偏斜；单独打是上一条链（第 2h 条） |
@@ -489,6 +490,12 @@ Cycle 1 (the clock): 1 lead scanned, 1 cleared, 1 placed, 0 waiting for you, 1 o
 - 文件：`~/.openpaper/desk/desk.json`、`desk/room.jsonl`（600）；席位钥匙 `seats/desk-<role>.json`。重启继续。
 
 **单笔上限也在这里改**：头上的 "Trading on · $20 a move" 点开 Settings，"Change the cap" 一次签名（`setPolicy cap`），升降都行，立刻生效，重启按最后一次签的恢复；启动参数 `--live-cap` 只是起点。纸上账户不受它。
+
+**Desk 读什么、怎么问它**（2026-11-09 起）：Search 每次扫描前先读账户自己的新闻和日历——当天的八条标题（出版方、多久以前）和今天的经济数据（纽约时间、共识、已出的实际值）——一起给它的脑子看，读到的记在那次扫描上（Desk 页的 last scan：`headlines`、`events`）；Risk 放行一条线索前先读这个市场自己的标题（美股读它自己的 Nasdaq 源，币按它的名字找）和美股一周内的财报日（"Earnings: AAPL reports on … after the close"）。读者四秒不答、或拒绝，就只看表，什么都不补。命令行打 `ASK why no lead today`（或任何一句话，300 字以内）：Head 只用桌上自己的数——目标、开着的线索、上次扫描和它读到的、房间最后十二句——回答两到四句，不知道就说不知道；你的问题和它的回答都写进房间（`you` / `head`）。没雇 Desk、没有 Head、脑子不答，都用原话拒绝。agent 不问 Desk：这条只给主人。
+
+```bash
+curl -s -X POST http://127.0.0.1:4820/api/account/desk/ask -H 'content-type: application/json' -d '{"question":"why no lead today"}'
+```
 
 ## 3c · Superagent：让 Desk 在纸上账户上自己交易
 

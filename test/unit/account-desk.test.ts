@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { isRefusal, type Refusal } from "../../src/core/errors.ts";
+import type { CalendarReader } from "../../src/portfolio/live/calendars.ts";
+import type { NewsReader } from "../../src/portfolio/live/news.ts";
 import { ANTHROPIC_KEY_SHAPE, brainReach, claudeBrain } from "../../src/portfolio/account/brain-claude.ts";
 import { shq } from "../../src/portfolio/account/brain-key.ts";
 import { keyRejected, rejectedFix } from "../../src/portfolio/account/brain-key.ts";
@@ -94,7 +96,7 @@ const brainOf = (s: Script = {}): Brain =>
 const noBrain: Brain = { id: "none", label: "no brain", models: [], ready: () => ({ ok: false, model: "none", why: "no key" }), decide: async () => ({ out: null, why: "no key", usage: { inputTokens: 0, outputTokens: 0 } }) };
 
 let registered = false;
-async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record<string, Market>; at?: number; cap?: number; tickMs?: number; firstCycleMs?: number; deferSaves?: boolean } = {}) {
+async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record<string, Market>; at?: number; cap?: number; tickMs?: number; firstCycleMs?: number; deferSaves?: boolean; /** the news and the calendar the desk reads (none unless said) */ readers?: { news?: NewsReader; calendar?: CalendarReader } } = {}) {
   const home = o.home ?? mkdtempSync(join(tmpdir(), "account-desk-"));
   if (!o.home) homes.push(home);
   const markets = o.prices ?? { "BTC/USDT": SPOT("BTC/USDT", 60_000), "ETH/USDT": SPOT("ETH/USDT", 3_000) };
@@ -110,7 +112,7 @@ async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record
   // the real clock and the account's clock move together: `advance` pushes both, so kept reads (markets, prices) expire as they would
   let skew = o.at ?? 0;
   const liveDeps: Partial<LiveDeps> = { clock: () => REAL + skew, http: async () => ({ status: 599, body: undefined, text: "" }), price: async () => undefined };
-  const svc = await PortfolioService.create({ home, now: () => new Date(START + skew).toISOString(), venues: "frontline", real: true, liveDeps, publicMarkets: [], liveWrites: { capUsd: o.cap ?? 100, pairingCode: "K7QX-M2PA" }, account: { owners: [{ id: owner.address, kind: "eoa", label: "owner", addedAt: new Date(START).toISOString() }] }, desk: { brain: o.brain ?? brainOf(), tickMs: o.tickMs ?? 0, firstCycleMs: o.firstCycleMs, deferSaves: o.deferSaves } });
+  const svc = await PortfolioService.create({ home, now: () => new Date(START + skew).toISOString(), venues: "frontline", real: true, liveDeps, publicMarkets: [], ...(o.readers ? { readers: o.readers } : {}), liveWrites: { capUsd: o.cap ?? 100, pairingCode: "K7QX-M2PA" }, account: { owners: [{ id: owner.address, kind: "eoa", label: "owner", addedAt: new Date(START).toISOString() }] }, desk: { brain: o.brain ?? brainOf(), tickMs: o.tickMs ?? 0, firstCycleMs: o.firstCycleMs, deferSaves: o.deferSaves } });
   await svc.restoring;
   const own = async (a: NoNonce<OwnerAction>) => svc.exchange(await signOwner(owner, { ...a, nonce: START + skew + ++n } as OwnerAction));
   const as = async (key: ReturnType<typeof simKey>, a: NoNonce<AgentAction>) => svc.exchange(await signAgent(key, { ...a, nonce: START + skew + ++n } as AgentAction));
@@ -1380,5 +1382,81 @@ describe("the desk's versions", () => {
     expect(d.debrief.slices.version.map((x) => [x.label, x.n])).toEqual([["v1", 10], ["v2", 10]]);
     expect(d.versions.map((x) => [x.v, x.change])).toEqual([[1, "hire"]]);
     expect(d.lessons[0]!.test).toMatchObject({ trades: 20, stopped: { n: 10, netUsd: -50 }, verdict: "few", words: "It would have stopped 10 of the desk's 20 trades since 2026-10-12: 30 are needed to tell." });
+  });
+});
+
+/** WHAT THE DESK READS BESIDE THE PRICES (the Bloomberg-parity program's last step): the account's news and calendar, where it has them —
+ * Search is shown the day's headlines and today's releases before it scans, Risk a lead's own headlines (and a US share's earnings
+ * within the week) before it clears; the scan records what was read. And the owner asks the desk: the Head answers from the floor's own
+ * figures, the question and the answer on the floor */
+describe("the desk reads the news and the calendar, and answers the owner", () => {
+  const wire = (title: string, minutesAgo: number) => ({ id: title, title, at: new Date(START - minutesAgo * 60_000).toISOString(), source: "standin-wire", sourceName: "Stand-in Wire", topics: [] as never[] });
+  const news = (asks: unknown[]): NewsReader => ({
+    async headlines(ask = {}) {
+      asks.push(ask);
+      const items = ask.q === "BTC" ? [wire("Bitcoin holds above $60,000 as funding turns positive", 12)] : ask.symbol ? [] : [wire("Fed holds rates, signals a cut in December", 25), wire("Bitcoin ETF inflows set a record", 40)];
+      return { asOf: new Date(START).toISOString(), items, total: items.length, sources: [], missing: [], topics: [], notes: [] };
+    },
+    clear() {},
+  });
+  const calendar = (asks: unknown[]): CalendarReader => ({
+    async events(ask = {}) {
+      asks.push(ask);
+      const items = ask.kind === "economic" ? [{ kind: "economic" as const, day: "2026-10-05", time: "08:30", country: "US", event: "CPI (MoM)", consensus: "0.3%", previous: "0.2%" }] : [];
+      return { asOf: new Date(START).toISOString(), kind: ask.kind === "economic" ? "economic" : "earnings", from: "2026-10-05", to: "2026-10-05", items, total: items.length, days: [], missing: [], notes: [] };
+    },
+    clear() {},
+  });
+
+  it("Search is shown the day's headlines and today's releases, Risk the lead's own headlines; the scan records what was read; a reader that refuses leaves the seat to the table alone", async () => {
+    const inputs: Record<string, string[]> = { search: [], risk: [] };
+    const brain = brainOf({ search: (i) => { inputs.search!.push(i); return { leads: [{ symbol: "BTC/USDT", side: "buy", thesis: "BTC is up 2.5% on $2B of volume", confidence: 0.7 }], note: "" }; }, risk: (i) => { inputs.risk!.push(i); return { verdict: "clear", why: "the spread is tight", sizeUsd: 40, tpPct: 2, slPct: 1, maxHours: 12 }; } });
+    const newsAsks: unknown[] = [];
+    const calAsks: unknown[] = [];
+    const { desk, hire } = await boot({ brain, readers: { news: news(newsAsks), calendar: calendar(calAsks) } });
+    await hire();
+    await desk.cycle("test");
+    expect(inputs.search![0]).toContain('Headlines today: ["Fed holds rates, signals a cut in December (Stand-in Wire, 25 min ago)","Bitcoin ETF inflows set a record (Stand-in Wire, 40 min ago)"].');
+    expect(inputs.search![0]).toContain('Releases today (New York): ["CPI (MoM) (US) at 08:30 New York, consensus 0.3%"].');
+    expect(inputs.risk![0]).toContain('Headlines on BTC: ["Bitcoin holds above $60,000 as funding turns positive (Stand-in Wire, 12 min ago)"].');
+    expect(inputs.risk![0]).not.toContain("Earnings:");
+    expect(newsAsks).toEqual([{ limit: 8 }, { q: "BTC", limit: 5 }]);
+    expect(calAsks).toEqual([{ kind: "economic", limit: 12 }]);
+    const scan = (await desk.view())!.lastScan!;
+    expect(scan.headlines).toEqual(["Fed holds rates, signals a cut in December (Stand-in Wire, 25 min ago)", "Bitcoin ETF inflows set a record (Stand-in Wire, 40 min ago)"]);
+    expect(scan.events).toEqual(["CPI (MoM) (US) at 08:30 New York, consensus 0.3%"]);
+    // readers that refuse: the seats decide on the table alone, and the scan records nothing read
+    const dumb: Record<string, string[]> = { search: [] };
+    const refusing: NewsReader = { headlines: async () => no("E_VENUE_UNREACHABLE", { venue: "news", message: "the wire did not answer" }), clear() {} };
+    const b = await boot({ brain: brainOf({ search: (i) => { dumb.search!.push(i); return { leads: [], note: "" }; } }), readers: { news: refusing } });
+    await b.hire();
+    await b.desk.cycle("test");
+    expect(dumb.search![0]).not.toContain("Headlines today");
+    expect((await b.desk.view())!.lastScan!.headlines).toBeUndefined();
+  });
+
+  it("the owner asks the desk: the Head answers from the floor's own figures, the question and the answer go on the floor; an empty question, no desk, no Head, or a brain that gives nothing is refused in words", async () => {
+    const heard: string[] = [];
+    const brain = brainOf({ head: (i) => { if (!i.startsWith("The owner asks:")) return { worked: "L-0001 was cleared and placed.", change: "Nothing yet." }; heard.push(i); return { answer: "No lead today: Search scanned 2 markets and picked none, and the room says the market was quiet." }; } });
+    const { desk, hire, home, svc } = await boot({ brain });
+    const none = await svc.deskAsk("why no lead today");
+    expect(isRefusal(none) && none.message).toContain("keeps no desk");
+    await hire();
+    await desk.cycle("test");
+    const a = await svc.deskAsk("  why no lead today?  ");
+    if (isRefusal(a)) throw new Error(a.message);
+    expect(a.answer).toBe("No lead today: Search scanned 2 markets and picked none, and the room says the market was quiet.");
+    expect(heard[0]).toContain('The owner asks: "why no lead today?". Answer from these alone — the desk\'s objective:');
+    expect(heard[0]).toContain("open leads:");
+    expect(heard[0]).toContain("the last scan:");
+    expect(heard[0]).toContain("the floor's last lines:");
+    const room = readRoom(home);
+    expect(room.slice(-2).map((m) => [m.from, m.kind, m.text, m.brain])).toEqual([["you", "you", "why no lead today?", undefined], ["head", "note", a.answer, true]]);
+    expect(Date.parse(a.at)).toBeGreaterThan(0);
+    // refused in words
+    expect((await svc.deskAsk("   ") as Refusal).message).toContain("ask the desk a question");
+    const mute = await boot({ brain: brainOf({ head: () => null }) });
+    await mute.hire();
+    expect((await mute.svc.deskAsk("anything?") as Refusal).message).toContain("the Head did not answer");
   });
 });

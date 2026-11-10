@@ -58,6 +58,8 @@
  * shared with the MCP seats, which name their key file after the client's own name — so the "desk" names in it are the desk's alone, and an
  * outside client whose name would land on one is given a key file of its own beside them (outsideSeatFile).
  */
+import type { CalendarView } from "../live/calendars.ts";
+import type { NewsView } from "../live/news.ts";
 import { chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -118,7 +120,7 @@ export const ROLE_SPECS: Record<RoleId, RoleSpec> = {
   exit: { id: "exit", name: "Exit", tag: "EXIT", house: true, trades: true, charter: { owns: "Open leads: the take-profit, the stop and the time limit of the plan, taken when the mark reaches them; closing a lead early when the thesis is gone.", good: "Each close named with its reason and the realised result, in the room.", never: "Add to a lead or average down. A close is an order through the door like any other." } },
   watch: { id: "watch", name: "Watch", tag: "WATCH", house: true, trades: true, charter: { owns: "Danger on open leads: the distance to liquidation, funding draining the margin, an event market closing, the venue not answering.", good: "A warning with the number that raised it; a close under the pre-approved rule when the number crosses the line.", never: "Open anything. It closes only what the desk holds." } },
   flow: { id: "flow", name: "Flow", tag: "FLOW", house: false, outsideOnly: "needs a feed of large and smart-money flows, which the account does not have: an agent of yours with that data fills this seat", trades: false, charter: { owns: "What large and informed money is doing in a lead's market: confirms, or stays quiet.", good: "A confirmation that names its source and its number.", never: "Size a position or recommend an entry." } },
-  sentiment: { id: "sentiment", name: "Sentiment", tag: "SENTIMENT", house: false, outsideOnly: "needs a feed of social attention beside the headlines the account reads (portfolio_news), which no house seat reads yet: an agent of yours with that data fills this seat", trades: false, charter: { owns: "The attention a lead's market gets: news and social, by the hour.", good: "A reading with its source and a count; hype alone is never a confirmation.", never: "Treat attention as a reason to enter." } },
+  sentiment: { id: "sentiment", name: "Sentiment", tag: "SENTIMENT", house: false, outsideOnly: "needs a feed of social attention beside the headlines the account reads (portfolio_news) — Search and Risk read those before every scan and clearance; the social side needs an agent of yours with that data to fill this seat", trades: false, charter: { owns: "The attention a lead's market gets: news and social, by the hour.", good: "A reading with its source and a count; hype alone is never a confirmation.", never: "Treat attention as a reason to enter." } },
 };
 
 /** the name a house seat is let in under: plain text the account takes as an agent key's name */
@@ -324,7 +326,7 @@ export interface DeskReport {
  * (clear), the Sniper placing one (enter), the Exit marking the open leads and asking its brain (exit), a seat closing one (close), the
  * Head writing a report or the weekly review (report, review), the desk reading its orders back from the account (follow). Set around the
  * step and cleared after it, in memory only: a restart clears it, and nothing is drawn as working that is not */
-export type DeskWork = "scan" | "clear" | "enter" | "exit" | "close" | "report" | "review" | "follow";
+export type DeskWork = "scan" | "clear" | "enter" | "exit" | "close" | "report" | "review" | "follow" | "ask";
 export interface DeskWorking {
   role: RoleId;
   what: DeskWork;
@@ -358,6 +360,9 @@ export interface DeskScan {
   rows: ScanRow[];
   picked: Array<{ lead: string; symbol: string; side: "buy" | "sell"; confidence: number }>;
   note?: string | undefined;
+  /** what Search read beside the table, as its brain was shown it: the day's headlines and today's economic releases (reading) */
+  headlines?: string[] | undefined;
+  events?: string[] | undefined;
 }
 /** What Search's step gives the cycle: the leads it named, or — where its brain gave nothing (no answer, no decision) or it had no table to
  * show the brain — `unjudged`, the reason in a few words, so the cycle says that rather than "nothing worth a lead" */
@@ -759,6 +764,7 @@ const ExitOut = z.object({ decisions: z.array(z.object({ lead: z.string(), actio
 // the words alone
 const RuleText = z.preprocess((v) => (v && typeof v === "object" ? JSON.stringify(v) : v), z.string()).catch("");
 const ReportOut = z.object({ worked: z.string(), change: z.string(), rule: RuleText });
+const AskOut = z.object({ answer: z.string() });
 const ReviewOut = z.object({ roles: z.array(z.object({ role: z.string(), verdict: z.string() })), prune: z.string(), rule: RuleText });
 export const DECISIONS = { SearchOut, RiskOut, ExitOut, ReportOut, ReviewOut };
 
@@ -786,7 +792,16 @@ export interface DeskWorld {
   nonce(): number;
   venueName(id: string): string;
   log(row: LedgerRowInput): void;
+  /** the news and the calendar the account reads (service.ts news, calendar; live/news.ts, live/calendars.ts), where it has them: the
+   * headlines Search and Risk are shown, a lead's own headlines, a US share's earnings within the week. Absent where the account reads
+   * none; a reader that does not answer in a few seconds is left out of what a seat sees, never guessed at */
+  news?(ask: { symbol?: string | undefined; q?: string | undefined; limit?: number | undefined }): Promise<NewsView | Refusal>;
+  calendar?(ask: { kind: string; symbol?: string | undefined; from?: string | undefined; to?: string | undefined; limit?: number | undefined }): Promise<CalendarView | Refusal>;
 }
+/** how long a seat waits for the news or the calendar before scanning or clearing without them */
+const READ_MS = 4_000;
+/** an answer within `ms`, else undefined: a reader that is slow leaves a seat to decide without it */
+const within = <T>(p: Promise<T>, ms: number): Promise<T | undefined> => Promise.race([p, new Promise<undefined>((r) => { const t = setTimeout(() => r(undefined), ms); t.unref?.(); })]);
 
 export interface DeskOptions {
   /** the brains the desk may think with: one, or several told apart by id (BrainConfig.provider) */
@@ -2256,8 +2271,9 @@ export class Desk {
   private async scan(venue: AccountPage["venues"][number], _page: AccountPage): Promise<Scanned> {
     const f = this.file!;
     const cycle = f.session?.cycles ?? 0;
+    let reading: { headlines: string[]; events: string[]; text: string } = { headlines: [], events: [], text: "" };
     const scanned = (rows: ScanRow[], picked: DeskScan["picked"], note: string | undefined) => {
-      f.lastScan = { cycle, at: this.world.now(), venue: venue.id, rows, picked, ...(note ? { note } : {}) };
+      f.lastScan = { cycle, at: this.world.now(), venue: venue.id, rows, picked, ...(note ? { note } : {}), ...(reading.headlines.length ? { headlines: reading.headlines } : {}), ...(reading.events.length ? { events: reading.events } : {}) };
       this.save();
     };
     const tab = f.objective.universe === "all" ? undefined : f.objective.universe;
@@ -2285,7 +2301,8 @@ export class Desk {
     // the scan's rows are the table's own, each as the brain was shown it
     const seen: ScanRow[] = table.map((t) => ({ symbol: t.symbol, name: t.name, kind: t.kind, price: t.price!, ...(t.changePct24h !== undefined ? { changePct24h: t.changePct24h } : {}), ...(t.volumeUsd24h !== undefined ? { volumeUsd24h: t.volumeUsd24h } : {}) }));
     const seat = f.seats.find((s) => s.role === "search")!;
-    const asked = await this.ask("search", "scan", seat.charter, `The desk's venue: ${venue.name}${venue.paper ? " (a paper account: paper money, real public prices)" : ""}. Objective: ${JSON.stringify(f.objective)}. Open leads: ${JSON.stringify(this.openLeads().map((l) => ({ id: l.id, symbol: l.symbol, side: l.side })))}. Markets now (the account's own listing): ${JSON.stringify(table)}. Name at most three leads, each a symbol from the table, a side (sell opens a short: only on a perpetual), a one-sentence thesis tied to a number in the table, and your confidence 0 to 1. An empty list is a fine answer.`, SearchOut, 1200, { quiet: true });
+    reading = await this.reading();
+    const asked = await this.ask("search", "scan", seat.charter, `The desk's venue: ${venue.name}${venue.paper ? " (a paper account: paper money, real public prices)" : ""}. Objective: ${JSON.stringify(f.objective)}.${reading.text} Open leads: ${JSON.stringify(this.openLeads().map((l) => ({ id: l.id, symbol: l.symbol, side: l.side })))}. Markets now (the account's own listing): ${JSON.stringify(table)}. Name at most three leads, each a symbol from the table, a side (sell opens a short: only on a perpetual), a one-sentence thesis tied to a number in the table, and your confidence 0 to 1. An empty list is a fine answer.`, SearchOut, 1200, { quiet: true });
     const ans = asked.out;
     const markets = `${scannedCount} market${scannedCount === 1 ? "" : "s"}`;
     // the brain gave nothing: ONE line says so — the account's words, not the brain's, so without the brain's mark — and the cycle is told,
@@ -2377,9 +2394,10 @@ export class Desk {
     const lessons = passed.length || unjudged.length ? ` · lessons ${[passed.length ? `${passed.join(", ")} passed` : "", ...unjudged].filter(Boolean).join(", ")}` : "";
     const checks = `market open${m.session?.phase && m.session.phase !== "regular" ? ` (${m.session.phase} session${m.session.extendedHours ? ", extended hours" : ""})` : ""} · price ${fig(price, stepPlaces(m.priceStep))} · spread ${spread === undefined ? "n/a" : `${spread.toFixed(2)}%`} · volume ${m.volumeUsd24h === undefined ? "n/a" : USD_COMPACT.format(m.volumeUsd24h)} · day's loss room ${usd(lossRoom)} · size up to ${usd(maxSize)}${lessons}`;
     const seat = f.seats.find((x) => x.role === "risk");
+    const context = seat ? await this.leadContext(m) : "";
     let plan = { ...PLAN, sizeUsd: maxSize, why: "the hard checks passed; no Risk seat, so the plan is the default" };
     if (seat) {
-      const ans = await this.think("risk", "clear", seat.charter, `Lead ${lead.id}: ${JSON.stringify({ symbol: lead.symbol, side: lead.side, kind: m.kind, thesis: lead.thesis, price, bid: m.bid, ask: m.ask, spreadPct: spread, volumeUsd24h: m.volumeUsd24h, changePct24h: m.changePct24h, fundingRate: m.fundingRate, closeTime: m.closeTime, maxLeverage: m.maxLeverage })}. Hard checks (all passed): ${checks}. Objective: ${JSON.stringify(f.objective)}. Today: ${JSON.stringify(today)}. Open leads: ${JSON.stringify(this.openLeads().map((l) => ({ id: l.id, symbol: l.symbol, side: l.side, sizeUsd: l.sizeUsd })))}. Decide: clear or reject, why in one sentence, the size in dollars (at most ${maxSize}), the take-profit and stop in percent from the entry, and the time limit in hours.`, RiskOut, 600, lead.id);
+      const ans = await this.think("risk", "clear", seat.charter, `Lead ${lead.id}: ${JSON.stringify({ symbol: lead.symbol, side: lead.side, kind: m.kind, thesis: lead.thesis, price, bid: m.bid, ask: m.ask, spreadPct: spread, volumeUsd24h: m.volumeUsd24h, changePct24h: m.changePct24h, fundingRate: m.fundingRate, closeTime: m.closeTime, maxLeverage: m.maxLeverage })}. Hard checks (all passed): ${checks}. Objective: ${JSON.stringify(f.objective)}. Today: ${JSON.stringify(today)}.${context} Open leads: ${JSON.stringify(this.openLeads().map((l) => ({ id: l.id, symbol: l.symbol, side: l.side, sizeUsd: l.sizeUsd })))}. Decide: clear or reject, why in one sentence, the size in dollars (at most ${maxSize}), the take-profit and stop in percent from the entry, and the time limit in hours.`, RiskOut, 600, lead.id);
       if (!ans) return reject("the Risk seat gave no verdict");
       if (ans.verdict !== "clear") return reject(plainText(ans.why, 200) || "rejected by Risk");
       plan = { sizeUsd: r2(clamp(ans.sizeUsd, 0, maxSize)), tpPct: clamp(ans.tpPct || PLAN.tpPct, ...PLAN_BOUNDS.tpPct), slPct: clamp(ans.slPct || PLAN.slPct, ...PLAN_BOUNDS.slPct), maxHours: clamp(ans.maxHours || PLAN.maxHours, ...PLAN_BOUNDS.maxHours), why: plainText(ans.why, 200) };
@@ -2831,6 +2849,71 @@ export class Desk {
 
   // ---- the Head: reports and the review ----
 
+  /** WHAT THE DESK READS BESIDE THE PRICES: the day's headlines and today's economic releases, as the lines Search is shown before it scans
+   * — the account's own news and calendar readers (DeskWorld.news, .calendar), each within READ_MS; nothing where the account reads none
+   * or a reader did not answer (then the seat decides on the table alone, and the scan records nothing read) */
+  private async reading(): Promise<{ headlines: string[]; events: string[]; text: string }> {
+    const headlines: string[] = [];
+    const events: string[] = [];
+    if (this.world.news) {
+      const n = await within(this.world.news({ limit: 8 }).catch(() => undefined), READ_MS);
+      if (n && !isRefusal(n)) for (const h of n.items.slice(0, 8)) headlines.push(plainText(`${h.title} (${h.sourceName}${h.at ? `, ${this.ago(h.at)}` : ""})`, 200) ?? h.title);
+    }
+    if (this.world.calendar) {
+      const c = await within(this.world.calendar({ kind: "economic", limit: 12 }).catch(() => undefined), READ_MS);
+      if (c && !isRefusal(c)) for (const e of c.items.slice(0, 12)) if (e.kind === "economic") events.push(plainText(`${e.event}${e.country ? ` (${e.country})` : ""}${e.time ? ` at ${e.time} New York` : ""}${e.consensus !== undefined ? `, consensus ${e.consensus}` : ""}${e.actual !== undefined ? `, actual ${e.actual}` : ""}`, 200) ?? e.event);
+    }
+    const text = `${headlines.length ? ` Headlines today: ${JSON.stringify(headlines)}.` : ""}${events.length ? ` Releases today (New York): ${JSON.stringify(events)}.` : ""}`;
+    return { headlines, events, text };
+  }
+  /** what the desk reads of one lead's market before Risk clears it: the headlines that name it (a US share's own feed; a coin's base as the
+   * words) and, a US share's, its earnings within the week — one line each for the Risk seat; "" where the account reads none */
+  private async leadContext(m: Market): Promise<string> {
+    const parts: string[] = [];
+    const ticker = m.kind === "stock" && /^[A-Z]{1,5}([.-][A-Z])?$/.test(m.base) ? m.base : "";
+    if (this.world.news) {
+      const n = await within(this.world.news(ticker ? { symbol: ticker, limit: 5 } : { q: m.base, limit: 5 }).catch(() => undefined), READ_MS);
+      if (n && !isRefusal(n) && n.items.length) parts.push(`Headlines on ${m.base}: ${JSON.stringify(n.items.slice(0, 5).map((h) => plainText(`${h.title} (${h.sourceName}${h.at ? `, ${this.ago(h.at)}` : ""})`, 200) ?? h.title))}.`);
+    }
+    if (ticker && this.world.calendar) {
+      const today = new Date(Date.parse(this.world.now())).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      const to = new Date(Date.parse(`${today}T12:00:00Z`) + 6 * DAY).toISOString().slice(0, 10);
+      const c = await within(this.world.calendar({ kind: "earnings", symbol: ticker, from: today, to }).catch(() => undefined), READ_MS);
+      const e = c && !isRefusal(c) ? c.items.find((i) => i.kind === "earnings") : undefined;
+      if (e && e.kind === "earnings") parts.push(`Earnings: ${ticker} reports on ${e.day}${e.when === "pre" ? " before the open" : e.when === "post" ? " after the close" : ""} (Nasdaq's calendar).`);
+    }
+    return parts.length ? ` ${parts.join(" ")}` : "";
+  }
+  /** how long ago, in a seat's words: "12 min ago", "3 h ago", "2 d ago" */
+  private ago(at: string): string {
+    const ms = Date.parse(this.world.now()) - Date.parse(at);
+    if (!Number.isFinite(ms) || ms < 0) return "just now";
+    const min = Math.round(ms / 60_000);
+    return min < 60 ? `${min} min ago` : min < 48 * 60 ? `${Math.round(min / 60)} h ago` : `${Math.round(min / 1440)} d ago`;
+  }
+  /** THE OWNER ASKS THE DESK (the command line's ASK; POST /api/account/desk/ask): the Head answers one question from the floor's own
+   * figures — the objective, the open leads, the last scan (its note, what it read), the room's last lines — in a few sentences; the
+   * question goes on the floor as the owner's, the answer as the Head's. Refused with no desk, no Head seat, or a brain that does not
+   * answer; never an order, never a limit: words */
+  async askHead(question: string): Promise<{ answer: string; at: string } | Refusal> {
+    const f = this.file;
+    if (!f) return no("E_ACCOUNT_BAD_ACTION", { message: "this account keeps no desk: hire one first (Desk)" });
+    const q = plainText(question, 300);
+    if (!q) return no("E_ACCOUNT_BAD_ACTION", { message: "ask the desk a question, in 1 to 300 characters" });
+    const seat = f.seats.find((s) => s.role === "head");
+    if (!seat) return no("E_ACCOUNT_BAD_ACTION", { message: "the desk has no Head seat to answer: hire one" });
+    this.room("you", "you", q);
+    const open = this.openLeads().map((l) => ({ id: l.id, symbol: l.symbol, side: l.side, sizeUsd: l.sizeUsd, unrealizedUsd: l.unrealizedUsd, thesis: l.thesis }));
+    const scan = f.lastScan ? { at: f.lastScan.at, markets: f.lastScan.rows.length, picked: f.lastScan.picked, note: f.lastScan.note, headlines: f.lastScan.headlines, events: f.lastScan.events } : undefined;
+    const lines = readRoom(this.world.home, 12).map((m) => `${m.from}: ${m.text}`);
+    const asked = await this.ask("head", "ask", seat.charter, `The owner asks: ${JSON.stringify(q)}. Answer from these alone — the desk's objective: ${JSON.stringify(f.objective)}; open leads: ${JSON.stringify(open)}; the last scan: ${JSON.stringify(scan)}; the floor's last lines: ${JSON.stringify(lines)}. Two to four plain sentences; say what you do not know rather than guess; no numbers the input does not have.`, AskOut, 500);
+    if (asked.out === null) return no("E_ACCOUNT_BAD_ACTION", { message: `the Head did not answer: ${asked.why ?? (asked.failed ? "the brain did not answer" : "the brain gave no answer")}` });
+    const answer = plainText(asked.out.answer, 600) ?? "";
+    if (!answer) return no("E_ACCOUNT_BAD_ACTION", { message: "the Head gave an empty answer" });
+    const said = this.room("head", "note", answer, { brain: true });
+    this.save();
+    return { answer, at: said.at };
+  }
   private async report(kind: DeskReport["kind"], force = false): Promise<void> {
     if (!this.file) return;
     await this.doing({ role: "head", what: "report" }, () => this.reporting(kind, force));
