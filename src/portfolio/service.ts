@@ -2815,9 +2815,10 @@ export class PortfolioService {
       nonce: () => this.account!.nextNonce(),
       venueName: (id) => this.nameOf(id),
       log: (row) => void this.ledger.append(unaddressedRow(row)),
-      // the desk reads what the account reads: the headlines and the calendar (live/news.ts, live/calendars.ts)
-      news: (ask) => this.news(ask),
-      calendar: (ask) => this.calendar(ask),
+      // the desk reads what the account reads — the headlines and the calendar (live/news.ts, live/calendars.ts) — on a live account;
+      // never in the lab (liveDeps.paperBars: a desk stepped over recorded bars would read today's news into a past day's cycle, and the
+      // readers' pacing would slow every replayed cycle)
+      ...(this.opts.liveDeps?.paperBars ? {} : { news: (ask) => this.news(ask), calendar: (ask) => this.calendar(ask) }),
     };
   }
   /** THE OWNER ASKS THE DESK (POST /api/account/desk/ask; the command line's ASK): the Head's answer from the floor's own figures, the
