@@ -95,7 +95,8 @@ describe("bans and rate limits, held as long as the venue asked", () => {
     const freq = exchangeSaidNo("bybit", "Bybit", thrown("RateLimitExceeded", "bybit GET https://api.bybit.com/v5/market/time 403 Forbidden access too frequent"), {});
     expect([freq.code, holdBackMs(freq) > 590_000]).toEqual(["E_VENUE_UNREACHABLE", true]);
     const busy = exchangeSaidNo("kucoin", "KuCoin", thrown("ExchangeError", 'kucoin {"code":"429000","msg":"Too Many Requests"}'), {});
-    expect([busy.code, holdBackMs(busy)]).toEqual(["E_VENUE_UNREACHABLE", 60_000]);
+    // a minute from when the refusal was made: a millisecond may have passed since (CI saw 59,999)
+    expect([busy.code, holdBackMs(busy) > 59_000 && holdBackMs(busy) <= 60_000]).toEqual(["E_VENUE_UNREACHABLE", true]);
     const open: OpenExchange = async () => ({ id: "kucoin", name: "KuCoin", has: {}, fetchTime: async () => { throw thrown("ExchangeError", 'kucoin {"code":"429000","msg":"Too Many Requests"}'); } }) as unknown as ExchangeClient;
     expect((await exchangeClock("kucoin", "kucoin", open))?.code).toBe("E_VENUE_UNREACHABLE");
   });

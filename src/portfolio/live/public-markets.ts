@@ -2731,11 +2731,148 @@ export function hyperliquidPreIpoPublic(deps: PublicDeps = {}): PublicSource {
   };
 }
 
+/** the categories Hyperliquid files its HIP-3 markets under that are the world's — shares, commodities, indices, currencies, rates — as the
+ * Markets page says them; not pre-IPO (hyperliquidPreIpoPublic) and not crypto (the dexes' own coins, beside Hyperliquid's main perpetuals) */
+export const HL_WORLD_CATEGORIES: Readonly<Record<string, string>> = { stocks: "Stocks", stock: "Stocks", commodities: "Commodities", indices: "Indices", fx: "Currencies", FX: "Currencies", rates: "Rates" };
+interface WorldMarket {
+  dex: string;
+  coin: string;
+  base: string;
+  quote: string;
+  category: string;
+}
+/** Hyperliquid's HIP-3 perpetuals on the world's markets, keyless (see the top of this file): every dex's list read as the pre-IPO source
+ * reads it, kept ten minutes, and the markets Hyperliquid files under stocks, commodities, indices, fx or rates listed as perpetuals — a
+ * share's by its ticker (xyz:NVDA-PERP, base NVDA, so it folds with the same share's perpetual elsewhere), gold, oil, the S&P 500, the
+ * euro, the ten-year — each with Hyperliquid's category as its own, shown while someone holds or trades it; its bars, book, trades and
+ * funding through Hyperliquid's own, by its dex-prefixed coin. Read from this machine 2026-11-09: 152 stock, 24 commodity, 27 index, 6
+ * currency and 3 rate markets across ten dexes, xyz's NVDA, XYZ100, SP500, CL and BRENTOIL the busiest */
+export function hyperliquidWorldPublic(deps: PublicDeps = {}): PublicSource {
+  const id = "hyperliquid-world";
+  const name = "Hyperliquid";
+  const clock = deps.clock ?? Date.now;
+  const info = hyperliquidInfo(deps.http ?? realHttp, deps.timeoutMs ?? TIMEOUT_MS);
+  const ask = (q: HyperliquidAsk): Promise<unknown> => hlAsk(info, id, name, q);
+  const dexAnswers = keeper<unknown>(clock, KEEP_MS);
+  const dexRead = (dex: string): Promise<unknown> => dexAnswers(dex, () => ask({ type: "metaAndAssetCtxs", dex }));
+  const finds = keeper<{ markets: WorldMarket[]; whole: boolean }>(clock, (f) => (f.whole ? LIST_MS : KEEP_MS));
+  const found = (): Promise<{ markets: WorldMarket[]; whole: boolean } | Refusal> =>
+    finds("markets", async () => {
+      const [named, filed] = await Promise.all([ask({ type: "perpDexs" }), ask({ type: "perpCategories" })]);
+      if (isRefusal(named)) return named;
+      // without Hyperliquid's categories nothing here is a world market: the list is looked for again soon
+      if (isRefusal(filed)) return filed;
+      const dexes = [...new Set(list(named).filter(isRec).map((d) => str(d.name)).filter((n): n is string => n !== undefined && HL_DEX.test(n)))];
+      const category = new Map<string, string>();
+      for (const pair of list(filed)) {
+        const [coin, cat] = [str(list(pair)[0]), str(list(pair)[1])];
+        if (coin && cat && HL_WORLD_CATEGORIES[cat]) category.set(coin, HL_WORLD_CATEGORIES[cat]!);
+      }
+      const wanted = [...new Set([...category.keys()].map((coin) => coin.slice(0, coin.indexOf(":"))))].filter((dex) => dexes.includes(dex));
+      const answers = await Promise.all(wanted.map(async (dex) => ({ dex, body: await dexRead(dex) })));
+      const markets: WorldMarket[] = [];
+      let refused: Refusal | undefined;
+      for (const { dex, body } of answers) {
+        if (isRefusal(body)) {
+          refused ??= body;
+          continue;
+        }
+        const meta = rec(list(body)[0]);
+        const quote = HL_COLLATERAL[fin(meta.collateralToken) ?? 0];
+        if (!quote || !inDollars(quote)) continue;
+        for (const u of list(meta.universe).filter(isRec)) {
+          const coin = str(u.name);
+          if (!coin || !HL_COIN.test(coin) || !coin.startsWith(`${dex}:`) || u.isDelisted === true) continue;
+          const cat = category.get(coin);
+          if (!cat) continue;
+          markets.push({ dex, coin, base: coin.slice(dex.length + 1), quote, category: cat });
+        }
+      }
+      if (wanted.length && answers.every((a) => isRefusal(a.body))) return refused!;
+      return { markets, whole: refused === undefined };
+    });
+  let shown: string[] | undefined;
+  const bars = hyperliquidBars(info, id, name, clock, { test: (coin) => coin.includes(":"), example: "<dex>:<COIN>-PERP (xyz:GOLD-PERP)" }, deps.pace ?? hostLane);
+  const depth = hyperliquidDepth(info, id, name, clock, { test: (coin) => coin.includes(":"), example: "<dex>:<COIN>-PERP (xyz:GOLD-PERP)" });
+  const funding = hyperliquidFunding(info, id, name, { test: (coin) => coin.includes(":"), example: "<dex>:<COIN>-PERP (xyz:GOLD-PERP)" }, deps.pace ?? hostLane);
+  return {
+    id,
+    name,
+    reset: () => {
+      dexAnswers.clear();
+      finds.clear();
+      bars.clear();
+      depth.clear();
+      funding.clear();
+    },
+    book: depth.book,
+    trades: depth.trades,
+    fundingHistory: funding.history,
+    kind: "exchange",
+    ...HL_TRADE,
+    async listings(o) {
+      const got = await found();
+      if (isRefusal(got)) return got;
+      const Q = (o.q ?? "").trim().toUpperCase();
+      const want = Q ? got.markets.filter((m) => has(Q, m.base, m.coin, m.category)) : got.markets;
+      const bodies = new Map(await Promise.all([...new Set(want.map((m) => m.dex))].map(async (dex) => [dex, await dexRead(dex)] as const)));
+      const nextFundingAt = hlNextFunding(clock());
+      const out: Listing[] = [];
+      let refused: Refusal | undefined;
+      for (const m of want) {
+        const body = bodies.get(m.dex);
+        if (isRefusal(body)) {
+          refused ??= body;
+          continue;
+        }
+        const answer = list(body);
+        const universe = list(rec(answer[0]).universe).filter(isRec);
+        const ctxs = list(answer[1]).filter(isRec);
+        const at = universe.length === ctxs.length ? universe.findIndex((u) => u.name === m.coin) : -1;
+        if (at < 0 || universe[at]!.isDelisted === true) continue;
+        const u = universe[at]!;
+        const c = ctxs[at]!;
+        const volume = nonNeg(c.dayNtlVlm);
+        // anyone may deploy a HIP-3 market: one that nobody holds or trades is not shown
+        if (!((nonNeg(c.openInterest) ?? 0) > 0 || (volume ?? 0) > 0)) continue;
+        const price = pos(c.midPx) ?? pos(c.markPx);
+        if (price === undefined) continue;
+        const funding = fin(c.funding);
+        const maxLeverage = pos(u.maxLeverage);
+        const day = since(price, pos(c.prevDayPx));
+        out.push(readLike({
+          symbol: `${m.coin}-PERP`,
+          name: `${m.base} perpetual on ${name} · ${m.dex}`,
+          kind: "perp",
+          base: m.base,
+          quote: m.quote,
+          price,
+          open: true,
+          types: [],
+          category: m.category,
+          venueName: `${name} · ${m.dex}`,
+          ...(day.change !== undefined ? { change24h: day.change, changePct24h: day.changePct } : {}),
+          ...(volume !== undefined ? { volumeUsd24h: volume } : {}),
+          ...(funding !== undefined ? { fundingRate: funding, nextFundingAt } : {}),
+          ...(maxLeverage !== undefined ? { maxLeverage } : {}),
+          ...hlPerpFigures(u, c, price),
+        }, c));
+      }
+      if (!out.length && refused) return refused;
+      const pool = out.sort(busierFirst).slice(0, Math.max(1, o.limit));
+      if (!Q) shown = [...new Set(pool.map((l) => l.category!))];
+      return pool;
+    },
+    candles: bars,
+    notes: (o) => (!o.q?.trim() && shown?.length ? [`${name}'s HIP-3 perpetuals on the world's markets — ${shown.join(", ").toLowerCase()} — which anyone may deploy; shown while someone holds or trades one; each contract is its dex's own, on its oracle's price, not the share or the commodity itself.`] : []),
+  };
+}
+
 /** every public source, in the order the Markets screen asks them: the exchanges (PUBLIC_EXCHANGES unless others are named), Kalshi,
  * Polymarket, Polymarket US, Hyperliquid's perpetuals, US stocks (real-time public quotes, Cboe's delayed ones behind them), Robinhood's Stock Tokens, xStocks at Gate, Ondo
  * Stocks as LI.FI prices them, the eight exchanges' pre-IPO perpetuals and Hyperliquid's HIP-3 ones. The stocks come before the Stock
  * Tokens: a paper account lists a symbol by the first source that names it (paper.ts), and "NVDA" there is the share, not Robinhood's
  * token of it. Made once and kept: what each keeps lives in it */
 export function publicSources(deps: PublicDeps & { exchanges?: readonly string[] | undefined } = {}): PublicSource[] {
-  return [...(deps.exchanges ?? PUBLIC_EXCHANGES).map((x) => exchangeTickers(x, deps)), kalshiPublic(deps), polymarketPublic(deps), polymarketUsPublic(deps), hyperliquidPublic(deps), usStocksPublic(deps), stockTokensPublic(deps), xstocksPublic(deps), ondoStocksPublic(deps), ...PRE_IPO_VENUES.map((v) => preIpoPublic(v, deps)), hyperliquidPreIpoPublic(deps)];
+  return [...(deps.exchanges ?? PUBLIC_EXCHANGES).map((x) => exchangeTickers(x, deps)), kalshiPublic(deps), polymarketPublic(deps), polymarketUsPublic(deps), hyperliquidPublic(deps), usStocksPublic(deps), stockTokensPublic(deps), xstocksPublic(deps), ondoStocksPublic(deps), ...PRE_IPO_VENUES.map((v) => preIpoPublic(v, deps)), hyperliquidPreIpoPublic(deps), hyperliquidWorldPublic(deps)];
 }

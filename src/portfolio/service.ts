@@ -3076,7 +3076,7 @@ export class PortfolioService {
    * cache, and no refusal that is the venue's rule for this network — its place rule, the server in front of it, a ban — holds it back now.
    * A REST read that merely timed out or was told to wait does not close a stream; Hyperliquid's REST is either of its two listings */
   private restAnswers(venue: HubVenue): boolean {
-    const ids = venue === "hyperliquid" ? ["hyperliquid", "hyperliquid-preipo"] : [venue];
+    const ids = venue === "hyperliquid" ? ["hyperliquid", "hyperliquid-preipo", "hyperliquid-world"] : [venue];
     return ids.some((id) => {
       const ns = `public:${id}`;
       const held = this.marketReads.heldOf(ns);

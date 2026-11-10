@@ -317,7 +317,7 @@ export function streamOf(source: string, symbol: string): { venue: HubVenue; sym
     const k = HL_PERP.exec(s);
     return k ? { venue: "hyperliquid", sym: k[1]! } : undefined;
   }
-  if (source === "hyperliquid-preipo") {
+  if (source === "hyperliquid-preipo" || source === "hyperliquid-world") {
     const k = HIP3_PERP.exec(s);
     return k ? { venue: "hyperliquid", sym: k[1]! } : undefined;
   }
