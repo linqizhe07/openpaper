@@ -1,6 +1,6 @@
 # openpaper（中文详版）
 
-> 英文的简短说明在 [README.md](../README.md)；这一页是原来的中文 README，细节最全。
+> [English](../README.md) · **中文** —— 英文 README 是简短说明；这一页是中文详版，细节最全。
 
 给 AI agent 用的资金账户（**Account**）：你真实的交易所、券商、钱包和预测市场账户在一个页面上；agent 在你签的额度里交易、挪钱、付款，你看、引导、批准。仓库里还留着更早的几个模拟演示（[docs/earlier-demos.md](earlier-demos.md)）。
 
@@ -17,6 +17,21 @@ npm test
 ```
 
 Node ≥ 22。常用开关：`--live-cap 50`（单笔上限，默认 $100）、`--read-only`（不下单、不动钱）、`--fresh`（不接着以前的运行）。钥匙文件和账本在 home（`$OPENPAPER_HOME`，默认 `~/.openpaper/`），钥匙文件 `chmod 600`；页面只传文件在哪，值不进页面和账本。
+
+## 开发与测试
+
+Node ≥ 22（CI 用 22）、Git、`npm ci`，没有别的：不用构建、没有数据库。页面是纯文件，改 `src/portfolio/public/` 下的东西刷新就见；改服务端重启就见。
+
+```bash
+npm ci                                          # 装一次
+npm run typecheck                               # tsc --noEmit，strict：vitest 不做类型检查，每次提交前先跑它
+npx vitest run test/unit/live-paper.test.ts     # 跑一个文件；加 -t "几个字" 只跑一个用例
+npm test                                        # 整套：约 210 个文件、3,300 个用例，串行（模拟场所绑定固定端口），10–20 分钟
+npx tsx test/standin/ui-standin.ts --port 4821  # 替身账户：同一个页面和门，场所是假的，不联网、不动钱，配对码打印在终端
+npm run site:numbers                            # 新增测试文件后重算网站的数字（site/data/numbers.json），有测试钉着它
+```
+
+测试钉死的几条约定，免得改了才知道：页面新加一个 `ui/*.js` 要进 `page-scripts.test.ts` 的清单；新路由要写进 `server.ts` 的头注释；新 MCP 工具要写进 `mcp.ts` 的头注释、本页的工具表、英文 README 和 `site/index.html` 里的数字；每个 PR 在 [CHANGELOG.md](../CHANGELOG.md) 加一行。CI 在每次 push 和 PR 上跑类型检查和整套测试，检查绿了再合并。
 
 ## 页面
 
