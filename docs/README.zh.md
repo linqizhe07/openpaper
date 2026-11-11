@@ -1,26 +1,211 @@
-# openpaper（中文详版）
+<p align="center"><img src="../site/img/og.png" alt="openpaper —— agent 和钱的机场" width="720"></p>
+<p align="center"><a href="../README.md">English</a> · <b>中文</b></p>
 
-> [English](../README.md) · **中文** —— 英文 README 是简短说明；这一页是中文详版，细节最全。
+# openpaper
 
-给 AI agent 用的资金账户（**Account**）：你真实的交易所、券商、钱包和预测市场账户在一个页面上；agent 在你签的额度里交易、挪钱、付款，你看、引导、批准。仓库里还留着更早的几个模拟演示（[docs/earlier-demos.md](earlier-demos.md)）。
+**你的交易账户在一页上，AI agent 只在你签过名的额度里交易。**
 
-## 跑起来
+openpaper 在你自己的电脑上跑。它把你的交易所、券商、钱包和预测市场账户放在一页上，给你一个用真实行情的纸上账户练手，让 AI agent——它自己的交易桌 Desk，或你通过 MCP 带进来的——在你签的额度里交易、挪钱、付款。中间没有服务器，不用注册账号，没有埋点：你的电脑自己读公开行情、直接和场所说话。网站：[linqizhe07.github.io/openpaper](https://linqizhe07.github.io/openpaper/)
+
+**它做什么**
+
+- **你的账户在一页上**：93 家交易所（API 钥匙）、Alpaca 和 Robinhood、Kalshi 和 Polymarket、Hyperliquid、MetaMask 等钱包——持仓、订单、仓位、净值曲线，和一份可筛选、可导出的对账单。
+- **用真实行情的纸上账户**：币、美股、永续和事件合约都用纸上的钱练：市价、限价、止损、止损限价、追踪止损，开仓带止盈止损，美股时段照实算，永续有资金费和强平；一张单可以按 TWAP、VWAP 或 iceberg 分片执行，每单写上交易成本分析。
+- **Markets**：从你的网络能读到的每个场所的每个市场；★ 关注，🔔 提醒——价越过一条线、当天涨跌或成交额或资金费率过了一个数、上了新闻、一只美股一周内出财报；一条命令行（⌘K：`AAPL DES`、`BTC GP`、`MOST`、`HELP`）。
+- **新闻、日历、世界、期权**：出版方自己放出的标题（`TOP`）；Nasdaq 的经济数据、财报、股息、拆股和 IPO 日历（`ECO`、`ERN`）；股指、美债收益率曲线、外汇和商品（`WEI`、`GC`、`FXC`、`GLCO`）；Cboe 和 Deribit 的期权链，每个到期日的平值 IV、看跌 / 看涨比、最大痛点和偏斜（`OMON`、`SKEW`）。
+- **一只股票、筛选器、分析、风险**：一只美股照 Nasdaq 自己页面说的（`DES`、`ANR`、`SI`、`HDS`）；全部美股按条件筛，和板块地图（`EQS`、`IMAP`）；几个市场放在一起比、算相关和 beta（`COMP`、`CORR`、`HVG`、`BETA`、`SEAG`）；你自己持仓的敞口、波动率、VaR 和回撤（`RISK`）。都是对场所自己的数做算术，不预测。
+- **Monitor**：一屏自己拼的格子——一个市场、一块板、一个主题的标题、今天的日历、一条期权链——布局写在地址里（`MON`）。
+- **世界市场的永续**：Hyperliquid HIP-3 上按股票、指数、商品、外汇和利率部署的合约，列在永续里、有 K 线、能在纸上交易；每份是那个 dex 自己按预言机价定的合约，页上写明。
+- **交易终端**：几年历史的 K 线、场所流推的盘口和成交，账户自己的入场、止损和挂单画在图上。
+- **Superagent**：一桌 AI agent 自己在纸上账户上交易，动手前先读当天的标题和经济数据，回答你的 `ASK`，每一步实时放出来——用十三家模型 API 任何一家的钥匙，或你机器上跑的模型。
+- **你自己的 agent（MCP）**：四十九个工具：读、交易、挪钱、付款、生息、提问、记忆，每个都在你为那个席位签的额度里。
+- **要紧的都由你签**：每一笔订单、挪动和额度都由浏览器里一把导不出来的钥匙签；Guard 把每个请求留给你点头，Beast 让 agent 在额度里直接做；每笔有上限；哈希链账本记下一切。
+
+## 目录
+
+- [页面](#页面)
+- [五分钟跑起来](#五分钟跑起来)
+- [接你真实的账户](#接你真实的账户)
+- [一切由你签](#一切由你签)
+- [诚实边界](#诚实边界)
+- [你的网络决定你看到什么](#你的网络决定你看到什么)
+- [带你自己的 agent 进来](#带你自己的-agent-进来)
+- [常驻后台](#常驻后台)
+- [不联网看一圈](#不联网看一圈)
+- [选项和环境变量](#选项和环境变量)
+- [代码结构](#代码结构)
+- [技术栈](#技术栈)
+- [开发与测试](#开发与测试)
+- [更多](#更多)
+- [许可](#许可)
+
+## 页面
+
+<p align="center"><img src="img/account.png" alt="替身账户上的 Trade → Superagent：Momentum desk 开始四十秒，第一笔买入和它的止盈、止损画在 K 线上，四个席位和它们做的事" width="900"></p>
+
+替身账户上的 Trade → Superagent——不联网、不动钱、不要钥匙——`npx tsx test/standin/ui-standin.ts --port 4821 --superagent` 给出的样子：页上每个场所、每个价、每笔成交都是编的，Desk 用脚本代替模型交易。真账户长得一样，换成你的场所和一把模型钥匙。
+
+## 五分钟跑起来
+
+要 [Node.js](https://nodejs.org) 22 或更新，和 Git。在 macOS 上测过；Linux 应该一样；Windows 没测。
 
 ```bash
-npm install
-npm run account                                    # http://127.0.0.1:4820，配对码打印在终端
-npm run account:service -- install --live-cap 20   # macOS 后台常驻；之后 status · restart · logs · code · uninstall
-npx tsx test/standin/ui-standin.ts --port 4821     # 替身账户：同一个页面和门，场所是假的，不联网、不动钱
-npm run account:demo                               # 无头跑十四个 beat
-npm run account:check                              # 从这台机器能接哪些场所，每家用自己的话答；不含 IP、地方、钥匙，可以直接贴给别人
-npm test
+git clone https://github.com/linqizhe07/openpaper.git
+cd openpaper
+npm ci
+npm run account
 ```
 
-Node ≥ 22。常用开关：`--live-cap 50`（单笔上限，默认 $100）、`--read-only`（不下单、不动钱）、`--fresh`（不接着以前的运行）。钥匙文件和账本在 home（`$OPENPAPER_HOME`，默认 `~/.openpaper/`），钥匙文件 `chmod 600`；页面只传文件在哪，值不进页面和账本。
+打开 **http://127.0.0.1:4820**，输入终端打印的配对码：这个浏览器就是 owner，之后每一笔动钱的事都由它签名。`npm run account -- --help` 列出全部选项。（`npm ci` 可能提示跳过了几个包的安装脚本——npm 11.19 起会先问；这里用不到它们，接着走就行。）
+
+然后在页面上：
+
+1. **开一个纸上账户**——$10,000 纸上的钱、真实的公开行情，什么都不用接。
+2. **Trade**——在纸上买卖币、美股、永续和事件合约。
+3. **Superagent**（Trade → Superagent）——粘一把 API 钥匙，按 **Start the superagent**：Desk 自己在你的纸上账户上交易，每笔都落在图上，每一步实时放出来。
+4. **看市场**（Markets）——★ 关注一个市场，🔔 设提醒；⌘K 或 `/` 是命令行（`AAPL DES`、`BTC GP`、`TOP`、`ECO`、`HELP`）。一只美股的 **Financials** 来自它在 SEC 的申报，SEC 要求每个读者报上自己是谁：起账户时把 `SEC_CONTACT` 设成你的邮箱。
+5. **Backtest**——一个策略在录下的 K 线上按同一个纸上账户的规则跑，每一次都计数、Sharpe 按之前试过的次数 deflate，最近 90 天留出来只给你自己看。
+
+Superagent 要一个模型来想：Anthropic、OpenAI、DeepSeek、Gemini、xAI、Kimi、Qwen、OpenRouter、Groq、Together、Meta 任何一家的钥匙——账户认出是谁家的、选那家最好的模型——或者你机器上的 Ollama / vLLM，不要钥匙。调用算在你的钥匙上。
+
+## 接你真实的账户
+
+**Account → Venues → Connect an account**：93 家交易所用 API 钥匙（Coinbase、Kraken、OKX、Binance 等）；美股用 Alpaca 和 Robinhood；Kalshi 和 Polymarket；Hyperliquid；MetaMask 等钱包。
+
+- 场所的 API 钥匙放在你电脑上的文件里（`~/.openpaper/`；旧的 `~/.buyer-agent-demo/` 照样读）：页面只告诉你放哪，钥匙的值不经过页面和日志。页面上粘的 AI 钥匙存在同一个文件夹。
+- 真钱交易默认开着，每笔订单和挪动有上限（$100，除非起的时候给 `--live-cap`）；`--read-only` 关掉交易。选项在[下面](#选项和环境变量)。
+
+## 一切由你签
+
+- **要紧的都由你签**：订单、挪动和每个 agent 的额度都由浏览器的钥匙签，账户逐一验签。
+- **Guard 或 Beast**：Guard 下 agent 要做的每件事出一张卡等你点头；Beast 下 agent 直接做——但只在你签的额度里。
+- **每笔有上限**：起服务时的 `--live-cap`（默认 $100）；在 Settings 里签一个别的数，升降都行、精确到分，重启后照签的恢复。钱只去证明是你自己的地方。
+- **什么都记着**：你电脑上一本哈希链账本，和一份可筛选、可导出的对账单。
+
+## 诚实边界
+
+做这个东西从没用过一把真钥匙、一个真钱包。真实连接和真钱写入只对着替身测过：替身交易所、替身链、用完即扔的测试钱包，和不带钥匙读场所自己的公开接口。纸上账户、行情、agent 和签名从头到尾跑过；在真场所落下的最后一步没有。
+
+所以接你自己的账户之前：先用只读钥匙。要写，先用小上限、小金额，在页面上读过场所自己的回答，再信下一笔。
+
+信任边界是你自己的电脑。钥匙文件只有你能读（0600），页面从不见它们的值，但以你的身份跑的任何程序都读得到——任何电脑上的钱包和券商钥匙都是这样。owner 的钥匙在你的浏览器里、导不出来；浏览器的存储被清了，`npm run account -- --fresh` 是回来的路，它从零开始。
+
+再细几条——记忆和 Brains 认钥匙靠的是形状，地区规则是场所的，托管和牌照不在这里——在[导览](tour.zh.md#诚实边界)。
+
+## 你的网络决定你看到什么
+
+中间没有服务器：你的电脑自己读公开行情、直接和场所说话，所以你的网络——国家、IP、公司防火墙——决定哪些场所答你。
+
+- **从你的网络问每一家**，只画答你的。拒绝你网络的标 *Not served here*，有地区版的（Binance.US、OKX US、Polymarket US）写在旁边。
+- **从不绕过封锁**——没有代理、没有别的主机。为了把场所公布的规则对上你的网络，它问一个公开的位置检查（Polymarket 的、Cloudflare 的或 ipapi.co 的）。
+- **先查一下**：`npm run account:check` 打印你的网络能接到什么，每家用自己的话；里面没有 IP、地点和钥匙，可以直接贴给别人。
+
+每个数从哪来、多新：
+
+| 什么 | 从哪读 | 多新 |
+|---|---|---|
+| 币 | 接上的场所自己的流；否则 Kraken、Coinbase、OKX、Binance、Bybit 的公开行情，和 Hyperliquid、Coinbase、Kraken、OKX 的流 | 实时；纸上订单按一秒内的报价成交 |
+| 美股和 ETF | Robinhood 实时，否则 Nasdaq 实时；Cboe 的 15 分钟延迟报价排最后、标明 | 约 15 秒一次；纸上订单只按实时报价、在它的时段里成交 |
+| 永续 | Hyperliquid 的公开接口和流：它自己的合约，和它 HIP-3 dex 上世界市场的 | 实时；每小时资金费，按维持保证金强平 |
+| 事件合约 | Kalshi、Polymarket、Polymarket US 的公开盘口 | 实时；场所结算时按 $1 或 $0 结 |
+| Pre-IPO 和 RWA | 九家的公开行情；Robinhood Stock Tokens、Gate 的 xStocks、Ondo | 每次读 |
+| 财务 | SEC EDGAR，`SEC_CONTACT` 是读者的名字 | 留 12 小时 |
+| 新闻 | 出版方自己的源——美联储、欧央行、SEC、CNBC、MarketWatch、华尔街日报、BBC、Nasdaq、CoinDesk、Cointelegraph、The Block、Decrypt、PR Newswire——只有标题、链接和时间 | 留 5 分钟 |
+| 日历 | Nasdaq 自己的日历页：经济数据、财报、股息、拆股、IPO | 一天留 15 分钟 |
+| 股指 | Cboe 的延迟指数报价：标普 500、纳斯达克 100、道琼斯、罗素 2000、VIX 等 | 晚 15 分钟 |
+| 收益率曲线 | 美国财政部自己的 par 曲线，带 2s10s、3m10y、5s30s 利差 | 收盘后一天一次 |
+| 外汇 | Kraken 的公开行情九对；其余二十对是 ECB 的欧元参考汇率 | 实时；ECB 的是当天定盘价 |
+| 商品 | Hyperliquid xyz 永续的预言机价，照实说明 | 实时 |
+| 期权 | Cboe 的延迟报价（美股和它的指数，IV 和希腊字母是 Cboe 的）；Deribit 的 BTC、ETH 汇总，delta 从它的 mark IV 算 | 晚 15 分钟；Deribit 实时 |
+| 一只股票的页、筛选器 | Nasdaq 自己的页面和筛选表，每个数照 Nasdaq 写的 | 留 5 分钟 |
+| 提醒 | 上面的源 | 账户跑着时每 30 秒判一次，页开不开都一样 |
+
+没有源答的市场就没有价：纸上的市价单被拒、限价单等着，页上说明原因。
+
+## 带你自己的 agent 进来
+
+按 **Copy setup command**（Portfolio 的 *Get started*，或 Agents 下），在你的 agent 那边跑（Claude Code 或任何 MCP 客户端）。在页面上放它进来、给它一个额度：它能读你的账户，在额度里交易、挪钱、付款。
+
+## 常驻后台
+
+macOS 上：
+
+```bash
+npm run account:service -- install --live-cap 20
+```
+
+登录就起、停了就重启。还有 `status`、`restart`（`git pull` 之后）、`logs`、`code`（配对码）、`uninstall`。服务只从跑 `install` 的 shell 带走 `BUYER_HOME`、`SEC_CONTACT`、`PORTFOLIO_RPC_*` 和 MetaMask 的开关，别的不带：模型钥匙放钥匙文件，不放 shell。Linux 上先用你自己的服务管理器跑 `npm run account`；Windows 在终端里跑。
+
+## 不联网看一圈
+
+```bash
+npx tsx test/standin/ui-standin.ts --port 4821 --superagent
+```
+
+同一个页面，场所是替身，在 http://127.0.0.1:4821——不联网、不动钱、不要钥匙——Desk 用脚本交易。它的 Backtest 跑在编出来的历史上。`--no-desk` 则自己走一遍设置。
+
+## 选项和环境变量
+
+`npm run account -- …` 收这些；`--help` 打印同一张表，拼错的选项会被拒绝，不会被忽略。
+
+| 选项 | 做什么 | 默认 |
+|---|---|---|
+| `--port <number>` | 页面和接口听的端口，只听 127.0.0.1 | 4820 |
+| `--home <dir>` | home 目录：账本、钥匙文件、纸上账本、席位 | `$OPENPAPER_HOME`（或 `$BUYER_HOME`），否则 `~/.openpaper`；旧的 `~/.buyer-agent-demo` 照样读 |
+| `--live-cap <dollars>` | 起服务时一笔订单或挪动最多值多少；之后 owner 在 Settings 签别的数，重启照签的 | 100 |
+| `--read-only` | 不下单、不动钱：只读 | 关 |
+| `--fresh` | 从零开始，不接着以前的运行 | 关 |
+| `--classic` | 原来的模拟对账单，没有账户层（那里的 `--mm` 读真的 `mm` CLI） | 关 |
+
+`npm run account:check -- …` 收 `--keys`（钥匙文件在 home 里的连接也各开一次，只读）、`--home <dir>` 和 `--json`。`npm run account:service -- <command>` 收 `install`（后面跟服务器的选项）、`status`、`restart`、`logs`、`code`、`uninstall` 和 `help`。
+
+账户读的环境变量，和 `account:service install` 带不带它们进后台服务：
+
+| 变量 | 做什么 | 谁读 | 进服务？ |
+|---|---|---|---|
+| `OPENPAPER_HOME` | 没给 `--home` 时的 home 目录（新名字） | `home.ts` | 是 |
+| `BUYER_HOME` | `--home` 和 `OPENPAPER_HOME` 都没给时的 home 目录（旧名字，照样读） | `home.ts` | 是 |
+| `SEC_CONTACT` | 你的邮箱：SEC 要求每个 EDGAR 读者带一个；没有它美股的 Financials 关着 | `live/edgar.ts` | 是 |
+| `PORTFOLIO_RPC_ETHEREUM`、`…_OPTIMISM`、`…_BNB`、`…_POLYGON`、`…_BASE`、`…_ARBITRUM`、`…_ROBINHOOD` | 每条链你自己的 RPC | `live/chain.ts` | 是 |
+| `PORTFOLIO_MM_BIN` | MetaMask Agent Wallet 的 `mm` 命令 | `live/metamask.ts` | 是 |
+| `PORTFOLIO_MM_WRITES=1` | MetaMask 自己的真交易开关；不设就关 | `live/writes.ts` | 是 |
+| `PORTFOLIO_URL` | MCP 席位去哪找账户（`http://127.0.0.1:4820`） | `mcp.ts` | — |
+| `PORTFOLIO_AGENT` | MCP 客户端没给名字时席位的名字 | `mcp.ts` | — |
+| `PORTFOLIO_SEAT_KEYS=sim` | 席位的钥匙从名字推出来，不用钥匙文件：只给演示和测试 | `mcp.ts` | — |
+| `PORTFOLIO_MM=1` | 配 `--classic`：模拟对账单读真的 `mm` CLI | `server.ts` | — |
+| `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL` | shell 里 Claude 的钥匙或 token；base URL 不是 Anthropic 自己的主机时，钥匙文件关掉 | `account/brain-claude.ts` | 故意不带 |
+| `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` | shell 里 OpenAI 的钥匙、主机和模型，给 OpenAI 预设 | `account/brain-openai.ts` | 故意不带 |
+| `NODE_ENV=development` | 每个请求重读页面文件 | `server.ts` | — |
+
+不读任何 `.env` 文件。想用的话交给 Node 自己：`node --env-file=.env --import tsx src/portfolio/server.ts -- --live-cap 20`。
+
+## 代码结构
+
+```
+src/portfolio/         账户：server.ts（接口；每条 /api 路由在它的头注释里）、service.ts、router.ts
+  account/             签名的门（exchange.ts、sign.ts）、状态、恢复、Desk 和它的脑子、日历、对账单
+  live/                真实场所和公开行情：交易所、Alpaca、Robinhood、Kalshi、Polymarket、Hyperliquid、钱包、价格、K 线、流、EDGAR
+  public/              页面：account.html 和 ui/*.js，纯 HTML、CSS、JavaScript，不用构建
+  backtest/            录下的 K 线、把纸上账户推过它们的引擎、策略和 Desk 回测、指标、实验室的留出期和试验台账
+  mcp.ts               agent 席位跑的 MCP 服务（49 个工具）
+  account-service.ts   后台服务 · account-check.ts  你的网络能接什么 · home.ts  home 目录
+  adapters/, venues.ts 模拟场所，只给 --classic 和测试
+src/core/ src/agent/   共用：哈希链账本（agent/ledger.ts）、拒绝码、哈希、jsonl
+src/runner/ src/plugins/ src/venues/ src/contract/ src/control-room/ src/wallet/
+                       更早的演示（docs/earlier-demos.md），留给 npm run demo、control-room、wallet 和它们的测试
+fixtures/home/         账户起步的 fixtures（fixtures/home/portfolio/*.json）和演示的种子
+test/                  unit/ · attack/（每个文件是一个堵上的洞）· standin/（替身账户）· e2e
+site/ scripts/         公开介绍页，和算它的数字的脚本
+docs/ COOKBOOK.md      导览、每件事怎么做、每一部分怎么做出来的
+```
+
+## 技术栈
+
+Node 22、TypeScript（strict）、Express、ccxt、viem、zod、MCP SDK、vitest。页面是纯 HTML、CSS 和 JavaScript 当文件发，没有框架、不用构建；字体自己托管。
 
 ## 开发与测试
 
-Node ≥ 22（CI 用 22）、Git、`npm ci`，没有别的：不用构建、没有数据库。页面是纯文件，改 `src/portfolio/public/` 下的东西刷新就见；改服务端重启就见。
+Node 22 或更新（CI 用 22）、Git、`npm ci`，没有别的：不用构建、没有数据库。页面是纯文件，改 `src/portfolio/public/` 下的东西刷新就见；改服务端重启就见。
 
 ```bash
 npm ci                                          # 装一次
@@ -31,157 +216,32 @@ npx tsx test/standin/ui-standin.ts --port 4821  # 替身账户：同一个页面
 npm run site:numbers                            # 新增测试文件后重算网站的数字（site/data/numbers.json），有测试钉着它
 ```
 
-测试钉死的几条约定，免得改了才知道：页面新加一个 `ui/*.js` 要进 `page-scripts.test.ts` 的清单；新路由要写进 `server.ts` 的头注释；新 MCP 工具要写进 `mcp.ts` 的头注释、本页的工具表、英文 README 和 `site/index.html` 里的数字；每个 PR 在 [CHANGELOG.md](../CHANGELOG.md) 加一行。CI 在每次 push 和 PR 上跑类型检查和整套测试，检查绿了再合并。
+测试钉死的几条约定，免得改了才知道：页面新加一个 `ui/*.js` 要进 `page-scripts.test.ts` 的清单；新路由要写进 `server.ts` 的头注释；新 MCP 工具要写进 `mcp.ts` 的头注释、[导览](tour.zh.md)的工具表、两份 README 和 `site/index.html` 里的数字；每个 PR 在 [CHANGELOG.md](../CHANGELOG.md) 加一行。CI 在每次 push 和 PR 上跑类型检查和整套测试，检查绿了再合并。
 
-## 页面
-
-样子是 Demo v2 画布第七轮的（F1 / F5，用这一层自己的 tokens 和尺寸）：左边一条白 rail，Markets · Trade · Agents；rail 最下面是 **Account** 钱包按钮（净值 · 模式），打开 Account 的三页，头上是模式（Guard | Beast）、"Trading on · $100 a move"（单笔上限，点它去 Settings 改，一次签名）、Settings。
-
-- **Portfolio**：你有什么。净值曲线；**Open positions · live**——每一样账户知道成本的持仓（你自己下的单、场所报了入场价的仓位）一张实时卡：入场价、现价、未实现盈亏和百分比，每 5 秒拿一次场所的新价，数字闪一下、点在梯子上滑过去、走势线一点点长出来，纸上账户的也在（标 Paper）；跨场所按资产汇总、持仓；右栏是等你批的卡和 agent 的请求（第七轮的圆键：蓝的 ✓ 批、✗ 拒）、agent 在做什么、现成的钱、配置条。Move · Receive · Earn · Sell many 都从这里开。
-- **Venues**：接上的账户（健康、对 agent 的开关、Details）和 Connect an account。
-- **Memory**：照画布的 F13，「<agent> 记得的你」：风格 · 规矩 · 场所和人三段，每条写着从哪来（你说的 · 它学的 · 来自额度），三个开关，Export 和 Forget all（下面「记忆」）。
-- **Markets**：有什么可以交易。接上的场所，加上没接的场所不带钥匙读来的公开行情（标 "Connect to trade"）。tab：All · Crypto · Stocks · RWAs · Perps · Pre-IPO · Predictions · Watching；一个市场一个抽屉。★ 关注；🔔 提醒——价越过一条线、当天涨跌或成交额或资金费率过了一个数、一个市场上了几条新标题、一只美股一周内要出财报，账户自己每 30 秒看一次，页开不开都响（COOKBOOK 第 2n 条）。
-- **Trade**：照 Hyperliquid 的交易屏排的一块终端，在一个市场里建仓位。顶上一条市场栏：市场名点开是选市场的面板（六种 Crypto · Stocks · RWAs · Perps · Pre-IPO · Predictions，和 Markets 同样的词），旁边是价格、24h 涨跌、成交额、买一卖一，永续加资金费率和最高杠杆，股票加时段，都只写源说过的，5 秒一读。下面三栏：左边 K 线（5m / 1h / 1d，带成交量）；中间盘口和最新成交（真实档位，点一档就是限价；美股公开报价没有深度，只写买一卖一并说明）；右边下单面板：Market · Limit · Pro（Stop、Stop limit、Trailing stop）、Buy / Sell（永续 Long / Short）、可用和当前持仓、数量和百分比滑杆、Reduce only、Take profit / Stop loss。最下面 Positions · Open orders · Trade history 三个 tab。
-- **Agents**（rail 上，`#/desk`）：账户自己的 agent 团队——**Desk**（下面一节），和「带你自己的 agent 进来」（复制 MCP 命令、放敲门的钥匙进来）。
-- **纸上账户的算法单**（`live/paper.ts` 的 `advanceAlgo`，`live/tca.ts`；票上的 **Work it**，MCP `portfolio_live_order` 的 `algo`，COOKBOOK 第 6b 条）：一张市价单切成 TWAP（等份、按时间）或 VWAP（按这个市场前一天同一段分钟的成交量定每片大小）的几片，一张限价单做 iceberg（每次只露一部分，成交一部分再露下一部分）；一个单、一个 id，成交是子单的和，撤单连露着的那片一起撤；每单写上交易成本分析——到达价、均价、相对到达价和相对市场自己 VWAP 的差（基点）、手续费、参与率。只有纸上账户会这样做单，接上的真场所整单发出。
-- **Desk 读新闻和日历，主人可以问它**（`account/desk.ts` 的 `reading` / `leadContext` / `askHead`，`DeskWorld.news` / `.calendar`，`POST /api/account/desk/ask`，命令行 `ASK 问题`，COOKBOOK 第 3b 条）：Search 每次扫描前先读当天的标题（八条，带出版方和多久以前）和今天的经济数据（纽约时间、共识），Risk 放行前先读这条线索自己的标题（美股读它自己的源，币按它的名字）和美股一周内的财报日；读到的记在那次扫描上（`lastScan.headlines` / `events`）；读者不答就只看表，什么都不猜。`ASK why no lead today` 让 Head 只用桌上自己的数（目标、开着的线索、上次扫描和它读到的、房间最后几句）回答两到四句，问和答都写进房间。
-- **Trade：一个地方，两种模式**：rail 上只有一个 Trade，进去是同一块交易区；顶栏最前面一个 **Regular · Superagent** 开关，两种模式共用它、位置一像素不动，点一下就换。**Regular** 是上面那块终端，你自己下单；**Superagent** 是 Desk 在纸上账户上自己交易、你看着：一张和 Regular 一样大的 K 线图，它的每一笔买卖落在图上、每一步在图上方演出来，旁边一栏说它此刻在做什么、刚做了什么，跟着 Light / Black 走（下面「Desk」一节的最后一段）。Trade 在两种模式下都亮着；地址栏说是哪一种：`#/trade` 和 `#/trade?mode=superagent`（旧的 `#/superagent` 落到同一处）；这个浏览器记得你上次用的是哪一种，下次从 rail 进 Trade 就开那一种（只在你按开关时记）。
-- **命令行**（`ui/command.js`，顶栏的框，COOKBOOK 第 2d 条）：每一页都有的那个框既是搜索也是命令行：`AAPL DES` 打开苹果的抽屉，`BTC GP` 去看它的 K 线，`MOST` 最忙的市场，`HELP` 列出全部功能；市场在前、功能在后，同名的市场下面各出一行，↓ 选。这个框什么都不签、不发。
-- **News**（`live/news.ts`，Markets 下的第三页，命令行 `TOP` · `N 词` · `NVDA CN`，COOKBOOK 第 2e 条）：出版方自己放出的标题源，不带钥匙读——美联储、欧央行、SEC（要 `SEC_CONTACT`），CNBC、MarketWatch、华尔街日报、BBC、Nasdaq，CoinDesk、Cointelegraph、The Block、Decrypt，PR Newswire 的公司公告——每条只有标题、出版方自己页面的链接、时间和来源；不读正文、不做摘要。每个源留 5 分钟，迟到的用上一次答复顶上并写明。美股抽屉里多一段 **News**：Nasdaq 给这只股票的源，加上所有提到它的标题。
-- **Calendar**（`live/calendars.ts`，Markets 下的第四页，命令行 `ECO` · `ERN` · `DVD` · `SPLT` · `IPO`，COOKBOOK 第 2f 条）：Nasdaq 自己日历页上排的事，一天一读、不带钥匙——经济数据（纽约时间、国家、一致预期、公布值和前值，公布值高于或低于预期上色）、财报（谁、盘前还是盘后、分析师预期的 EPS 和估计数、去年同期）、除息、拆股、当月 IPO 按阶段。周条上选日子；`AAPL ERN` 只看一只股票。一致预期是 Nasdaq 写的数字，账户什么都不估。
-- **World**（`live/world.ts`，Markets 下的第二页，命令行 `WEI` · `GC` · `FXC` · `GLCO`，COOKBOOK 第 2g 条）：终端一屏上的四块板，各从一个不带钥匙的公开源读来，每个数都写明是谁的、晚多少——股指（Cboe 的延迟报价，晚十五分钟：标普 500、纳指 100、道指、罗素 2000、标普 100、MSCI EAFE 和新兴市场、VIX、VXN、VVIX、美国十年期收益率）、美国国债收益率曲线（财政部自己的 par 曲线，旁边画一月、一年前的，表里每个期限对一周 / 一月 / 一年前差多少 bp，2s10s · 3m10y · 5s30s 利差）、外汇（Kraken 九个法币对的实时价；其余二十种用 ECB 当天的欧元参考汇率换成对美元，是定盘价不是实时价）、商品（Hyperliquid xyz 永续的预言机价：金、银、铂、钯、铜、WTI、布伦特、天然气，全天候；是合约盯的参考价，不是商品交易所的价）。源迟到或拒绝时用一小时内的上一次答复顶上并写明。什么都不估。
-- **Options**（`live/options.ts`，Markets 下的第五页，命令行 `OMON` · `SKEW`，COOKBOOK 第 2h 条）：一条上市期权链照场所发布的样子——美股和 Cboe 的五个指数（SPX、XSP、NDX、RUT、VIX）用 Cboe 的延迟报价（晚十五分钟；每张合约的隐含波动率和希腊字母都是 Cboe 自己的），BTC 和 ETH 用 Deribit 的实时汇总（它的 mark IV；Deribit 不发布希腊字母，delta 用它的 mark IV 按 Black–Scholes 算出，写明）——加上终端从链上读出来的数：每个到期日的平值 IV、按持仓量和成交量的看跌 / 看涨比、最大痛点、平值跨式的价格和它占标的的比例（市场定价的波动幅度）、25-delta 偏斜；选中到期日平值附近的行（买价、卖价、最新、标记价、IV、delta、gamma、theta、vega、持仓、成交量）、微笑曲线、期限结构。什么都不估：场所的数之外全是对它们的算术，`notes` 里写明每一步。
-- **Monitor**（`ui/monitor.js`，rail 上的 **Monitor**，命令行 `MON` · `AAPL MON`，COOKBOOK 第 2i 条）：一屏你自己拼的格子，像终端的 launchpad——一个市场（价格、24 小时涨跌、当天的线，用 Markets 页自己的图）、World 页的一块板、一个主题的标题、今天的一种日历、一条期权链最近到期日的数；每块都用它那一页的读法和画法（同一个接口、同样的缓存），什么都不重读。版面写在地址里（`#/monitor?tiles=w=indices,m=coin:BTC,…`）、记在这个浏览器里；三个预设（Desk · Macro · Crypto）；市场从命令行加进来（`AAPL MON`），板、新闻、日历、期权从页上的下拉加；最多十二块；显示时每 15 秒按各块自己的保留时间重读。没有新接口、没有新工具。
-- **Security：一只美股自己的页**（`live/security.ts`，`ui/security.js`，Markets 下、从一只股票进去的页，命令行 `AAPL DES` · `ANR` · `EE` · `DVD` · `SI` · `HDS`，COOKBOOK 第 2j 条）：Nasdaq 自己的十二个页面对一只美股说的话，一次读成一页、照它写的——公司是谁和简介、交易所 / 板块 / 行业、Nasdaq 的最新成交和盘态（账户自己的报价在 Markets 页）、关键数（前收、日内和 52 周区间、成交量和均量、市值、流通股、股息和收益率、除息和派息日、一年目标价、派息率、市盈率、前瞻 PEG、机构持股比例）、分析师（评级和人数、低 / 均 / 高目标价对着现价、买 / 持 / 卖、一年逐月的共识）、财报（最近几季 EPS 对一致预期和惊喜、未来几季几年的预期、高低、估计数和四周内上下修、市盈率和增长率）、历次股息、按结算日的空头头寸和回补天数、内部人三个月和十二个月的买卖和最新交易、机构的持股比例、增减持、新进和清仓、最大持有人。ETF 只有报价、关键数、股息、空头。Nasdaq 没有的部分列在 `missing` 里，其余照显示。什么都不估、不评级。
-- **Screener：筛选器和板块地图**（`live/screener.ts`，`ui/screener.js`，Markets 下的第六页，命令行 `EQS` · `IMAP`，COOKBOOK 第 2k 条）：Nasdaq 筛选器一次下载的整张表——每一只美股的代码、名字、当天的最新价和涨跌、市值、成交量、国家、IPO 年份、板块、行业（7,127 行、2.2 MB、0.8 秒）——留 5 分钟，筛选和排序在账户里做：板块、行业、国家、市值区间（终端的 mega / large / mid / small / micro）、价格、当天涨跌、成交量、IPO 年份、名字或代码里的词，按市值 / 涨跌 / 成交量 / 成交额 / 价格 / IPO 年 / 代码 / 名字排，最多 500 行；每行点代码开抽屉。**IMAP**：每个板块一块瓦片，大小按市值、颜色按当天（按市值加权），点进去是行业，再点进去是表（squarified treemap，页面自己画）。优先股、单位、权证不算。价是 Nasdaq 写表时的当天价，不是实时报价——实时的在抽屉里。
-- **Analytics：几个市场放在一起算**（`live/analytics.ts`，`ui/analytics.js`，Markets 下的第七页，命令行 `COMP` · `CORR` · `HVG` · `BETA` · `SEAG`，COOKBOOK 第 2l 条）：最多八个市场（`venue|symbol`，写在地址里；从页上的搜索、三组预设或命令行 `NVDA COMP` 加进来），用账户自己 K 线读（`candles`）已经给的 bar 算——不新读任何东西：**Compare** 全部在第一根共同的 bar 上归到 100，各自的总收益、年化、年化波动率、最大回撤、最好最坏一根、夏普；**Correlation** 两两在共有的 bar 上算收益相关（不足十根不算）；**Volatility** 滚动 20 / 60 根的年化波动率线和现在在区间的位置；**Beta** 每个对第一个的 beta、相关、R²、年化 alpha（指数放第一个）；**Seasonality** 按日历月把每月的 bar 复利后在各年平均（几年里几年上涨）和按星期几。收益是 bar 对 bar 的对数收益，bar 按起始时间对齐（股票的休市日、币的周末不是共同 bar），年化用每个市场在区间里实际出现的 bar 数（`barsPerYear`）。不是预测。
-- **Risk：自己的持仓称一称**（`live/risk.ts`，`ui/risk.js`，Account 头下的第四页 **Risk**，命令行 `RISK`，COOKBOOK 第 2m 条）：持仓读（`holdings`）的每一行和永续仓位（空头的美元为负）各配一年日线（从 `explore` 找到图表会用的场所再读 `candles`），算：净 / 总 / 多 / 空敞口，每行占总敞口的权重，按资产类别、按场所，集中度（最大一行、前三、赫芬达尔指数、有效行数）；每个有价的行的年化波动率、占组合方差的份额、自己的一日 95% VaR；组合的（所有有价行共有的）日收益序列——年化波动率、一日 95% / 99% VaR 按历史分位（旁边写正态分布的数）、95% 期望损失、最坏和最好一天、最近九十天的条；对 SPY 和 BTC 的 beta 和相关；净值曲线自己的回撤（最深、现在）；全部有价行或某一类统一跌一个百分比会是多少美元。现金、稳定币、没有 K 线的行计入敞口、不算波动，写明。全是对账户余额和场所 K 线的算术，不是预测。
-
-页面上只有真的：没有模拟场所、没有样例数据，没有接口的就不画。界面英文，背景可选 Light / Black。**整页是「ASCII 海洋」的样子**（照 stackedlol 的 ascii-sharks：Light 是它视频里的白底，Black 是它源码默认的黑底）：页面底下一张固定的 canvas（`ui/ocean.js`，自己写的，没有用它的代码——那个仓库没有许可证），一格一格的字符网格（格子约是窗口宽度的 1/170）上几条鲨鱼在追一群群小鱼：按窗口宽度两到五条，从九种里随机挑、九种都游过之前不重复（黑鳍礁鲨、路氏双髻鲨、无沟双髻鲨、虎鲨、灰鲭鲨、长尾鲨、护士鲨、豹纹鲨，三次里有一次是最大的鲸鲨）；**纸上账户赚得越多鲨鱼越多**：从开账户起每赚整 1% 多一条、每亏整 1% 少一条（最多 12 条、至少 1 条；只算知道自己起始金额的纸上账户，后来加的纸上钱算投入、不算赚的），新的一条从边上游进来、少的那条（最小的）游出去，一次一条、隔几秒；变的时候弹一句提示（"3 sharks joined the water: your paper accounts stand at +3.4% since they started"），Portfolio 的 Paper 卡下面写着现在几条、为什么（`ui/shell.js` 的 `shSharks`，`ui/ocean.js` 的 `OCEAN.bonus`）；各有各的轮廓、斑纹和游法；鲨鱼是一格格灰色方块、方块上一个等宽字符，按光照选字、偶尔闪一点颜色，斑纹是自己的方块（虎鲨的横纹、豹纹鲨的斑点、鲸鲨的白点和白线、黑鳍礁鲨的鳍尖），小鱼是 `-`，游过的地方留下点状尾迹；鼠标附近的鱼会躲，点空白的海面会把鱼吓散。界面浮在上面，是磨砂玻璃，排版是**瑞士国际主义风格**：一种新怪诞无衬线体 Inter（Helvetica、Neue Haas Grotesk 要授权、不能放在本机，Inter 是同一路的开源字），大数字粗而紧，标签小而粗，卡片顶上一道粗线，近乎直角，没有阴影；黑白之外只有一对颜色——绿 #00843D 是 Account 自己的颜色（它的标、被选中的标记、涨、买、同意），强调红 #DA291C 只表示跌、卖和亏损、不做装饰（两者亮度相同，在白底上都是 4.9:1），等待的琥珀色照旧，在黑底上小字用同色相的浅一点的绿红以保证读得清。**鲨鱼是半透明的，而且从不出现在字后面**：面板（卡片、rail、交易区的面板……）底下的鲨鱼看不见，海面上的字底下什么都不画。Portfolio 的净值不放在卡里，直接浮在海面上（后面一层雾，鲨鱼绕着它游）。字都放在本机（`public/fonts/`：Inter 和 Geist Mono，SIL OFL，不连 Google Fonts）；等宽字只给海面上的字符、哈希和签名的内容。"减少动画"时海面只画一帧、不动。**交易区（Trade 的两种模式）跟着 Light / Black 走**，保留 Hyperliquid 交易屏的排法和密度（12px、一个字重、盘口、tab 下划线）：玻璃面板，面板之间 6px 的缝露出海面，按下的开关是黑白，选中的 tab 下面一道绿线，买是绿、卖是红、白字；`ui/tokens.css` 里一组只在交易区生效的 tokens（`<html data-area="trade">`，名字仍叫 `--hl-*`，Light 一套、Black 一套）。Superagent 用的是同一组 tokens，图表就是 Regular 那一张（`ui/chart.js`），所以也跟着 Light / Black 走，切换时不用刷新。在交易区里时左边的 rail 也换成这一组颜色，离开就换回来（0.2 秒过渡，"减少动画"时直接换）。
-
-## 谁能让钱动
-
-- **owner**：浏览器里一把不可导出的设备钥匙（第一次输终端的配对码）。每一笔真钱是一次签名，签之前 "What you sign" 把字段摆出来；执行前再问一次价格或地址，变了就不做。
-- **agent**：自己的钥匙（MCP 席位在本机生成），加 owner 签的额度：交易、挪钱、付款、earn，各有单笔、总额和到期。
-- **模式**：
-
-  | agent 在额度内 | Guard | Beast |
-  |---|---|---|
-  | 下单、挪钱、放进 earn | 出一张卡，等你批 | 直接做 |
-  | 撤自己的单 | 直接做 | 直接做 |
-  | 超出额度 | 拒绝 | 拒绝 |
-
-  切到 Guard 一键，切到 Beast 要签名；卡 30 分钟没人答自动过期。十扇门的完整对照在页面的 Mode 弹层（服务器给的 `modeRules`）。接口上的值仍是 `guard` | `open`。
-- **不变的线**：单笔上限（启动时 `--live-cap`，之后在 Settings 里改，升降都是 owner 一次签名 `setPolicy cap`，重启按最后一次签的恢复；纸上账户不受它）；钱只去你自己的地方；随时撤销；场所自己的地区规则不绕。
-
-## 能接什么
-
-| 类 | 场所 | 能做 |
-|---|---|---|
-| 交易所 | OKX、Kraken、Coinbase、Binance、Bybit、KuCoin 等统一接口库（ccxt）里用 API 钥匙接的 93 家，Binance.US、OKX US 这样的美国版也在里面；钥匙文件 | 读；现货和 U 本位永续；提到自己的地方、划转、稳定币互换；OKX、Kraken、KuCoin、Binance 的 earn |
-| 券商 | Alpaca（钥匙文件；它的 paper 账户也能接："Alpaca · paper"，纸上的钱、真实报价，盘前 / 盘后 / 隔夜都能下带 extended hours 的限价单——隔夜时段就是香港、新加坡的白天）、Robinhood（它的 Trading MCP，OAuth 登录）、Robinhood Crypto | 读、下单；现金只在券商自己那边进出 |
-| 预测市场 | Kalshi（钥匙文件）、Polymarket US（钥匙文件：Key ID 和 Secret Key）、Polymarket（钥匙文件，或只填地址看） | 读、事件合约下单 |
-| 钱包 | 浏览器钱包（OKX Wallet、MetaMask 等，签一句话证明地址）、MetaMask Agent Wallet（本机 `mm`） | 换币、跨链、代币化股票（RWA）；`mm` 还有永续、预测、earn，写操作要 `PORTFOLIO_MM_WRITES=1` |
-| 永续 DEX | Hyperliquid：API 钱包（钥匙文件；只能交易，不能提币） | 永续、现货、HIP-3（含 pre-IPO）；每单之前按它条款 §1.6 查你此刻所在的地方 |
-| 纸上账户 | **Paper account**：什么都不用接——起个名、写一笔纸上美元（默认 $10,000），账户自己记账，可以开好几个。市场是 Markets 不带钥匙读到的那些公开行情，四类都有：美股（Robinhood / Nasdaq 公开的实时报价，按 Robinhood 每 15 秒的写入在后台读、Nasdaq 同时问，读不到时退回 Cboe 的 15 分钟延迟报价——只看不成交：只有它时市价单被拒、限价单等实时报价；常规时段任何单都成交，盘前 / 盘后 / 隔夜只成交勾了 extended hours 的限价单，时段外的市价单排队等开盘，不收佣金）、crypto（交易所的币、Hyperliquid 永续——逐仓杠杆、每小时资金费、按声明的规则强平）、RWA（Robinhood Stock Tokens、Gate 上的 xStocks、Ondo 股票代币）、预测市场（Kalshi / Polymarket / Polymarket US 的事件合约，场所结算后按场所付的钱付掉）；按公开报价成交，规则是账户自己定的、处处写明；单子有市价、限价、止损、止损限价、追踪止损，有效期 day / gtc / ioc / fok，开仓单可以带止盈止损（成交后挂上两个退出单，一个成交另一个撤掉，它们也是账户自己的订单，挂单、撤单、对账单照常）；服务每 5 秒自己看一遍账本（挂单、止损、到期、资金费、强平），不用开着页面。Portfolio 的净值卡片在只有纸上账户时直接显示纸上账户：金额、自开户以来的盈亏、1D / 1W / 1M / All 曲线（从账本自己的成交和公开 K 线复原，之后服务每 5 分钟记一个点），真钱和纸上钱都有时卡片上一键切换，纸上的钱永远不算进净值。没有账户可接的人第一步就能开一个。真仓和模拟仓怎么分：票里一条横幅写 PAPER 或 REAL MONEY，旁边 Real money | Paper 一键翻转，签名按钮在纸上写 "Sign and place · PAPER"；顶部 All accounts 里有 Real money / Paper 两档整页切换；MCP 里 `venue: "paper"` 直指纸上账户。另有 **Hyperliquid · paper**：Hyperliquid 自己的测试网（钥匙文件：在 app.hyperliquid-testnet.xyz 批的 API 钱包；mock USDC 从它的水龙头领），真接口、假钱 | 两种都走同一扇门：同样的签名或 agent 额度、同样的 Guard / Beast；余额不算钱（不进净值、持仓、可用现金），订单是演练、不受 `--live-cap`；页面和 agent 处处标 Paper；测试网那条同样按 §1.6 查地方 |
-| 只看 | Hyperliquid、Ondo、Robinhood Wallet（按地址） | 读 |
-
-**地区：按每个用户自己所在的地方，不按开发者。** 账户启动后、之后每 30 分钟，自动替每个场所问一遍它对**这台机器的网络**怎么答（不带钥匙），再把它公布的居住地规矩对上这台机器此刻所在的地方：能接、不服务这里、只能平仓（Polymarket 对美国就是这样：照样接得上，能卖、能撤单，不能开新仓；美国人开新仓的地方是另一家交易所 Polymarket US，自己的账户、自己的钥匙，单独一张卡）、它的条款排除你所在的地方（只提示，不拦）、本机先要准备。连不了的，如果它有给你那里的另一个版本（Binance → Binance.US、OKX → OKX US、Polymarket → Polymarket US），而且那个版本从你的网络能接、它自己的话说它是为你那里做的，就标在旁边。同一个答案用在 Connect an account 的卡片、Markets 和下单票（只对会收你的场所给 "Connect to trade"），以及 agent（`portfolio_venues`；agent 请主人接一个不服务你这个网络的场所会直接被拒）。地方只在内存里用于这个判断，不保存、不返回、不写进拒绝；开发者那里被拒的场所（Binance、Bybit、Polymarket 开新仓、Hyperliquid 下单）照样接好了，在服务它们的地方就全有；每个用户都按他自己的网络算，开发者机器上的答案不进代码。**网络的回答也拦不住接**：场所不服务这个网络、或这会儿没答，Connect 照样能签，连接留在账户上等（Venues 里 "Waiting for the venue"，场所的原话），场所答之前什么都不往它发，换了网络 "Check again" 发现它答了就自动接上；拒的是钥匙或账户本身才是拒绝。IP 引起的另几种问题分开说，各用场所自己的话：钥匙绑了别的 IP（去场所把这台机器的地址加上）、场所前面的服务器拒绝这个网络、请求太多被封（等到它说的时间）。场所话里带着的 IP 不进日志和账本。账户从不提供绕过地区规矩的办法。
-
-**世界市场的永续**（`public-markets.ts` 的 `hyperliquidWorldPublic`，源 id `hyperliquid-world`）：Hyperliquid 的 HIP-3 dex 上按股票（NVDA、TSLA、AAPL…）、指数（SP500、XYZ100）、商品（GOLD、CL、BRENTOIL）、外汇（EUR、JPY）、利率（10Y）部署的永续，按 Hyperliquid 自己的分类认（stocks · commodities · indices · fx · rates；pre-IPO 归下一条，crypto 不算），2026-11-09 读到 155 个，列进 Perps 里：代码是去掉 dex 前缀的（`perp:NVDA` 和别家的 NVDA 永续折成一行），场所写 "Hyperliquid · xyz"，分类写在行上；K 线、盘口、成交、资金费率走 Hyperliquid 自己的，纸上账户照永续的规则交易它；有人持有或成交的才列。每份合约是那个 dex 自己按预言机价定的合约，不是股票或商品本身，列表底下写明。
-
-**Pre-IPO**：交易所上按一家未上市公司的估值定价的永续合约，不是股份。九个公开源不带钥匙读（OKX、Gate、Kraken Futures、Deribit、KuCoin Futures、MEXC、Binance、Bybit、Hyperliquid HIP-3；在不服务你的地方，那几家用它们的原话写在列表底下），一家公司一行，写各家隐含估值的中位数（Oura 的合约各家都按一股定价，按股数算）；接上其中一家的钥匙，就在同一行下单。Anthropic、OpenAI 都说未经同意的股权转让无效，原话跟着它们那一行走。
-
-## 记忆
-
-agent 记得的你放在账户里，不放在某一个 agent 程序里：换一个会话、重启、换一个程序拿同一个席位来接，它都读得回来；你在 Account › Memory 读每一个字，签名改、签名删（`account/memory.ts`，照 Demo v2 画布的 F13）。
-
-- **一个 agent 一份**，分风格 · 规矩 · 场所和人三段，每条写着从哪来：**你说的**（你写的、你改过的）、**它学的**（agent 用自己的钥匙记的，带一句它怎么学到的，"从你的问题里"、"从你拒掉的那次"）、**来自额度**（你签的额度和模式，账户照它们此刻的样子写出来，不存，改它就是去改额度）。
-- **三个开关**（都是你的签名）：让它记新东西（关了它只用现有的）· 它学到的先问我再记（新的一条先进 Waiting for you，✓ 才记下，之前哪个 agent 都不读它）· 别的 agent 也能读（关着只有它自己读）。
-- **Export** 是一份 JSON；**Forget all** 删的是文件，没有回收站（开关留着）。
-
-记忆是话，不是权限：额度、门、卡都不读它。钥匙、密钥、密码、助记词、IP 一律不收；忘了就是从文件里删掉，记忆的字从不进账本。agent 用 `portfolio_memory` 读，用 `portfolio_remember` / `portfolio_forget` 记它学到的。
-
-## Desk：账户自己的 agent 团队
-
-没有 agent 可接的人是大多数，就像没有钱包可接的人是大多数——纸上账户给后者，Desk 给前者。照「八个 agent 跑一个 desk」的套路做在账户里（`src/portfolio/account/desk.ts`）：
-
-- **八个席位，各一份章程**（owns · good output · never）：Head of desk（从不交易，管漏斗、早晚报、日亏熔断）· Search（从 Markets 找线索）· Risk（清算：市场开着、有报价、价差、当日亏损余量、仓位大小）· Sniper（下入场单）· Exit（止盈 / 止损 / 时限，提前平）· Watch（盯危险：强平距离、资金费、事件收盘、场所不应答）· Flow 和 Sentiment（账户没有那两种数据，只能由你自己的 agent 来坐）。
-- **章程变成额度**：每个席位都是 owner 签名放进来的一把 agent 钥匙（`approveAgent`），会交易的席位（Sniper · Exit · Watch）拿 owner 签的交易额度（`approveSpend`），不该交易的席位没有额度——门拒绝它们下单，不管它们"想"什么。Guard 下每一单还是一张卡；Beast 下在额度内直接走。
-- **一个房间，一个目标**：你的一句话 + 一个场所（推荐先用纸上账户）+ 范围 + 本周目标 % + 每笔最多占权益 % + 当日亏损熔断 % + 会话几小时 + 几分钟一轮 + 晚报几点（纽约时间）。房间里每条消息带线索号 `L-0047`，各席位能互相核对；漏斗 scanned → cleared → confirmed → placed → executed → closed（placed 是场所收下了入场单，executed 是它成交了；一张盘前盘后的当日限价单、一个场所先答"收到"后成交的市价单，在两者之间；等你批的卡是 confirmed 减 placed）。
-- **每一轮**：先按计划处理在手的线索（止盈 / 止损 / 时限自动平，Exit 可以提前平），Search 读账户自己的 Markets 列表找线索，Risk 先跑硬检查再问脑子，Sniper 通过 `agentLiveOrder` 下单，Head 写一行。21:00 晚报、周日周评、日亏到线就熔断到纽约次日、会话到点就结束——都在房间里。
-- **脑子（Brains）**：房里的席位用哪个模型想，在 **Brains** 里选——一处接所有模型 API，十四个预设分三组：**Model APIs**（OpenAI · DeepSeek · Grok · xAI API · Muse · Meta Model API · Claude · Kimi · Qwen · OpenRouter · Gemini · Groq · Together）、**On this machine**（Ollama · vLLM）、**Custom**。每家一张卡：名字、种类和它现在的样子（Ready · key …ab12、No key、Key refused；本机的两家写 Local · ready、Local · needs a model（只差模型名）或 Local · not ready）。**每家要什么**：Claude 要一把 Anthropic 的钥匙，模型从它的三个里选；其余十三家都是 OpenAI 的 chat completions 格式，要一把钥匙和一个模型名，Qwen 和 Custom 还要你填 base URL（Qwen 的是你 workspace 自己的地址），本机的 Ollama 不要钥匙，vLLM 只在起的时候带了 `--api-key` 才要。预设填好 base URL，各家的差别脑子自己处理（DeepSeek 只收 `json_object`，提示里带 "json"；Muse 从不发 effort "none"；接口回 400 就换它点名的字段再问，最多三次）。**effort 只在各家文档说清了的地方给**：OpenAI、Muse、Claude 三档（low / medium / high），DeepSeek 两档（low、high；desk 的 medium 对它不发）；其余十家一个 `reasoning_effort` 都不发，用那一家自己的默认，Brains 上也不给这个选项。几家可以同时有钥匙，想的是雇的那一家；雇的那家没钥匙就直说，从不悄悄换一家花你的钱。模型名是**建议**：写着从哪一页、哪一天读的（2026-10-15），从不说是全的，你可以填那家认的任何名字；价格是你自己填的，没填就只计 token、页面标 "unpriced"。Brains 从三处打开，是同一个地方：Superagent 顶栏的 **Brain ›**、启动面板的脑子那一步、Agents 页的 **Brain…**；换脑子是一个签名（`setDesk brain`）。
-- **直接粘贴一把钥匙，账户认出是谁家的**（`account/brain-detect.ts`、`ui/brains.js` 的 `brConnect`）：Superagent 上有一格 **Paste an API key**——顶栏 **Brain** 按钮（带框，写着 **Change ›**；脑子不能用时是琥珀色的 **Connect a key ›**，顶栏下面还有一条 **Next: connect a brain** 和一个 **Connect a brain** 按钮，图表旁边的 Now 也写着 "No AI brain" 和同一个按钮）打开的 Brains 最上面一行；还没雇 Desk 时，启动面板清单的「2 · A brain key」里也有一格——任何一家的钥匙粘进去按 **Connect**，不用选是哪一家。账户先按钥匙的样子认（2026-10-21 从各家文档和 gitleaks、TruffleHog、GitHub 的密钥扫描规则读的）：`sk-ant-` 是 Anthropic，`sk-proj-` / `sk-svcacct-`（或中间带 OpenAI 记号的老钥匙）是 OpenAI，`sk-or-` OpenRouter，`xai-` xAI，`gsk_` Groq，`AIza` / `AQ.` Google Gemini，`LLM_` Meta，`tgp_v1_` Together；别的 `sk-` 钥匙（DeepSeek、Kimi、阿里老钥匙都长这样）按 DeepSeek → Kimi → OpenAI 的顺序真去问，哪家收下就停——问过的每一家都看得到这把钥匙，格子下面在你按 Connect 之前就写着；只有被拒才问下一家，有一家连不上或答了别的就停在那里，不把钥匙送给下一家。每一家都在它自己的地址问一次**不计费的模型列表**（OpenRouter 的列表人人能读，所以先问它的 `/key`；xAI 先问 `/v1/api-key`，新钥匙的访问列表是空的就直说）。收下之后从那一家给这把钥匙列的模型里挑最好的（各家推荐的旗舰在前：Claude Opus 5.5、gpt-6-astra、grok-4.7、gemini-4-argon、kimi-k3……；Claude 只从 Desk 的三个模型里挑），再问你一句 **"Connect <那一家>?"**：哪一家、哪个模型（为什么是它、价格）、钥匙的末四位和指纹、Desk 换成它——钥匙不在里面；按 **Sign and connect** 才签，签的是和手填一模一样的 `setBrainKey`（钥匙跟着签名送到 `POST /api/account/brain-key`：同一个文件、同一扇门、同样拒示例钥匙）和 `setDesk brain`（还没雇时是把那一家和模型填进启动面板，Start 时一起签）。钥匙经本机回环送两次——认的那一次（`POST /api/account/brain-detect`：什么都不写、不签，同一时间只认一把）和存的那一次——此外不进页面存储、账本、房间和日志。结果写在格子下面：哪一家、哪个模型、钥匙末四位，和 **Replace key** / **Remove key**。不成的时候用平白的英文说为什么：不认识的钥匙；示例（`sk-ant-...`）、星号遮住的钥匙；钱包的私钥（64 位十六进制）或助记词（从不发出去，页面上就拦下）；管账户、不跑模型的钥匙（`sk-ant-admin`、`sk-admin-`、OpenRouter 的 management key）；Claude 订阅的登录 token（`sk-ant-oat`，Anthropic 的条款不许别的应用用）；阿里 Model Studio 的 `sk-sp-` 钥匙（地址是你自己 workspace 的，要到 Qwen 那张卡上填）；Perplexity（2026-09-27 起不再支持脑子说的格式）；别家服务的密钥；那一家拒了（401、403，xAI 和 Gemini 是 400，带它自己的原话和可能的原因）；连不上或超时；收下了但没有 Desk 能用的模型。替身加 `--providers` 时，各家的模型列表对含 "standin" 的钥匙作答，可以一路点到底。
-- **钥匙在页面上填**（`account/brain-keys.ts`）：选一家，把钥匙粘进那一格，按 **Save the key**。那一格是画成圆点的文本框（`type="text"` 加 `-webkit-text-security: disc`；画不了圆点的浏览器把它换成密码框，从不露出钥匙）——不用密码框，是因为浏览器会提出把它当成 127.0.0.1 的密码存进自己的密码库、再同步出去；它不自动填、不拼写检查，也不在页面任何会做成草稿的表单里。浏览器先算钥匙的指纹（加盐的 SHA-256），然后在签名之前问你一句 **"Save the <那一家> key?"**：摆出要签的四样——Provider、Base URL、Model、Key fingerprint——钥匙不是其中之一，再写明钥匙只送到本机的账户、之后只发给那一家的主机；按 **Sign and save** 才签，按 Cancel 什么都不发，连指纹都不发。你签的是 `setBrainKey`——哪一家、base URL、模型和指纹，从来不是钥匙；钥匙只跟着这一个签名，经本机回环送一次到 `POST /api/account/brain-key`，先对上你签的指纹，再过同一扇门（签名、owner、nonce、十分钟），写进 `~/.openpaper/credentials/brains/<家>.json`（只有你可读，文件夹也只有你能开，原子写入，遇到链接就拒）。它不进账本、房间、desk.json、日志、任何答复、页面存储和缓存；之后只发给那一家自己的 base URL。答复只给你看末四位（"…ab12"）和指纹，输入框随即清空。**钥匙从不进模型那一格，也不进 base URL**：模型名长得像钥匙（`sk-…`、`sk-or-…`、`xai-…`、`gsk_…`、`AIza…`、一长串十六进制或随机字符——`keyShaped`，页面、`/prepare`、钥匙的路由、门和 Test 用的是同一个检查），base URL 的主机或路径里有像钥匙的东西（主机按你打的样子一段一段地查，大小写不变——Qwen 的 workspace id 就写在主机里，钥匙粘到那里会在 DNS 查询和 TLS 握手里明着发出去；路径里只有一段 32–39 位十六进制的，是 Cloudflare 的账户 id，不算钥匙，`https://api.cloudflare.com/client/v4/accounts/<账户 id>/ai/v1` 这样的地址照收），或者钥匙那一格里的钥匙（或它 8 个字符以上的一段）也出现在模型或 base URL 里，都在签名和过门之前被拒，拒的话从不重复那个值，说到那个主机时只说 "another address"——不然它会被签进账本（账本是哈希链，写进去就擦不掉）、写进房间、当成模型名发给别家；换脑子（`setDesk brain`、雇佣表单、resume 带的脑子）也一样：脑子必须是一个对象，里面每一个字段名和值、多深都查。Desk 自己的话——名字、目标那一句、席位的章程——带着自报家门的钥匙（`sk-…`、`gsk_…`、`AIza…`、密钥块、JWT）也在门前拒（`0x` 地址和交易哈希照收）；指令里多出一个不签的字段，拒的话只在它是普通的名字时才说出名字。那一家回的话（拒绝、错误、模型自己说的拒答）写到页面和房间之前都抹过：整把钥匙、它 8 个字符以上的任何一段、Bearer 后面的东西、像钥匙的词，都换成 "…"。存好之后 Desk 马上知道（`Desk.keyChanged`）：旧钥匙被拒的那条「Key refused」当场撤掉，答复、Brains 的卡、Superagent 顶栏说的是同一个样子，不用等下一轮；房间记一句，只带指纹。环境变量压过文件时，Desk 用的还是那个变量的钥匙，被拒就还是被拒，房间也这么说。**Test the saved key**（本机的 Ollama、vLLM 上叫 **Test it**）问那一家的模型列表（不计费），用那家自己的话回答；同一家同一个模型同时问两次只发一次。它不要签名（什么都不改、不花钱），和每条路由一样挡在来源守卫后面，还要浏览器自己的头——但这不是认证：本机的程序带上那个头也能问，得到的只是那份模型列表和抹过钥匙的话。**Use this brain** 一个签名让 Desk 用它，**Remove the key** 拿掉它——没有新文件可拿时账本写 "nothing to take away"，旧文件还在读的话也写明。http 的 base URL 只给本机（Ollama、vLLM）；OpenAI 格式的接口回重定向时不跟，直说它重定向了、该把哪个地址填成 base URL。**本机的 Ollama、vLLM 不用文件**：不放文件就按默认地址（`http://localhost:11434/v1`、`http://localhost:8000/v1`）、不带钥匙去问，选它当脑子时写上模型名就能用——卡上是 Local · not ready 只因为还没有模型名，Use this brain 和启动面板写的是 "ready with <模型> once you sign"；文件只在换地址、写死一个模型，或你的服务器起的时候带了钥匙时才要。换地址不用编一把钥匙：写上新地址和模型名，钥匙那一格空着按 Save（它已经存着一把钥匙时，要么把那把再粘一次，要么先 Remove the key），问的是 **"Save the Ollama address?"**（Provider · Base URL · Model · Key: none），签的 `setBrainKey` 指纹为空，账户只写地址和模型，回 `{keyless: true}`，之后 Desk 的问题发到那个地址、不带钥匙（说的是那个主机，只有本机的回环才叫 "this machine"）。这是全账户唯一一处从页面收钥匙的地方，别的钥匙照旧是你写文件、页面只说文件在哪。
-- **旧的钥匙文件照旧读**：新文件还不在时，Claude 读 `credentials/anthropic/api-key.json`，OpenAI 读 `credentials/openai/api-key.json`——以前放在那里的钥匙什么都不用做照样用；页面写的是新文件，新文件在了就读新的。手动起服务时，环境里的 `ANTHROPIC_API_KEY`（或 `ANTHROPIC_AUTH_TOKEN`）、`OPENAI_API_KEY`（和 `OPENAI_BASE_URL`、`OPENAI_MODEL`）照旧优先于文件，改了要重启；在页面上填了钥匙也照写文件，答复会说是环境变量在起作用（`envWins`）。**网关的环境不算 Anthropic 的钥匙**：Claude Code 接 OpenRouter、DeepSeek、Kimi 这类网关的写法是 `ANTHROPIC_BASE_URL=<网关>` 加上那个网关的 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`——那是网关的钥匙。`ANTHROPIC_BASE_URL` 指向 `https://api.anthropic.com` 以外的地方时，Claude 这个脑子两个变量都不用、不建客户端、什么都不发，说「不能用」，修法写明是哪个主机、把两个都去掉再重启（之后读你在 Brains 里存的文件）。这时变量不是"压过"文件，是**挡住**了文件：Brains 上 Claude 那张卡写 **Blocked by the environment**，表单写 "<变量> is set where the account runs and blocks a saved key: unset it and ANTHROPIC_BASE_URL, then restart."，在那里存钥匙的答复带的是 `envBlocks`，不是 `envWins`。装好的 LaunchAgent 不带这些变量。不读命令行登录的 profile：账户看不见的钥匙不承诺。脑子不能用时页面给一块「怎么修」：一句话、钥匙文件的绝对路径（带 Copy）、一条照抄就能跑的命令（带 Copy；没有文件时它建好空模板 `{"apiKey": ""}`、只让你读、用编辑器打开；命令里从来没有要先替换的示例值），和要不要重启（只有环境变量那条要）。空模板和旧的示例值都不算钥匙；API 拒了的钥匙（形状对、被拒）从那一次调用起算「不能用」，房间说一次，下一次有回答的调用就恢复——在 Brains 里存了新钥匙就不等回答，当场恢复。没有钥匙时 desk 照样雇得了，但房间会说它没法想，不编线索。花了多少按 API 返回的 token 数和你的价格算，页面上写着「about $x」。
-- **Muse、Grok Bot、Instinct**（Brains 里一段直话，2026-10-15 查的）：这三个是个人 agent，没有一个程序能调的 API——Meta 的 Muse 只能反过来接别人的服务（Muse Connector Platform，要 Meta 审核）；xAI 的 Grok Bot（2026-08-11 beta）的文档没有写任何 API、webhook 或 MCP 入口，grok.com（Grok 的聊天产品）能加自定义的 MCP connector，但要公网地址、拒 localhost，而 xAI 的文档没说这些 connector 到不到得了 Grok Bot；Instinct，不论是 Spear Street 的助理，还是 instinct.xyz 的交易 agent app（2026-10-14 才上线，排队中，文档写着 "coming soon"），都还没有接入的路。所以这里一个都没接，也不装作接了。能接的是它们背后的模型：Muse 的模型走 Meta Model API（`https://api.meta.ai/v1`，美国公开预览），Grok 的模型走 xAI API（`https://api.x.ai/v1`），都在上面的 Model APIs 里。反过来的那条路——让这些 agent 通过一个公网的 MCP connector 接进账户——2026-10-15 决定不做，这里没有它（真要做，账户签的是真钱，得有一条通到本机的隧道和一道只读或要批的边界）。
-- **教训：只有你签名才生效**（`account/lessons.ts`，Debrief 页的 **Lessons for the desk**，COOKBOOK 第 6g 条）：晚报的「明天改一件事」、周评的「停掉一件事」、Debrief 在 Desk 自己的交易里找到的亏得超出偶然的切片，还有你自己写的，都成为待定的教训——一句话，能写成数字的再带一条规则（八种：不追已经走远的、不付太重的资金费、不碰太薄的市场、跳过几个纽约时段、只做一边、不碰几个市场、Search 把握度要够、计划守在几条界线内）。待定的什么都不改；你签名采用后，规则成为 Risk 的一道硬检查（在问脑子之前按数字判断），话写进它点名的席位的提示词。规则缺它要的数时放行这条线索，但会说出来。驳回和退役的都留档；每条规则旁边写着它在这些交易上会挡掉几笔、那几笔赚了还是亏了，这是描述，不是检验。检验有两种：教训提出之后、它没生效期间 Desk 新平的交易（被它挡掉的那些平均亏钱超出偶然，就是 Helps），以及实验室里 Desk 带着这条规则在同样的 K 线上跑一次，和不带规则的那次并排比。Desk 每次签名改动真的改变了配置（目标、大脑、章程、席位、自主权、生效的教训），就记一个新版本，每条线索和黑匣子里的交易都带着版本号，Debrief 按版本切开看。
-- **你自己的交易：计划和约束**（`account/plans.ts`，Trade 下单票上的 **Plan**，Debrief 页的 **Your plans** 和 **Your own limits**，COOKBOOK 第 6h 条）：在纸上账户下单之前写一句为什么，可以再写 setup 的名字、把握度、止损、目标和 1R；**Size by risk** 按 1R 算出仓位，票上写出这一单要赢多少比例才保本。计划和订单一起签，黑匣子把它记在那一笔往返上；Debrief 把有计划和没计划的交易并排看，按 R 算，数出止损没守住的和没到目标就平掉的赢单。你平静时给自己签的约束（当日亏损线、连亏冷静期、每天最多几笔、先写计划）由管 agent 的同一扇门执行：只挡纸上账户的新开仓，从不挡平仓；收紧马上生效，放松要等你定的小时数（默认 24）。
-- **模拟机：盲测回放**（`account/practice.ts`，左栏的 **Practice**，COOKBOOK 第 6i 条）：账户从实验室留出期开始之前的两年里随机挑一天（当成考试时，就从留出期里挑，考过的日子永远用掉），把那个币的 1 分钟线按 10 到 50 倍速放出来。日期、币和价位都藏到收盘：日期整周平移到练习日历，价格定基让开盘是 100，市场叫 P7-PERP。你用 Trade 屏同一张票、在一个专用的纸上练习账户里做，每一笔开仓都要带计划；你自己的约束不算它，agent 和 Desk 也不能在那里下单。收盘时撤单、平仓，再和三方在同一段分钟线上比分：1,000 次随机入场（笔数、方向、持仓时长和你一样）、一直持有、Desk。练习的交易进同一本黑匣子，标着第几局，Debrief 切到 Practice 才看，平时不算进去。
-- **执照**（`account/license.ts`，练习页的 **Your license**，COOKBOOK 第 6j 条）：按你在模拟机里的记录，决定你自己下的一笔真钱单子最多能多大。练习和考试分开读，每本五项检查：笔数；扣成本后期望的 95% 下限大于 0；胜过 90% 的随机记录（每局收盘时存下的随机入场合起来算）；九成以上的交易守住计划；说的把握度和实际胜率差不超过 10 个百分点。0 级只能纸上和练习，1 级 $25（练习 100 笔），2 级 $100（再加考试 50 笔），3 级是服务自己的上限（练习 300 笔、考试 100 笔）。只有你签名写进自己的约束，它才管你：生效的是你签的级别和记录显示的级别里较低的那个，升级要等约束里写的小时数，平仓和 agent 的单子都不管。
-- **实时界面**（照一段 perps bot 的直播画面做的）：LIVE 计时 / 会话时长、权益和曲线、到目标的进度条、每条在手线索一张实时卡（入场、现价、TP / SL、未实现）、Trade tape（一笔一根柱）、Big closes（最大的五笔）、房间、名单、脑子的花费。
-- **接口留着**：任何席位都可以换成你自己的 agent（MCP 席位、任何签名的钥匙）——它用 `portfolio_desk` 读自己的章程和房间，用 `portfolio_desk_say` 在房里说话，下单还是 `portfolio_live_order`。Flow 和 Sentiment 只能这样来。怎么用见 [COOKBOOK](../COOKBOOK.md) 第 3b 条。
-
-**Superagent：Desk 在纸上账户上自己交易**（Trade 的 Superagent 模式，`#/trade?mode=superagent`，`ui/superagent.js`，图表是 Regular 的 `ui/chart.js`）。同一个 Desk、同样八个席位，多一个 owner 签的词：纸上自主（`setDesk autonomy {paper: true}`）——开着时，这个 Desk 自己的房里席位在它的纸上账户下单不再变成等你批的卡，直接下，仍在每个席位的交易额度以内；场所不是纸上账户时账户拒绝，场所不再是纸上账户时自动关掉；外来 agent、别的场所、超额度的单照旧。页面从上到下：顶栏照 Hyperliquid 市场栏的写法——Desk 的名字、PAPER、它的纸上账户、会话的状态和计时，然后四个「小字标签在上、数在下」的读数 **Equity · Target · Next cycle · Brain**（权益和自会话开始的涨跌、本周目标和进度、下一轮倒计时、哪个脑子和它的调用次数与花费——有调用什么都没拿回来时加一段 "N not answered"：拒了钥匙、限流、连不上，账户分不出是哪一种，所以只说没回答，不说"拒了"；它是一个带框的按钮，右上写着 **Change ›**，打开 Brains，换脑子一个签名；脑子不能用时框和字变琥珀色、写一个短词（Not ready、Key refused……）和 **Connect a key ›**），名字那一行最后是 **How it works**（一张说明：纸上账户、脑子、每一轮怎么走和硬检查、Autonomy、几个控制、怎么看、鲨鱼），右边是你的控制：Pause / Resume · Cycle now · Autonomy（Cards | Auto on paper）· End，指上去各说一句自己做什么；会话结束后是 "Start again"，场所是纸上账户时写 "Start again · auto on paper"——一个签名重开会话、同时开纸上自主；顶栏下面一条**下一步**：脑子不能用时是 "Next: connect a brain"，否则是三行的 "How to use it"（按 Got it 收起，这个浏览器记得）；然后是**一大张 K 线图**（宽屏上占一行的大半，高是屏幕的 58%、380–620px；手机上整宽），画 Desk 手上那个市场（开着的线索的，否则最新线索的，否则上一轮扫描排第一的；一笔都还没有时，账户自己的纸上账户上画 BTC，股票的 Desk 画 SPY，写着 "no lead yet"；别的场所不猜），手上不止一个市场时图上方各一个按钮，点了看那个，**Follow the desk** 回去。**它的每一笔买卖都落在图上**：入场是那根 K 线、那个价上一个点和一块字（"BUY 0.002 BTC · 61,706.4"，买绿卖红，字在点下面），出场是一个点和一块墨色的字（"SOLD · take-profit · +$1.50"，在点上面），同一笔线索的入场和出场连一条虚线；手上的线索画入场、止盈、止损三条横线；只有最新三笔写字，更早的是点，指上去看字。**它做的每一步都演出来**：图的上方落下一条横幅，一步一条、按发生的顺序——"Search picked DOGE long · confidence 71%"、"Risk cleared …"（仓位、止盈止损、时限）、"Risk turned down …"（和为什么）、"Sniper buys …"、"Bought 0.002 BTC at …"（止盈止损价）、"Closed SOL · take-profit · +$1.50"、"Halted for the day"——买绿底，卖和亏红底，平和拒墨色，等你批的琥珀色，左边是做这一步的席位的脸；成交的点同时落在图上、外面一圈脉冲，止盈止损线从左画过来，平仓的点旁边浮起盈亏。图右边一栏：**Now**（一句大字说它此刻在干什么——"Search is scanning the venue's markets"、"Exit is watching 1 lead"、"Waiting for the next cycle"——右上第几轮、下一轮倒计时，下面一行是手上线索的浮盈和止盈止损价；做不了事时说为什么：No AI brain（账户自己的原因和 **Connect a brain**）、Paused、Halted、Session ended、No session、Not read since…）；**席位的流水线**（Search → Risk → Sniper → Exit 四张脸，各带本会话的数：看了几个市场、清了几个拒了几个、下了几单、平了几单；正在做的那个亮着、跳着，它刚说的话冒个气泡；眼下那笔线索是一枚小牌子，从一格滑到下一格，被拒的划掉，等你批的琥珀色）；**What it did**（一步一行、新的在上：买了、卖了、平了——哪里、为什么、赚亏多少——被拒和为什么、账户拒了、等你批、熔断，各带时间和哪个席位；刚发生的那行亮着落进来）。图下面是**持仓表**（Hyperliquid 的样子：市场、方向、数量、入场、现价、PNL、止盈、止损、开仓时间、状态；上面写今天平了几笔、赚亏多少）；最下面一块面板、四个 tab，一次只看一个（这个浏览器记得上次看的，方向键切换）：**Equity**（权益曲线，每笔平仓一根柱）· **Seats**（八张角色卡：席位状态、它最新一句话打字出现、它的一个真数字）· **Room**（房间）· **Rules**（规则和流水线：硬检查的真数字，正在做的那一步亮着）。每秒读一次 `GET /api/account/desk/feed?since=<seq>`。
-
-**第一次用 Superagent**：Trade 顶栏按 Superagent，没雇过 Desk 时是启动面板，最上面一张三步的清单，从账户实时读、做完一步打一个 ✓：① **一个纸上账户**（没有就按 "Open a paper account"，起名、写一笔纸上美元，什么都不用接）；② **一个脑子**（打开 Brains，选一家，把钥匙粘进去按 Save the key，回答那一句 "Save the <那一家> key?" 按 Sign and save；还不能用的每一家旁边一个 **Type its key ›**，本机的 Ollama、vLLM 写 **Set it up ›**——它们不用钥匙，选它时写上模型名就行；钥匙写进 `~/.openpaper/credentials/brains/<家>.json`，不用重启；也可以自己写那个文件，旧的 `credentials/anthropic/api-key.json` 照旧读；没放好时清单下面是服务给的「怎么修」：一句话、文件的绝对路径和一条照抄就能跑的命令，各带 Copy）；③ **Start**：写一句它这周要做什么，按 **"Start the superagent"**，依次签：放每个房里席位进来、给交易席位额度、雇 Desk、开纸上自主（"What Start signs" 里逐条列着）。表单的每个数在 `catalog.bounds` 的范围外就用字拒，不悄悄改成别的数。第一轮在雇好几秒后（`FIRST_CYCLE_MS`），时钟的下一跳不会抢在它前面；雇的那一个签名里也可以直接带上纸上自主（`setDesk hire` 的值里 `autonomy: {paper: true}`，只在纸上账户收），这样从第一刻起它就是自主的。自主关着时（Cards），它清过的线索在 Guard 下变成等你批的卡，图表上面一条 **Waits for you** 把这些卡列出来，就地批或拒。脑子的调用按次花你的钥匙的钱；开始是你按的。
-
-## 给 agent 的接口
-
-- **MCP**：`npm run portfolio:mcp`（stdio；席位持自己的钥匙，每次写都签名）。接 Claude Code：Agents 页的 "Copy setup command"。真实账户上的工具：
-  - 读：`portfolio_account` · `portfolio_venues`（从用户所在的网络自动判断哪些场所能接，各用场所自己的话）· `portfolio_overview` · `portfolio_holdings` · `portfolio_history` · `portfolio_asset` · `portfolio_candles` · `portfolio_book` · `portfolio_financials`（一家美股公司在 SEC 的档案：是谁、财年、注册地、最新年报季报和最近十份申报，加上它申报的财务数字）· `portfolio_news`（出版方自己的标题源：当天的、一个主题的 markets · macro · crypto · companies、带几个词的、一只美股自己的；每条标题、链接、时间、来源，不读正文）· `portfolio_calendar`（Nasdaq 的日历：economic · earnings · dividends · splits · ipos，`from`/`to` 最多七天，`symbol` 一只股票；一致预期和公布值照 Nasdaq 写的）· `portfolio_world`（终端一屏的四块板，无参数：股指（Cboe，晚 15 分钟）、美国国债收益率曲线（财政部，一周 / 一月 / 一年前的曲线和利差）、外汇（Kraken 实时九对，其余是 ECB 定盘价换成对美元）、商品（Hyperliquid xyz 永续的预言机价）；每个数写明是谁的、晚多少，`sources` 谁答了、`missing` 谁没答）· `portfolio_options`（一只美股、一个 Cboe 指数或 BTC / ETH 的期权链：`symbol` 必填，`expiry` 选一个到期日，默认最近的；每个到期日的平值 IV、看跌 / 看涨比、最大痛点、跨式、偏斜，选中到期日平值附近的行和微笑；IV 和希腊字母是场所自己的）· `portfolio_security`（一只美股或 ETF 自己的页，`symbol` 必填：公司、Nasdaq 的最新成交、关键数、分析师、财报、股息、空头、内部人和机构，每个数照 Nasdaq 写的）· `portfolio_screener`（Nasdaq 的整张表按规则筛：`sector` / `industry` / `country`、`capMin` / `capMax`、`priceMin` / `priceMax`、`changeMin` / `changeMax`、`volumeMin`、`ipoFrom` / `ipoTo`、`q`、`sort` / `dir`、`limit`；答复带每个板块和行业按市值的地图）· `portfolio_analytics`（`markets` 必填，`venue|symbol` 逗号分开最多八个，第一个是 beta 的基准；`interval` 1h · 4h · 1d · 1w，`range`；答复 `comp` · `corr` · `hvg` · `beta` · `seag`，全是对场所自己 bar 的算术）· `portfolio_risk`（无参数：自己的持仓称一称——`lines`、`byClass`、`byVenue`、`concentration`、`portfolio`（波动率、VaR、期望损失）、`benchmarks`、`drawdown`、`stress`、`unpriced`）· `portfolio_explore` · `portfolio_receive` · `portfolio_earn` · `portfolio_watchlist` · `portfolio_statement`
-  - 下单和动钱：`portfolio_live_markets` · `portfolio_live_compare` · `portfolio_live_positions` · `portfolio_live_preview` · `portfolio_live_order` · `portfolio_live_batch` · `portfolio_live_amend` · `portfolio_live_cancel` · `portfolio_live_close` · `portfolio_live_leverage` · `portfolio_live_move` · `portfolio_live_earn` · `portfolio_pay`
-  - 纸上交易：开一个 Paper account（什么都不用接；`live:paper`，可以开多个；美股、crypto、RWA、预测市场都能练，永续能设杠杆）或接上 "Hyperliquid · paper"（它的测试网）后，`portfolio_account` 里那家标 `paper: true`，同一套下单工具（`portfolio_live_markets`、`portfolio_live_order`——含 `trailing_stop` 和 `takeProfit` / `stopLoss`——、`portfolio_live_leverage`、`portfolio_live_positions`、`portfolio_history {paper: true}`……）在它上面演练——纸上账户按账户自己声明的规则成交，测试网真的发到测试网，都不是真钱；门一样（额度、Guard / Beast），只是不受 `--live-cap`；比价不比它；答复里的订单和持仓带 `paper: true`
-  - 和 owner 说话、等结果：`portfolio_report` · `portfolio_ask` · `portfolio_approval` · `portfolio_wait`
-  - 记忆（账户替 agent 记着，换会话、重启都在）：`portfolio_memory`（读：它记得的你、等你答的、来自额度的、别的 agent 分享的、你的开关）· `portfolio_remember` · `portfolio_forget`（它学到的，用它的钥匙签）
-  - Desk（账户自己的 agent 团队，见下面「Desk」）：`portfolio_desk`（读：这把钥匙在 desk 上的席位和章程、目标、漏斗、owner 已采用的教训、房间最近几行）· `portfolio_desk_say`（在房间里说一句，用它的钥匙签：只是话，不是权限）
-  - 复盘和教训：`portfolio_debrief`（读：纸上交易为什么赚、为什么亏——成本占多少、能不能反着做、各个切片；还有 Desk 的教训：它的交易里提出的候选、留档的每条教训，以及每条规则对这些交易会有什么影响。教训只有 owner 签名采用才生效：规则成为 Risk 的硬检查，话写进对应席位的提示词；agent 想提一条，就在 Desk 的房间里说；还有你自己的交易：计划守得怎样（`debrief.plans`），和你给自己定的约束（`self`））
-  - 回测（见 [account.md](account.md) 的「回测」）：`portfolio_backtest`（一个策略在录下的 K 线上用纸上账户的规则跑一遍，旁边是买入持有；只能跑在留出期之前，每一次都记进试验台账，带上这个席位；回答里有 Sharpe 按试过的策略数 deflate 之后的概率和 PBO）· `portfolio_backtest_walk`（walk-forward：网格在每一折的过去挑 Sharpe 最高的，放到这一折上跑，各折接起来；每一次都记进台账）· `portfolio_backtest_screen`（出场规则扫描：一次 Desk 回测的入场，用一组止盈 × 止损 × 时间上限按纸上账户的规则快速算一遍，最好的那条按试过的策略数 deflate，再在随机入场上重扫；每条规则都记进台账）· `portfolio_backtests`（读：留出期、台账和它的哈希链、最近的回测；给 `id` 读一次回测的全部成交和曲线）。desk 本身的回测只由 owner 签名（页面上的 The desk）或在终端跑，agent 读得到它的结果
-  - 只在模拟对账单（`--classic`）和测试里：`portfolio_read` · `portfolio_markets` · `portfolio_quote` · `portfolio_openness` · `portfolio_execute` · `portfolio_order` · `portfolio_transfer`
-- **HTTP**：只读接口 `GET /api/account/...`，只听 127.0.0.1；表在 [docs/account.md](account.md)。
-- **给做 Agent 模块的团队**：[COOKBOOK](../COOKBOOK.md) 的「11b · Agent 模块接口」。
-
-## 诚实边界
-
-- Account 的真实连接和真钱写入只对着替身测过：这里没有用过一把真钥匙、一个真钱包。接你自己的账户之前先用只读钥匙；要写，先用小上限、小金额。
-- 真的读过的，是不带钥匙的公开数据：交易所行情、Kalshi、Polymarket、Polymarket US 的公开 gateway、pre-IPO 价格、LI.FI 报价。
-- Pre-IPO 是估值合约，不是股份；各家谁能交易由它们自己定，账户只转述。
-- 本机文件系统是信任边界：能写 home 的人能改账本和钥匙文件；同一系统用户下的 agent 席位之间不隔离，记忆文件也一样（MCP 席位只读它该读的，「别的 agent 也能读」关着时不读别人的，是约定，不是墙）。
-- 记忆挡钥匙、密钥、助记词、IP 靠的是一组模式，换个写法的秘密它认不出；agent 自己写的话账户不审，只保证它们不变成权限。
-- Brains 挡钥匙进模型那一格、进 base URL、进 Desk 的话，靠的也是形状（`keyShaped`、`prefixedKey`）：不到 32 个字符、又没有认得的前缀的钥匙（比如一串 24 位的字母数字）粘进模型那一格认不出，钥匙那一格同时填着同一把钥匙时才抓得住；Desk 的话里只拦自报家门的钥匙，好让 `0x` 地址和交易哈希过。页面上填的钥匙落地是 `credentials/brains/<家>.json`，同一个系统用户下的程序都读得到，和别的钥匙文件一样。
-- **Paste an API key 认钥匙靠的是形状加一次真调用**：形状是 2026-10-21 读的，各家会改；DeepSeek、Kimi 的钥匙形状各家文档没写，所以普通的 `sk-` 钥匙会依次给几家看到；Together 的新前缀只在公开代码里见过；Google 新的 `AQ.` 钥匙在 2026 年 10 月被它自己的模型列表拒（Google 还没修），这时连不上的话照实说；xAI 只在访问列表是空的时候拦，列表里有东西就交给模型列表去说。挑的「最好的模型」也是当天读的各家推荐，模型会换：挑的那个写在签名之前的那句话里，不想要就换。
-- 场所的地区规则是场所的，这里只表现为一扇关着的门，不提供绕过的办法。
-- 托管、牌照、出了错谁赔，不是软件，这里没有。
-
-## 更早的模拟演示
-
-| 命令 | 是什么 |
+| 命令 | 做什么 |
 |---|---|
-| `npm run demo` | 十一个场景：agent 走进四个模拟市场，每笔写都停在一张卡上（`--live --hold` 打开控制台 :4800） |
-| `npm run wallet` | 智能 agent 钱包骨架（:4810） |
-| `npm run account -- --classic` | 原来的模拟对账单：拆单、跨链报价、预测市场；`npm run portfolio:demo` 无头跑它的十个 beat |
+| `npm run account` | 账户，在 http://127.0.0.1:4820（`npm run portfolio` 一样） |
+| `npm run account:check` | 你的网络能接到什么，每家用自己的话；可以直接贴给别人 |
+| `npm run account:service -- <command>` | macOS 上把账户装成后台服务 |
+| `npm run account:replay -- --day 2026-10-01` | 录下的 Hyperliquid 一天（tardis.dev；每月一号免费）在纸上账户上让 Desk 回放一遍，几秒钟 |
+| `npm run account:backtest -- --markets perp:BTC,perp:ETH` | 一个策略在录下的 K 线上按纸上账户自己的规则跑，旁边是买入持有。每一次都是试验台账（哈希链）的一行，deflate 下一次的 Sharpe，最近 90 天留出（`--holdout`、`--trials`、`--set-holdout`）；`--grid fast=10,20 --folds 4` walk-forward；`--screen RUN` 扫一次 Desk 回测的出场；`--strategy desk` 跑账户自己的 Desk，`--rule` 让它守一条教训的规则 |
+| `npm run account:demo` | 账户的十四个 beat，无头跑 |
+| `npm test` | 整套：约 210 个文件、3,300 个用例，其中三十二个文件是攻击复现；串行，因为模拟场所绑定固定端口 |
+| `npm run typecheck` | `tsc --noEmit`，strict |
+| `npm run site` · `npm run site:numbers` | 本地预览公开介绍页（`site/`，GitHub Pages，推到 main 自动发布）；从仓库重算它的数字 |
+| `npm run demo` · `npm run control-room` · `npm run wallet` | 更早的模拟演示（[earlier-demos.md](earlier-demos.md)） |
 
-## 网站
+## 更多
 
-公开介绍页：[linqizhe07.github.io/openpaper](https://linqizhe07.github.io/openpaper/)（源码在 `site/`，GitHub Pages，推到 main 自动发布）。页上的数字由 `npm run site:numbers` 从仓库算出来写进 `site/data/numbers.json`，过期时 `test/unit/site-numbers.test.ts` 失败、发布停下；行情由访客自己的浏览器直接从 Hyperliquid、Kraken、Coinbase、OKX、Polymarket 的公开接口读，读不到的不画；截图来自替身账户，图下写明。本地预览 `npm run site`（http://127.0.0.1:4870/buyer-agent-demo/）。
-
-## 文档
-
-- [COOKBOOK.md](../COOKBOOK.md)：每件事怎么做、会看到什么、什么会被拒；能直接跑的示例在 `examples/account/`。
-- [docs/account.md](account.md)：Account 的全部细节：三层协议、每个场所的接法、下单动钱 Earn 的规矩、RWA、永续、Pre-IPO、页面和接口表、MCP 工具表、审阅留下的、这一层的诚实边界、代码地图。
-- [docs/earlier-demos.md](earlier-demos.md)：十一个场景、插件合同、钱包骨架、模拟对账单、整个仓库的诚实边界、回灌 Kairos、目录。
-
-## 目录
-
-```
-src/portfolio/    Account（:4820）：account/ 签名的门与账本 · live/ 真实连接 · public/ 页面 · mcp.ts agent 面
-src/wallet/       智能 agent 钱包骨架（:4810）
-src/agent/ src/contract/ src/venues/ src/plugins/ src/runner/ src/control-room/   十一个场景的演示
-test/             unit · attack（攻击复现，必须失败）· standin（替身账户）· e2e
-docs/             细节
-site/             公开介绍页（GitHub Pages）；scripts/ 它的数字和本地预览
-```
+- 第二个独立的账户：`npm run account -- --port 4825 --home ~/openpaper-second`；`--fresh` 从零开一个。
+- 再往下读：[导览](tour.zh.md)（页面、谁能让钱动、能接什么、记忆、Desk、给 agent 的接口，一部分一节）、[COOKBOOK](../COOKBOOK.md)（每件事怎么做）、[account.md](account.md)（每一部分怎么做出来的）、[earlier-demos.md](earlier-demos.md)（更早的模拟演示）。
+- 改了什么在 [CHANGELOG.md](../CHANGELOG.md)，每个合并的 PR 一行。你跑的是哪个版本在 Settings → Version、`npm run account` 打印的第一行和 `GET /api/now`。最新的 release 和 `main` 都在维护。
+- 问题和 bug：[GitHub issues](https://github.com/linqizhe07/openpaper/issues)。
 
 ## 许可
 
-Apache-2.0（仓库根目录的 [LICENSE](../LICENSE)），版权 2026 Linqi Zhe：可以用、改、再分发，包括放进你卖的东西里，只要许可证和声明跟着走；不提供任何担保。要贡献先读 [CONTRIBUTING.md](../CONTRIBUTING.md)；安全问题按 [SECURITY.md](../SECURITY.md) 私下报，不要开公开的 issue。
+Apache-2.0：见 [LICENSE](../LICENSE)。版权 2026 Linqi Zhe。可以用、改、再分发，包括放进你卖的东西里，只要许可证和声明跟着走；不提供任何担保。
+
+要贡献先读 [CONTRIBUTING.md](../CONTRIBUTING.md)；安全问题按 [SECURITY.md](../SECURITY.md) 私下报，不要开公开的 issue。
+
+openpaper 不是投资建议。真钱交易风险自负；纸上的钱不是钱。

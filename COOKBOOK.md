@@ -1,6 +1,6 @@
 # Account Cookbook
 
-[README](README.md) 是英文的简短说明，[docs/README.zh.md](docs/README.zh.md) 是中文的一页总览，[docs/account.md](docs/account.md) 讲这一层**是什么**的全部细节，这里讲**怎么做**。每条做法写的是：想做什么、怎么做、会看到什么、什么会被拒。
+[README](README.md)（中文版 [docs/README.zh.md](docs/README.zh.md)）讲怎么跑、怎么接、怎么开发，[docs/tour.zh.md](docs/tour.zh.md) 按部分讲页面、门、场所、记忆、Desk 和接口，[docs/account.md](docs/account.md) 讲这一层**是什么**的全部细节，这里讲**怎么做**。每条做法写的是：想做什么、怎么做、会看到什么、什么会被拒。
 
 分两半。**上半是你真实的账户**：`npm run account` 起的服务，一个桌面钱包页面（`/`），叫 Account，样子是 Demo v2 画布第七轮的：左边一条 rail（Markets · Trade · Agents），rail 最下面的 Account 钱包打开三页 Portfolio（你有什么）· Venues（接上的账户）· Memory（agent 记得什么）。**下半是模拟账户里的规则**：场所之间的路由、float、替 agent 付 API（x402、MPP、AP2）、地址簿、Unified、可插的模拟场所。这些只跑在进程里（`examples/account/headless.ts` 从头走一遍，`npm run account:demo` 的十四个 beat 带断言，外加测试）；只认真实账户的服务器对这类指令一律回 `this account holds real accounts only`。模拟里的钥匙从源码里的标签派生，是公开的。
 
