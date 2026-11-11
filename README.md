@@ -1,10 +1,13 @@
 <p align="center"><img src="site/img/og.png" alt="openpaper — the airport for agents and money" width="720"></p>
+<p align="center"><b>English</b> · <a href="docs/README.zh.md">中文</a></p>
 
 # openpaper
 
 **Your trading accounts on one page, and AI agents that trade only inside the limits you sign.**
 
 openpaper runs on your own computer. It puts your exchanges, brokers, wallets and prediction markets on one page, gives you a paper account with live prices to practise on, and lets AI agents — its own trading desk, or yours over MCP — trade, move and pay inside limits you sign. Website: [linqizhe07.github.io/openpaper](https://linqizhe07.github.io/openpaper/)
+
+> **中文** · openpaper 在你自己的电脑上跑：把你的交易所、券商、钱包和预测市场账户放在一页上，给你一个用真实行情的纸上账户练手，让 AI agent 只在你签过名的额度里交易、挪钱、付款。中文详版在 [docs/README.zh.md](docs/README.zh.md)，每件事怎么做在 [COOKBOOK.md](COOKBOOK.md)，开发与测试见下面的 [Develop and test](#develop-and-test)（中文版的同一节是「开发与测试」）。
 
 **What it does**
 
@@ -41,7 +44,7 @@ openpaper runs on your own computer. It puts your exchanges, brokers, wallets an
 - [Options and environment](#options-and-environment)
 - [Project structure](#project-structure)
 - [Tech stack](#tech-stack)
-- [Scripts and tests](#scripts-and-tests)
+- [Develop and test](#develop-and-test)
 - [More](#more)
 - [Changelog and versions](#changelog-and-versions)
 - [License](#license)
@@ -211,7 +214,20 @@ docs/ COOKBOOK.md      the long descriptions, in Chinese
 
 Node 22, TypeScript (strict), Express, ccxt, viem, zod, the MCP SDK and vitest. The page is plain HTML, CSS and JavaScript served as files, with no framework and no build step; its fonts are self-hosted.
 
-## Scripts and tests
+## Develop and test
+
+Node 22 or newer (CI runs 22), Git and `npm ci` — nothing else: no build step, no database. The page is plain files, so an edit under `src/portfolio/public/` shows on a reload; an edit to the server shows on a restart.
+
+```bash
+npm ci                                          # once
+npm run typecheck                               # tsc --noEmit, strict — vitest does not type-check, so run this before every commit
+npx vitest run test/unit/live-paper.test.ts     # one file; -t "a few words" runs one case
+npm test                                        # the whole suite, serial (the simulators bind fixed ports): 10–20 minutes
+npx tsx test/standin/ui-standin.ts --port 4821  # the stand-in account: the same page and door, made-up venues, no network, no money
+npm run site:numbers                            # after a new test file: the public page's numbers are recomputed, and a test pins them
+```
+
+A few things the suite pins, so a change does not surprise you: a new `ui/*.js` goes on the list in `page-scripts.test.ts`; a new route goes in `server.ts`'s header comment; a new MCP tool goes in `mcp.ts`'s header, this README's and `docs/README.zh.md`'s counts and `site/index.html`; every pull request adds its line to [CHANGELOG.md](CHANGELOG.md). CI runs the type check and the suite on every push and pull request.
 
 | Command | What it does |
 |---|---|
@@ -220,12 +236,10 @@ Node 22, TypeScript (strict), Express, ccxt, viem, zod, the MCP SDK and vitest. 
 | `npm run account:service -- <command>` | The account as a background service on macOS |
 | `npm run account:replay -- --day 2026-10-01` | A recorded day of Hyperliquid (tardis.dev; the first of each month is free) replayed through the desk on a paper account, with a script for a brain: how the desk's mechanics fare on a real day's prices, in seconds |
 | `npm run account:backtest -- --markets perp:BTC,perp:ETH` | A strategy (buy and hold, a moving-average cross, time-series momentum, a funding carry, or with `--strategy desk` the account's own desk and its seats) played over recorded bars through the paper account itself, its fills, fees, funding and liquidations by the paper account's own rules, beside a buy-and-hold. Every run is a row of a hash-chained trials ledger that deflates the next run's Sharpe, and the latest 90 days are held out: `--holdout` runs on them, `--trials` prints the ledger, `--set-holdout` moves it. `--grid fast=10,20 --folds 4` walks forward: a grid's best on each fold's past, tried on the fold (also on the page, and for agents as `portfolio_backtest_walk`). Every kept run is set beside 1,000 tries of random entries with its own exits, and `--screen RUN` sweeps a desk run's exits fast over its bars, every rule counted in the ledger (also on the page, and for agents as `portfolio_backtest_screen`). `--strategy desk --rule '{"kind":"chase","maxPct":8}'` holds the desk to a lesson's rule: a strategy of its own, set beside the same run without it |
-| `npm test` | The suite: about 180 files and 3,000 cases, among them thirty-one attack files, serial because the simulators bind fixed ports |
+| `npm test` | The suite: about 210 files and 3,300 cases, among them thirty-one attack files, serial because the simulators bind fixed ports |
 | `npm run typecheck` | `tsc --noEmit`, strict |
 | `npm run site` · `npm run site:numbers` | Preview the public page; recompute its numbers from the repository |
 | `npm run demo` · `npm run control-room` · `npm run wallet` | The earlier demos |
-
-CI runs the type check and the suite on every push and pull request.
 
 ## More
 
