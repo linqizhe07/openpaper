@@ -1,7 +1,14 @@
 {
-  "asOf": "2026-11-10",
+  "asOf": "2026-11-11",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 74,
+      "title": "The README in two languages, with a Develop and test section",
+      "mergedAt": "2026-11-11T13:29:12Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/74",
+      "branch": "docs/readme-bilingual"
+    },
     {
       "number": 73,
       "title": "The desk reads the news and the calendar, and the owner asks it (ASK)",
