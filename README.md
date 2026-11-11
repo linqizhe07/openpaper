@@ -5,30 +5,21 @@
 
 **Your trading accounts on one page, and AI agents that trade only inside the limits you sign.**
 
-openpaper runs on your own computer. It puts your exchanges, brokers, wallets and prediction markets on one page, gives you a paper account with live prices to practise on, and lets AI agents — its own trading desk, or yours over MCP — trade, move and pay inside limits you sign. Website: [linqizhe07.github.io/openpaper](https://linqizhe07.github.io/openpaper/)
-
-> **中文** · openpaper 在你自己的电脑上跑：把你的交易所、券商、钱包和预测市场账户放在一页上，给你一个用真实行情的纸上账户练手，让 AI agent 只在你签过名的额度里交易、挪钱、付款。中文详版在 [docs/README.zh.md](docs/README.zh.md)，每件事怎么做在 [COOKBOOK.md](COOKBOOK.md)，开发与测试见下面的 [Develop and test](#develop-and-test)（中文版的同一节是「开发与测试」）。
+openpaper runs on your own computer. It puts your exchanges, brokers, wallets and prediction markets on one page, gives you a paper account with live prices to practise on, and lets AI agents — its own trading desk, or yours over MCP — trade, move and pay inside limits you sign. There is no server in the middle, no account to create and no analytics: your computer reads public prices and talks to the venues directly. Website: [linqizhe07.github.io/openpaper](https://linqizhe07.github.io/openpaper/)
 
 **What it does**
 
-- **One page for your accounts.** Exchanges (93 by API key), Alpaca and Robinhood, Kalshi and Polymarket, Hyperliquid, MetaMask and other wallets: holdings, orders, positions, net worth over time, and a statement you can filter and export.
-- **A paper account with live prices.** Crypto, US stocks, perpetuals and event contracts on paper money: market, limit, stop, stop-limit and trailing-stop orders, brackets, US sessions kept honestly, funding and liquidation on perpetuals — and orders worked over time: a TWAP, a VWAP sized by the market's own volume, an iceberg shown a part at a time, each with its transaction-cost analysis (the arrival, the average, the shortfall and the cost against the market's VWAP in basis points) written on it as it fills.
-- **Markets.** The day in six figures and the US session clock, every market at every venue that serves your network, ★ to watch and 🔔 to be told when a price crosses a line — or a day's move, volume or funding passes one, a market is in the news, or a share is a week from reporting — a command line (⌘K: `AAPL DES`, `BTC GP`, `MOST`, `HELP`), and a US company's financials as it filed them with the SEC.
-- **News.** The headlines the publishers themselves put out in their feeds — the Federal Reserve, the ECB and the SEC; CNBC, MarketWatch, the Wall Street Journal, the BBC and Nasdaq; CoinDesk, Cointelegraph, The Block and Decrypt — the day's list, a topic's, or a share's own (`NVDA CN`): a title, a link to the publisher's page and a time, nothing more, and no article read.
-- **The calendar.** What Nasdaq's own pages schedule, a day at a time: the economic releases with their New York time, the consensus and what came out; who reports earnings, before the open or after the close, with the EPS the analysts expect; the shares going ex-dividend; the splits; the month's IPOs by stage (`ECO`, `ERN`, `DVD`, `SPLT`, `IPO`).
-- **The world.** The four boards a terminal keeps on one screen, each from a public source read without a key and each figure said with whose it is: the equity indices (Cboe's quotes, fifteen minutes behind), the US Treasury's own yield curve beside the curves a week, a month and a year before with its spreads, the currencies (Kraken's live pairs, the ECB's fixing for the rest) and the commodities as the oracle prices of Hyperliquid's xyz perpetuals (`WEI`, `GC`, `FXC`, `GLCO`).
-- **Options.** A listed chain as its venue publishes it — Cboe's delayed quotes for a US share or one of its indices (SPX, XSP, NDX, RUT, VIX), Deribit's live summary for BTC and ETH — and the figures a terminal reads off it: every expiry's at-the-money IV, put/call by open interest and volume, max pain, the at-the-money straddle and the 25-delta skew; one expiry's strikes around the money with the venue's own greeks, the smile and the term structure (`OMON`, `SKEW`).
-- **Monitor.** One screen of tiles you compose, as a terminal's launchpad: a market with its price and its day's line, a board of the World page, a topic's headlines, today's calendar, an option chain's nearest expiry in figures — each drawn from the read its page makes, the layout in the address and remembered in this browser, three presets to start from (`MON`; `AAPL MON` adds a market).
-- **A share's page.** What Nasdaq's own pages say of one US share, as written: the company and its description, Nasdaq's last sale, the key figures (ranges, volumes, market cap, dividend, P/E, PEG), the analysts' consensus and targets with a year of history, the earnings surprises and the estimates ahead, the dividends paid, the short interest, the institutions and the insiders (`AAPL DES`, `ANR`, `EE`, `DVD`, `SI`, `HDS`).
-- **The screener.** Every US-listed share as Nasdaq lists it, screened by sector, industry, country, market cap, price, the day's change, volume, IPO year or words, sorted as you ask; and the sector map — every sector a tile sized by market cap and coloured by the day, opening into its industries (`EQS`, `IMAP`).
-- **Analytics.** A few markets over the bars the account already reads: rebased together with each one's return, volatility, drawdown and Sharpe; the correlation of their returns; rolling historical volatility; each one's beta, correlation and alpha to the first; the average return by calendar month and weekday — arithmetic over the venues' own bars, no forecast (`COMP`, `CORR`, `HVG`, `BETA`, `SEAG`).
-- **Risk.** Your own lines weighed and measured, under the Account: the exposure (net, gross, long, short, by class, by venue, how concentrated), each line's volatility over a year of daily bars and its share of the whole, the portfolio's volatility and one-day value at risk read off its own days, the betas to SPY and BTC, the net worth's drawdown, what a flat move would be — arithmetic over your balances and the venues' bars, no forecast (`RISK`).
-- **The world on perpetuals.** The contracts Hyperliquid's HIP-3 dexes deploy on shares, indices, commodities, currencies and rates — 155 live today — listed among the perpetuals by their ticker with the dex's category, charted from Hyperliquid's own bars and book, and tradable on paper like any perpetual; each is its dex's own contract on an oracle's price, said so, not the share or the commodity itself.
-- **A trading terminal.** Its own candle chart with years of history, an order book and a trades tape fed by the venues' streams, and the account's own lines — entries, stops, resting orders — drawn on the chart.
-- **The superagent.** A desk of AI agents that trades the paper account by itself — reading the day's headlines and releases before it scans and a lead's own news before it clears, and answering your `ASK` from the floor's own figures — and plays each step as it happens, on a key from any of thirteen model providers, or a model running on your machine.
-- **Your own agent over MCP.** Forty-nine tools to read, trade, move, pay, earn, ask and remember — each inside the limit you signed for that seat.
+- **One page for your accounts.** 93 exchanges by API key, Alpaca and Robinhood, Kalshi and Polymarket, Hyperliquid, MetaMask and other wallets: holdings, orders, positions, net worth over time, and a statement you can filter and export.
+- **A paper account with live prices.** Crypto, US stocks, perpetuals and event contracts on paper money: market, limit, stop, stop-limit and trailing-stop orders, brackets, US sessions kept honestly, funding and liquidation on perpetuals, and orders worked as a TWAP, a VWAP or an iceberg with the transaction-cost analysis written on each.
+- **Markets.** Every market at every venue that serves your network; ★ to watch, 🔔 to be told when a price crosses a line, a day's move, volume or funding passes one, a market is in the news or a share is a week from reporting; a command line (⌘K: `AAPL DES`, `BTC GP`, `MOST`, `HELP`).
+- **News, calendars, the world, options.** The publishers' own headline feeds (`TOP`); Nasdaq's economic, earnings, dividend, split and IPO calendars (`ECO`, `ERN`); equity indices, the Treasury yield curve, currencies and commodities (`WEI`, `GC`, `FXC`, `GLCO`); option chains from Cboe and Deribit with each expiry's IV, put/call, max pain and skew (`OMON`, `SKEW`).
+- **A share, the screener, analytics, risk.** A US share as Nasdaq's own pages describe it (`DES`, `ANR`, `SI`, `HDS`); every US-listed share screened, and a sector map (`EQS`, `IMAP`); a few markets rebased, correlated and measured against each other (`COMP`, `CORR`, `HVG`, `BETA`, `SEAG`); your own lines' exposure, volatility, value at risk and drawdown (`RISK`). Arithmetic over the venues' own figures, no forecast.
+- **Monitor.** One screen of tiles you compose — a market, a board, a topic's headlines, today's calendar, an option chain — the layout in the address (`MON`).
+- **The world on perpetuals.** Hyperliquid's HIP-3 contracts on shares, indices, commodities, currencies and rates, listed among the perpetuals, charted and tradable on paper; each its dex's own contract on an oracle's price, said so.
+- **A trading terminal.** A candle chart with years of history, an order book and a trades tape from the venues' streams, and the account's own entries, stops and resting orders drawn on the chart.
+- **The superagent.** A desk of AI agents that trades the paper account by itself, reads the day's headlines and releases before it acts, answers your `ASK`, and plays each step as it happens — on a key from any of thirteen model providers, or a model running on your machine.
+- **Your own agent over MCP.** Forty-nine tools to read, trade, move, pay, earn, ask and remember, each inside the limit you signed for that seat.
 - **You sign what matters.** Every order, movement and limit is signed by a key your browser cannot export; Guard holds each request for your yes, Beast lets agents act inside their limits; a cap on every order; a hash-chained log of everything.
-- **Nothing in the middle.** No server, no account to create, no analytics: your computer reads public prices and talks to venues directly, so your own network decides what you see.
 
 ## Contents
 
@@ -46,7 +37,6 @@ openpaper runs on your own computer. It puts your exchanges, brokers, wallets an
 - [Tech stack](#tech-stack)
 - [Develop and test](#develop-and-test)
 - [More](#more)
-- [Changelog and versions](#changelog-and-versions)
 - [License](#license)
 
 ## The page
@@ -66,17 +56,17 @@ npm ci
 npm run account
 ```
 
-`npm ci` may warn that a few packages' install scripts were skipped (npm 11.19 and newer ask before running them): nothing here needs them, so go on. Open **http://127.0.0.1:4820** and type the pairing code the terminal printed. That browser is now the owner: everything that moves money is signed by it. `npm run account -- --help` lists every option.
+Open **http://127.0.0.1:4820** and type the pairing code the terminal printed: that browser is now the owner, and everything that moves money is signed by it. `npm run account -- --help` lists every option. (`npm ci` may warn that a few packages' install scripts were skipped — npm 11.19 and newer ask first; nothing here needs them.)
 
 Then, on the page:
 
 1. **Start a paper account** — $10,000 of paper money, live public prices, nothing to connect.
 2. **Trade** — buy or sell crypto, US stocks, perpetuals and event contracts on paper.
-3. **Superagent** (Trade → Superagent) — paste an API key and press **Start the superagent**. The desk trades your paper account by itself: every trade lands on the chart, and each step it takes is played as it happens.
-4. **Watch** (Markets) — the day in six figures and the US session clock at the top; ★ a market to watch it, 🔔 to be told when it crosses a price, moves or trades or funds past a figure on the day, is in so many new headlines, or (a US share) reports within the week — on the page, and as a notification if you ask. Your agents read both. ⌘K or `/` is the command line: a search, or a function — `AAPL DES` opens Apple's page, `BTC GP` its chart, `MOST` the busiest markets, `TOP` the day's headlines, `ECO` today's economic releases, `HELP` every function. **News** (Markets › News) is the publishers' own headlines — the central banks, the markets press, crypto — and a share's drawer carries its own. Open a US stock and its **Financials** are there as the company filed them with the SEC — start the account with `SEC_CONTACT` set to your email, since the SEC asks every reader to say who they are.
-5. **Backtest** — try a strategy (buy and hold, a moving-average cross, momentum, a funding carry) on recorded bars through the same paper account's rules, beside buying and holding the same markets. Every run is counted, its Sharpe deflated by everything tried before it, and the latest 90 days are held out: only you look at them, by signature. Walk forward picks a strategy's numbers fold by fold; The desk plays the account's own desk over the bars, by your signature.
+3. **Superagent** (Trade → Superagent) — paste an API key and press **Start the superagent**: the desk trades your paper account by itself, every trade lands on the chart, and each step is played as it happens.
+4. **Watch** (Markets) — ★ a market to watch it, 🔔 to be told; ⌘K or `/` is the command line (`AAPL DES`, `BTC GP`, `TOP`, `ECO`, `HELP`). A US stock's **Financials** come from its SEC filings, and the SEC asks every reader to say who they are: start the account with `SEC_CONTACT` set to your email.
+5. **Backtest** — a strategy over recorded bars through the same paper account's rules, every run counted, its Sharpe deflated by everything tried before it, and the latest 90 days held out for you alone.
 
-The superagent needs an AI model to think with. Paste a key from any of Anthropic, OpenAI, DeepSeek, Gemini, xAI, Kimi, Qwen, OpenRouter, Groq, Together or Meta — the account tells whose key it is and picks that provider's best model — or run a model on your machine with Ollama or vLLM (no key). Its calls are billed to your key.
+The superagent needs a model to think with: a key from Anthropic, OpenAI, DeepSeek, Gemini, xAI, Kimi, Qwen, OpenRouter, Groq, Together or Meta — the account tells whose key it is and picks that provider's best model — or Ollama or vLLM on your machine, with no key. Its calls are billed to your key.
 
 ## Connect your real accounts
 
@@ -89,7 +79,7 @@ The superagent needs an AI model to think with. Paste a key from any of Anthropi
 
 - **You sign what matters.** Orders, movements and every agent's limit are signed by your browser's key; the account checks each signature.
 - **Guard or Beast.** In Guard, whatever an agent asks for waits for your yes on a card. In Beast, agents act at once — but only inside the limits you signed.
-- **A cap on every order and movement.** The server starts with `--live-cap` ($100 unless you say otherwise). From Settings you can sign a different figure, up or down, to the cent; the signed figure is what the account holds to, and it comes back after a restart. Money leaves a venue only for a place shown to be yours.
+- **A cap on every order and movement.** `--live-cap` when the server starts ($100 unless you say otherwise); from Settings you sign a different figure, up or down, to the cent, and a restart keeps it. Money leaves a venue only for a place shown to be yours.
 - **A record of everything** in a hash-chained log on your computer, and a Statement you can filter and export.
 
 ## What has and has not been tested
@@ -98,36 +88,35 @@ No real key and no real wallet has ever been used in building this. Real connect
 
 So, before you connect your own account: use a read-only key first. To write, start with a small cap and a small amount, and read the venue's own answer on the page before you trust the next one.
 
-The trust boundary is your own computer. Key files are the user's alone (0600), and the page never sees their values, but any program running as you can read them — the same is true of any wallet or broker key on a computer. The owner's key lives in your browser and cannot be exported; if that browser's storage is cleared, `npm run account -- --fresh` is the way back, and it starts the account from nothing.
+The trust boundary is your own computer. Key files are yours alone (0600) and the page never sees their values, but any program running as you can read them — as with any wallet or broker key on a computer. The owner's key lives in your browser and cannot be exported; if that browser's storage is cleared, `npm run account -- --fresh` is the way back, and it starts the account from nothing.
 
 ## Your network decides what you see
 
-openpaper has no server in the middle, and no analytics: your computer reads public prices and talks to venues directly. So your network — your country, your IP, a company firewall — decides which venues answer.
+There is no server in the middle: your computer reads public prices and talks to venues directly, so your network — your country, your IP, a company firewall — decides which venues answer.
 
-- **It asks every venue from your network** and shows what serves you. A venue that refuses your network is marked *Not served here*, with its own regional edition where it has one (Binance.US, OKX US, Polymarket US). Nothing seen from anyone else's computer decides it.
+- **It asks every venue from your network** and shows what serves you. A venue that refuses your network is marked *Not served here*, with its own regional edition where it has one (Binance.US, OKX US, Polymarket US).
 - **It never routes around a block** — no proxies, no other hosts. To match venues' published rules to your network it asks a public location check (Polymarket's, Cloudflare's or ipapi.co's).
 - **Check before you start:** `npm run account:check` prints what your network reaches, in each venue's own words. It contains no IP, place or key, so it is safe to share.
 
-Where each price comes from, and how fresh it is:
+Where each figure comes from, and how fresh it is:
 
-| Market | Read from, in order | How often | Fills a paper order? |
-|---|---|---|---|
-| Crypto | A connected venue's own stream; else Kraken, Coinbase, OKX, Binance, Bybit public tickers, and the streams of Hyperliquid, Coinbase, Kraken and OKX | Live, within seconds | Yes, on a quote at most a second old |
-| US stocks and ETFs | Robinhood real time, else Nasdaq real time; Cboe's 15-minute delayed quotes shown last and marked | Robinhood about every 15 s while a page shows the share | Only on a real-time quote, in the share's session; never on Cboe's |
-| Perpetuals | Hyperliquid's public API and stream — its own, and its HIP-3 dexes' contracts on the world's markets (shares such as NVDA and TSLA, the S&P 500 and the XYZ100, gold, oil, the euro, the ten-year), each its dex's own on its oracle's price | Live | Yes, with hourly funding and liquidation at maintenance margin |
-| Event contracts | Kalshi, Polymarket and Polymarket US public books | Live | Yes, settled at $1 or $0 when the venue says |
-| Pre-IPO and RWAs | Nine venues' public tickers; Robinhood Stock Tokens, xStocks at Gate, Ondo | On each read | Pre-IPO on paper; tokenized assets through your wallet |
-| Financials | SEC EDGAR, with `SEC_CONTACT` as the reader's name | Kept 12 hours | — |
-| News | The publishers' own feeds: the Federal Reserve, the ECB, the SEC (with `SEC_CONTACT`), CNBC, MarketWatch, the WSJ, the BBC, Nasdaq, CoinDesk, Cointelegraph, The Block, Decrypt, PR Newswire — titles, links and times only | Each kept 5 minutes; a late feed's last answer stands in | — |
-| Calendars | Nasdaq's own calendar pages: economic releases, earnings, dividends, splits, IPOs — the consensus and the figures as Nasdaq writes them | A day kept 15 minutes, a past day a day | — |
-| World indices | Cboe's delayed index quotes: S&P 500, Nasdaq-100, Dow (Cboe's DJX times a hundred), Russell 2000, S&P 100, MSCI EAFE and Emerging Markets, VIX, VXN, VVIX, the US 10-year yield | 15 minutes behind, kept a minute | — |
-| Yield curve | The US Treasury's own par yield curve, this year's and last year's files, with the 2s10s, 3m10y and 5s30s spreads read off it | Published once a day after the close; kept an hour | — |
-| Currencies | Kraken's public tickers for nine fiat pairs, live; the ECB's euro reference rates crossed to the dollar for twenty more, said as the day's fixing | Kraken kept 10 s; the ECB's fixing an hour | — |
-| Commodities | The oracle prices of Hyperliquid's xyz perpetuals — gold, silver, platinum, palladium, copper, WTI, Brent, natural gas — said as a perpetual's oracle, not the commodity's own exchange | Live, kept 20 s | — |
-| Options | Cboe's delayed option quotes for US shares and its indices, every IV and greek Cboe's own; Deribit's public summary for BTC and ETH options (its mark IV; Deribit publishes no greeks, so each delta is Black–Scholes's from that IV, said so) | Cboe kept a minute, 15 minutes behind; Deribit kept 30 s, live | — |
-| A share's page | Nasdaq's own pages for the share: quote, summary, profile, dividends, short interest, analyst ratings and targets, earnings surprises and forecasts, PEG, insider trades, institutional holdings — twelve reads in a paced line, every figure as Nasdaq writes it | Kept 5 minutes | — |
-| The screener | Nasdaq's screener list: every US-listed common share with the day's last sale and change, market cap, volume, country, IPO year, sector and industry, read in one file | Kept 5 minutes; the day's figures as Nasdaq wrote them when read | — |
-| Alerts | The market's source above for its price and its day; the news feeds and Nasdaq's earnings calendar above for the news and the earnings | Judged every 30 s while the account runs, page open or not | — |
+| What | Read from | How fresh |
+|---|---|---|
+| Crypto | A connected venue's own stream; else Kraken, Coinbase, OKX, Binance and Bybit public tickers, and the streams of Hyperliquid, Coinbase, Kraken and OKX | Live; a paper order fills on a quote at most a second old |
+| US stocks and ETFs | Robinhood real time, else Nasdaq real time; Cboe's 15-minute delayed quotes shown last and marked | About every 15 s; a paper order fills only on a real-time quote, in the share's session |
+| Perpetuals | Hyperliquid's public API and stream: its own contracts and its HIP-3 dexes' on the world's markets | Live; hourly funding, liquidation at maintenance margin |
+| Event contracts | Kalshi, Polymarket and Polymarket US public books | Live; settled at $1 or $0 when the venue says |
+| Pre-IPO and RWAs | Nine venues' public tickers; Robinhood Stock Tokens, xStocks at Gate, Ondo | On each read |
+| Financials | SEC EDGAR, with `SEC_CONTACT` as the reader's name | Kept 12 hours |
+| News | The publishers' own feeds — the Federal Reserve, the ECB, the SEC, CNBC, MarketWatch, the WSJ, the BBC, Nasdaq, CoinDesk, Cointelegraph, The Block, Decrypt, PR Newswire — titles, links and times only | Kept 5 minutes |
+| Calendars | Nasdaq's own calendar pages: economic releases, earnings, dividends, splits, IPOs | A day kept 15 minutes |
+| World indices | Cboe's delayed index quotes: S&P 500, Nasdaq-100, Dow, Russell 2000, VIX and more | 15 minutes behind |
+| Yield curve | The US Treasury's own par yield curve, with the 2s10s, 3m10y and 5s30s spreads | Published once a day after the close |
+| Currencies | Kraken's public tickers for nine fiat pairs; the ECB's euro reference rates for twenty more | Live; the ECB's is the day's fixing |
+| Commodities | The oracle prices of Hyperliquid's xyz perpetuals, said as such | Live |
+| Options | Cboe's delayed quotes for US shares and its indices, IV and greeks Cboe's own; Deribit's summary for BTC and ETH, each delta from its mark IV | 15 minutes behind; Deribit live |
+| A share's page, the screener | Nasdaq's own pages for the share and its screener list, every figure as Nasdaq writes it | Kept 5 minutes |
+| Alerts | The sources above | Judged every 30 s while the account runs, page open or not |
 
 Where no source answers, that market has no price: a paper market order is refused and a limit order waits, and the page says why.
 
@@ -143,7 +132,7 @@ On macOS:
 npm run account:service -- install --live-cap 20
 ```
 
-It starts when you log in and restarts if it stops. Also `status`, `restart` (after an update: `git pull`, then restart), `logs`, `code` (the pairing code) and `uninstall`. The service carries `BUYER_HOME`, `SEC_CONTACT`, the `PORTFOLIO_RPC_*` endpoints and the MetaMask switches from the shell that runs `install`, and nothing else: a model key belongs in a key file (the page writes one when you paste a key), not in the shell. On Linux, run `npm run account` under your own service manager for now; on Windows, in a terminal.
+It starts when you log in and restarts if it stops. Also `status`, `restart` (after `git pull`), `logs`, `code` (the pairing code) and `uninstall`. The service carries `BUYER_HOME`, `SEC_CONTACT`, the `PORTFOLIO_RPC_*` endpoints and the MetaMask switches from the shell that runs `install`, and nothing else: a model key belongs in a key file, not in the shell. On Linux, run `npm run account` under your own service manager; on Windows, in a terminal.
 
 ## Look around without anything real
 
@@ -151,7 +140,7 @@ It starts when you log in and restarts if it stops. Also `status`, `restart` (af
 npx tsx test/standin/ui-standin.ts --port 4821 --superagent
 ```
 
-The same page with stand-in venues at http://127.0.0.1:4821 — no network, no money, no key — and a desk that trades with a script, so you can watch the superagent work before you bring a key. Its Backtest tab runs on made-up history. Use `--no-desk` instead to go through the setup yourself.
+The same page with stand-in venues at http://127.0.0.1:4821 — no network, no money, no key — and a desk that trades with a script. Its Backtest tab runs on made-up history. With `--no-desk` you go through the setup yourself.
 
 ## Options and environment
 
@@ -207,7 +196,7 @@ src/runner/ src/plugins/ src/venues/ src/contract/ src/control-room/ src/wallet/
 fixtures/home/         the fixtures the account starts from (fixtures/home/portfolio/*.json) and the demos' seed
 test/                  unit/ · attack/ (every file is a closed hole) · standin/ (the stand-in account) · e2e
 site/ scripts/         the public page, and the scripts that compute its numbers
-docs/ COOKBOOK.md      the long descriptions, in Chinese
+docs/ COOKBOOK.md      the tour of each part, the cookbook and the record of how every part was built, in Chinese
 ```
 
 ## Tech stack
@@ -227,29 +216,27 @@ npx tsx test/standin/ui-standin.ts --port 4821  # the stand-in account: the same
 npm run site:numbers                            # after a new test file: the public page's numbers are recomputed, and a test pins them
 ```
 
-A few things the suite pins, so a change does not surprise you: a new `ui/*.js` goes on the list in `page-scripts.test.ts`; a new route goes in `server.ts`'s header comment; a new MCP tool goes in `mcp.ts`'s header, this README's and `docs/README.zh.md`'s counts and `site/index.html`; every pull request adds its line to [CHANGELOG.md](CHANGELOG.md). CI runs the type check and the suite on every push and pull request.
+A few things the suite pins, so a change does not surprise you: a new `ui/*.js` goes on the list in `page-scripts.test.ts`; a new route goes in `server.ts`'s header comment; a new MCP tool goes in `mcp.ts`'s header, the tool list in `docs/tour.zh.md`, the counts here and in `site/index.html`; every pull request adds its line to [CHANGELOG.md](CHANGELOG.md). CI runs the type check and the suite on every push and pull request.
 
 | Command | What it does |
 |---|---|
 | `npm run account` | The account at http://127.0.0.1:4820 (`npm run portfolio` is the same) |
 | `npm run account:check` | What your network reaches, in each venue's own words; safe to paste |
 | `npm run account:service -- <command>` | The account as a background service on macOS |
-| `npm run account:replay -- --day 2026-10-01` | A recorded day of Hyperliquid (tardis.dev; the first of each month is free) replayed through the desk on a paper account, with a script for a brain: how the desk's mechanics fare on a real day's prices, in seconds |
-| `npm run account:backtest -- --markets perp:BTC,perp:ETH` | A strategy (buy and hold, a moving-average cross, time-series momentum, a funding carry, or with `--strategy desk` the account's own desk and its seats) played over recorded bars through the paper account itself, its fills, fees, funding and liquidations by the paper account's own rules, beside a buy-and-hold. Every run is a row of a hash-chained trials ledger that deflates the next run's Sharpe, and the latest 90 days are held out: `--holdout` runs on them, `--trials` prints the ledger, `--set-holdout` moves it. `--grid fast=10,20 --folds 4` walks forward: a grid's best on each fold's past, tried on the fold (also on the page, and for agents as `portfolio_backtest_walk`). Every kept run is set beside 1,000 tries of random entries with its own exits, and `--screen RUN` sweeps a desk run's exits fast over its bars, every rule counted in the ledger (also on the page, and for agents as `portfolio_backtest_screen`). `--strategy desk --rule '{"kind":"chase","maxPct":8}'` holds the desk to a lesson's rule: a strategy of its own, set beside the same run without it |
-| `npm test` | The suite: about 210 files and 3,300 cases, among them thirty-one attack files, serial because the simulators bind fixed ports |
+| `npm run account:replay -- --day 2026-10-01` | A recorded day of Hyperliquid (tardis.dev; the first of each month is free) replayed through the desk on a paper account, in seconds |
+| `npm run account:backtest -- --markets perp:BTC,perp:ETH` | A strategy over recorded bars through the paper account's own rules, beside buy-and-hold. Every run is a row of a hash-chained trials ledger that deflates the next run's Sharpe, and the latest 90 days are held out (`--holdout`, `--trials`, `--set-holdout`); `--grid fast=10,20 --folds 4` walks forward; `--screen RUN` sweeps a desk run's exits; `--strategy desk` plays the account's own desk, and `--rule` holds it to a lesson's rule |
+| `npm run account:demo` | The account's fourteen beats, headless |
+| `npm test` | The suite: about 210 files and 3,300 cases (thirty-two of the files are attacks), serial because the simulators bind fixed ports |
 | `npm run typecheck` | `tsc --noEmit`, strict |
 | `npm run site` · `npm run site:numbers` | Preview the public page; recompute its numbers from the repository |
-| `npm run demo` · `npm run control-room` · `npm run wallet` | The earlier demos |
+| `npm run demo` · `npm run control-room` · `npm run wallet` | The earlier demos ([docs/earlier-demos.md](docs/earlier-demos.md)) |
 
 ## More
 
-- `npm run account -- --port 4825 --home ~/openpaper-second` runs a second, separate account; `--fresh` starts one from nothing.
-- In Chinese: [docs/README.zh.md](docs/README.zh.md) (the full description), [COOKBOOK.md](COOKBOOK.md) (recipes) and [docs/account.md](docs/account.md) (how every part works).
+- A second, separate account: `npm run account -- --port 4825 --home ~/openpaper-second`; `--fresh` starts one from nothing.
+- In Chinese: [COOKBOOK.md](COOKBOOK.md) (how to do each thing), [docs/tour.zh.md](docs/tour.zh.md) (the page, the door, the venues, memory, the desk and the agent interface, a section apiece) and [docs/account.md](docs/account.md) (how every part was built).
+- What changed is in [CHANGELOG.md](CHANGELOG.md), one line per merged pull request. Which openpaper you run is in Settings → Version, on the first line `npm run account` prints, and at `GET /api/now`. The latest release and `main` are supported.
 - Questions and bugs: [GitHub issues](https://github.com/linqizhe07/openpaper/issues).
-
-## Changelog and versions
-
-What changed is in [CHANGELOG.md](CHANGELOG.md), one line per merged pull request. Which openpaper you run is in Settings → Version and on the first line `npm run account` prints; `GET /api/now` says it too. The latest release and `main` are supported.
 
 ## License
 

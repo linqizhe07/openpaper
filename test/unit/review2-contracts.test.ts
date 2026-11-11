@@ -18,8 +18,10 @@ const server = read("src/portfolio/server.ts");
 const mcp = read("src/portfolio/mcp.ts");
 const cookbook = read("COOKBOOK.md");
 const readme = read("README.md");
-// the long description (the README in Chinese, kept whole when README.md became a short English one): what the contracts below pin
-const longReadme = read("docs/README.zh.md");
+// the Chinese README, the English one's peer, and the tour (docs/tour.zh.md: the page, the door, the venues, memory, the desk and the agent
+// interface, a section apiece — the detailed description the Chinese README once held): what the contracts below pin
+const readmeZh = read("docs/README.zh.md");
+const longReadme = read("docs/tour.zh.md");
 const UI = "src/portfolio/public/ui";
 const pageScripts = readdirSync(join(ROOT, UI)).filter((f) => f.endsWith(".js")).map((f) => read(`${UI}/${f}`)).join("\n");
 
@@ -52,8 +54,8 @@ describe("MCP tools: the header comment, the registry, the docs", () => {
   it("the header comment names every registered tool (F7)", () => {
     expect(registered.filter((t) => !header.includes(t))).toEqual([]);
   });
-  it("every tool the READMEs and COOKBOOK name is registered, and the long README names every tool", () => {
-    const inDocs = matches(`${readme}\n${longReadme}\n${cookbook}`, /(portfolio_[a-z_]+)/g);
+  it("every tool the READMEs, the tour and COOKBOOK name is registered, and the tour names every tool", () => {
+    const inDocs = matches(`${readme}\n${readmeZh}\n${longReadme}\n${cookbook}`, /(portfolio_[a-z_]+)/g);
     expect(inDocs.filter((t) => !registered.includes(t))).toEqual([]);
     const inReadme = matches(longReadme, /(portfolio_[a-z_]+)/g);
     expect(registered.filter((t) => !inReadme.includes(t))).toEqual([]);
@@ -123,7 +125,7 @@ describe("the docs' flags and scripts exist", () => {
   });
   it("every npm script the docs run is in package.json", () => {
     const scripts = Object.keys((JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts);
-    const named = matches(`${readme}\n${longReadme}\n${cookbook}`, /npm run ([a-z:-]+)/g);
+    const named = matches(`${readme}\n${readmeZh}\n${longReadme}\n${cookbook}`, /npm run ([a-z:-]+)/g);
     expect(named.filter((s) => !scripts.includes(s))).toEqual([]);
   });
   // F15: README and COOKBOOK count the attack files; the count once said 26 when the folder held 29
@@ -186,7 +188,7 @@ describe("a brain's key typed on the page: the route, the server's parser, the d
     // the brain says a gateway's variable blocks a saved key: a field of what it says of itself, which the catalog spreads to the page
     expect(read("src/portfolio/account/desk.ts")).toMatch(/envBlocks\?: string \| undefined;/);
   });
-  it("the long README's Grok Bot sentence says what xAI's docs say (dated): no API, webhook or MCP entry point, and not whether grok.com's connectors reach Grok Bot", () => {
+  it("the tour's Grok Bot sentence says what xAI's docs say (dated): no API, webhook or MCP entry point, and not whether grok.com's connectors reach Grok Bot", () => {
     const para = longReadme.split("\n").find((l) => l.includes("**Muse、Grok Bot、Instinct**"))!;
     expect(para).toContain("2026-10-15");
     expect(para).toMatch(/Grok Bot（2026-08-11 beta）的文档没有写任何 API、webhook 或 MCP 入口/);

@@ -82,6 +82,6 @@ describe("the mode rules", () => {
     expect(read("src/portfolio/server.ts")).toContain('if (mode !== "open" && mode !== "guard")');
     expect(read("src/portfolio/service.ts")).toContain('mode: "Guard" | "Beast";');
     expect(read("src/portfolio/service.ts")).toContain('summary: "Beast: agents trade and move inside their limits without asking"');
-    for (const f of ["src/portfolio/account/live-orders.ts", "src/portfolio/account/live-moves.ts", "src/portfolio/account/live-earn.ts", "src/portfolio/account/pay-real.ts", "src/portfolio/account/restore.ts", "src/portfolio/account/sign.ts", "src/portfolio/account/exchange.ts", "src/portfolio/service.ts", "src/portfolio/mcp.ts", "test/standin/ui-standin.ts", "README.md", "docs/README.zh.md", "COOKBOOK.md"]) expect(read(f), f).not.toMatch(/Conservative|Aggressive/);
+    for (const f of ["src/portfolio/account/live-orders.ts", "src/portfolio/account/live-moves.ts", "src/portfolio/account/live-earn.ts", "src/portfolio/account/pay-real.ts", "src/portfolio/account/restore.ts", "src/portfolio/account/sign.ts", "src/portfolio/account/exchange.ts", "src/portfolio/service.ts", "src/portfolio/mcp.ts", "test/standin/ui-standin.ts", "README.md", "docs/README.zh.md", "docs/tour.zh.md", "COOKBOOK.md"]) expect(read(f), f).not.toMatch(/Conservative|Aggressive/);
   });
 });

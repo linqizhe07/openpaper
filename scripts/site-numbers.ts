@@ -17,7 +17,7 @@ import { DEFAULT_CAP_USD } from "../src/portfolio/cli.ts";
 export const ROOT = fileURLToPath(new URL("../", import.meta.url));
 export const NUMBERS_FILE = join(ROOT, "site", "data", "numbers.json");
 
-/** the wordmark strip ("Your own accounts at"), in the long README's own order (docs/README.zh.md, its 能接什么 table): a name is here only because that table
+/** the wordmark strip ("Your own accounts at"), in the tour's own order (docs/tour.zh.md, its 能接什么 table): a name is here only because that table
  * has a row for it; an exchange carries its library id so the count of the ones not named is computed, not guessed */
 export const STRIP: ReadonlyArray<{ name: string; exchangeId?: string; watch?: boolean }> = [
   { name: "OKX", exchangeId: "okx" },
