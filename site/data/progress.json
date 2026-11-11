@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 75,
+      "title": "The README made lean in both languages; the Chinese README's detailed sections move to docs/tour.zh.md",
+      "mergedAt": "2026-11-11T17:23:55Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/75",
+      "branch": "docs/readme-lean"
+    },
+    {
       "number": 74,
       "title": "The README in two languages, with a Develop and test section",
       "mergedAt": "2026-11-11T13:29:12Z",
