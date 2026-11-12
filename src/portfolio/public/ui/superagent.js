@@ -1314,6 +1314,9 @@ function sgNoteHtml(feed, view, owner, now) {
   const s = feed.session;
   const out = [];
   if (s && s.halted) out.push(`<span class="sg-warn-t">Halted: ${esc(sgTidy(s.halted.why))}</span>`);
+  // the desk's venue could not fund an entry and has had no more free since (desk.ts DeskSession.unfunded): the desk scans nothing until
+  // it has — said with the venue's own words and the way out, so a desk that places nothing is never read as a quiet market
+  if (s && s.unfunded && s.state !== "ended") out.push(`<span class="sg-warn-t">Nothing is scanned: ${esc(sgVenueName(feed, view))} cannot fund an entry — ${esc(sgTidy(s.unfunded.words))}. ${feed.venue && feed.venue.paper ? "Add paper money to it (its Details under Venues), or free what it holds" : "Add money there, or free what it holds"}: the desk scans again once it has more.</span>`);
   // what Start (or a move) said, for a minute: done in the accent — with, until the desk's first cycle has run, that it starts within
   // seconds (the feed's own count says when it has) — or stopped short, in amber
   if (SG.started && now - SG.started.at < SG_STARTED_MS) {

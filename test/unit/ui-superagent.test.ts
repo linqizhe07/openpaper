@@ -663,6 +663,11 @@ describe("the setup: what Start the superagent signs, in order", () => {
     expect(p.out<Array<{ say: string }>>(`sgRenewSteps(${JSON.stringify(lapsed)}, SG.catalog, sgPaperVenues()[0], ${NOW})`).map((x) => x.say)).toEqual(["Sniper's trading limit, renewing"]);
     expect(note(VIEW, false)).not.toContain("data-sg-act");
     expect(note(fresh, true)).toBe("");
+    // a venue that cannot fund an entry (the desk scans nothing until it has more: desk.ts DeskSession.unfunded): said with the venue's own
+    // words and the way out — and no more once the session has ended
+    const starved = (state: string) => p.run<string>(`sgNoteHtml(${JSON.stringify(feed({ session: { ...feed().session, state, unfunded: { at: iso(NOW), venue: "paper-1", freeUsd: 31.01, words: "Paper account: not enough paper buying power — $90.17 needed, $31.01 free" } } }))}, ${JSON.stringify(fresh)}, true, Date.now())`);
+    expect(starved("live")).toBe('<span class="sg-warn-t">Nothing is scanned: Paper account cannot fund an entry — Paper account: not enough paper buying power — $90.17 needed, $31.01 free. Add paper money to it (its Details under Venues), or free what it holds: the desk scans again once it has more.</span>');
+    expect(starved("ended")).toBe("");
     // the Sniper's card says when its budget is counted afresh
     const sniper = p.out<{ word: string }>(`sgMetric("sniper", { feed: ${JSON.stringify(feed())}, view: null, seat: { kind: "house", limit: ${JSON.stringify(renewing)} }, now: ${NOW} })`);
     expect(sniper.word).toBe("$1,850.00 left of $2,000.00 · renews 17:00 New York");

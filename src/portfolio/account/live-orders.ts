@@ -603,7 +603,7 @@ export class LiveOrders {
     if (licensed) return licensed;
     // a buy signs the most it may cost; a sell signs what it is worth now, and a market sell may then fetch at most 2% less
     const worth = (p.side === "buy" ? cents(p.maxUsd) : Math.floor(p.notional * 100 + 1e-6) / 100).toFixed(2);
-    const { refuses, note: _also, ...est } = await this.estimateOf(p);
+    const { refuses, lacks: _lacks, note: _also, ...est } = await this.estimateOf(p);
     // the venue's own rule would refuse it now (what open orders hold of the cash or the holding, a book too thin for a market order's
     // size): said now, and nothing to sign — never a signature the venue then refuses
     if (refuses) return no("E_VENUE_REJECTED", { venue: p.v.id, message: refuses, detail: { beforeSigning: true } });
@@ -621,7 +621,7 @@ export class LiveOrders {
    * perpetual's liquidation price), for the quote the owner is shown: the fee at the price it is valued at, the liquidation price of the
    * position it would leave. A venue that says nothing before an order — no estimate, or one it refused or could not give in time — gives
    * nothing here, and the ticket says nothing of it: never a figure from outside the venue's rule */
-  private async estimateOf(p: Plan, o: { close?: boolean | undefined } = {}): Promise<Pick<OrderQuote, "feeUsd" | "feeBps" | "liquidationPrice" | "leverage"> & { refuses?: string | undefined; note?: string | undefined }> {
+  private async estimateOf(p: Plan, o: { close?: boolean | undefined } = {}): Promise<Pick<OrderQuote, "feeUsd" | "feeBps" | "liquidationPrice" | "leverage"> & { refuses?: string | undefined; lacks?: "money" | undefined; note?: string | undefined }> {
     const t = p.v.trader;
     if (typeof t.estimate !== "function") return {};
     try {
@@ -637,10 +637,24 @@ export class LiveOrders {
       const words = (x: unknown) => (typeof x === "string" && x.trim() ? x.trim().slice(0, 600) : undefined);
       const refuses = words(e.refuses);
       const note = words(e.note);
-      return { ...(feeUsd !== undefined ? { feeUsd: Number(feeUsd.toFixed(6)) } : {}), ...(feeBps !== undefined ? { feeBps } : {}), ...(liq !== undefined && liq > 0 ? { liquidationPrice: liq } : {}), ...(lev !== undefined && lev > 0 ? { leverage: lev } : {}), ...(refuses ? { refuses } : {}), ...(note ? { note } : {}) };
+      return { ...(feeUsd !== undefined ? { feeUsd: Number(feeUsd.toFixed(6)) } : {}), ...(feeBps !== undefined ? { feeBps } : {}), ...(liq !== undefined && liq > 0 ? { liquidationPrice: liq } : {}), ...(lev !== undefined && lev > 0 ? { leverage: lev } : {}), ...(refuses ? { refuses, ...(e.lacks === "money" ? { lacks: "money" as const } : {}) } : {}), ...(note ? { note } : {}) };
     } catch {
       return {};
     }
+  }
+
+  /** WHAT THE VENUE WOULD SAY OF AN ENTRY NOW — a read: nothing placed, nothing signed, no limit asked. A market order of `usd` dollars,
+   * planned as any order is (the venue, the market, the size, the price) and shown to its venue's own rule before an order
+   * (LiveTrader.estimate): the venue's words where it would refuse it now, and `lacks: "money"` where that is for want of buying power — a
+   * paper account whose money is all in what it holds — or nothing: the venue would take it, says nothing before an order, or the order
+   * could not be planned here (the door says why when it is sent). The desk asks before Risk's brain is asked (account/desk.ts clearing):
+   * a lead its venue cannot fund costs no thought, and is said as what it is */
+  async wouldRefuse(o: { venue: string; symbol: string; side: string; usd: number }): Promise<{ words: string; lacks?: "money" | undefined } | undefined> {
+    if (!(o.usd > 0)) return undefined;
+    const p = await this.plan(fieldsOf({ venue: o.venue, symbol: o.symbol, side: o.side, orderType: "market", qty: "", usd: String(o.usd), limitPrice: "" }));
+    if (isRefusal(p)) return undefined;
+    const est = await this.estimateOf(p);
+    return est.refuses ? { words: est.refuses, ...(est.lacks ? { lacks: est.lacks } : {}) } : undefined;
   }
 
   /** The owner's signed order: planned again, held to what was signed, placed */

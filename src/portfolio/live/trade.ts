@@ -434,6 +434,10 @@ export interface OrderEstimate {
   /** why the venue's own rule would refuse the order now, in words — what open orders hold of the cash or the holding, a book that does not
    * hold a market order's size within its worst price — so the account says it before anything is signed */
   refuses?: string | undefined;
+  /** what that refusal is for want of, where it is for want of one thing a reader can act on — "money": the venue has not the buying power
+   * (cash, or margin) for the order now. Absent on every other refusal (a sell of what is not held, a book too thin). The desk reads it: a
+   * lead its venue has no money for stops the scanning until the venue has more (account/desk.ts) */
+  lacks?: "money" | undefined;
   /** what else the order would do, in words (a close of a whole holding: the open sells on it canceled with it) */
   note?: string | undefined;
 }

@@ -512,6 +512,8 @@ GET /api/account/desk/feed?since=0     房间里 seq 之后的新行（最多 20
 
 - 纸上自主只认这个 Desk 自己的房里交易席位（Sniper · Exit · Watch）、只在它的纸上账户、只在会话没结束时；Guard 模式表里多一行 "The desk's own seats at its paper account"。
 - MCP：`portfolio_desk` 的答复带 `autonomy` 和上一轮扫描的计数。
+- **场所没钱买**（2026-11-11 起）：Risk 在问脑子之前先问场所"这么大的一单你现在收不收"（只是读，什么都不下、不签）。场所说不收，这条线索就用场所的原话拒掉，不花一次思考；如果是因为没钱——纸上账户的钱全在你自己买的持仓里——Desk 之后每一轮都不扫描，Head 每轮说一句原因和出路，Superagent 页头下面一条琥珀色的 "Nothing is scanned: … cannot fund an entry — …"。给它加纸上的钱（Account › Venues 里那个纸上账户的 Details › Add paper money…，一次签名），或者卖掉一些持仓，下一轮它就接着扫描。
+- **一段会话多长**：Agents 页 Objective… 里的 Session (hours)，1 到 336 小时（两周）。改了之后正在跑的那一段不变，下一次 Start again 按新的——不想每天签一次，就签一个长的。
 
 ## 3d · Brains：选一家模型 API，钥匙在页面上填
 

@@ -367,6 +367,9 @@ document.addEventListener("change", (e) => {
   if (form) dkBrainShow(form, t.value);
 });
 
+/* a session's hours as the desk takes them — [the least, the most]: the catalog's bounds, the desk's own clamp before it is read */
+const dkHoursBounds = () => (DK.catalog && DK.catalog.bounds && Array.isArray(DK.catalog.bounds.hours) ? DK.catalog.bounds.hours : [1, 336]);
+
 /* the objective, changed by signature */
 function dkObjectiveForm() {
   const o = DK.view.objective;
@@ -374,16 +377,19 @@ function dkObjectiveForm() {
   quoteDialog({
     title: "The objective",
     sub: "One room, one objective: what the desk is for this week. Words and numbers the house seats read; the authority stays the limits you signed.",
-    fields: `${field("Your words", `<textarea name="text" rows="2" maxlength="200">${esc(o.text)}</textarea>`)}<div class="row2">${field("Venue", select("venue", venues.map((v) => [v.id, v.name]), o.venue))}${field("Universe", select("universe", (DK.catalog ? DK.catalog.universes : []).map((u) => [u.id, u.label]), o.universe))}</div><div class="row2">${field("Target this week (%)", `<input name="targetPct" inputmode="decimal" value="${esc(String(o.targetPct))}" />`)}${field("At most, a lead (% of equity)", `<input name="maxRiskPct" inputmode="decimal" value="${esc(String(o.maxRiskPct))}" />`)}</div><div class="row2">${field("Halt at a day's loss of (%)", `<input name="maxDailyLossPct" inputmode="decimal" value="${esc(String(o.maxDailyLossPct))}" />`)}${field("Leads open at once", `<input name="maxOpen" inputmode="numeric" value="${esc(String(o.maxOpen))}" />`)}</div><div class="row2">${field("A cycle every (min)", `<input name="everyMin" inputmode="numeric" value="${esc(String(o.everyMin))}" />`)}${field("Evening report (New York)", `<input name="reportAt" value="${esc(o.reportAt)}" placeholder="21:00" />`)}</div>`,
+    fields: `${field("Your words", `<textarea name="text" rows="2" maxlength="200">${esc(o.text)}</textarea>`)}<div class="row2">${field("Venue", select("venue", venues.map((v) => [v.id, v.name]), o.venue))}${field("Universe", select("universe", (DK.catalog ? DK.catalog.universes : []).map((u) => [u.id, u.label]), o.universe))}</div><div class="row2">${field("Target this week (%)", `<input name="targetPct" inputmode="decimal" value="${esc(String(o.targetPct))}" />`)}${field("At most, a lead (% of equity)", `<input name="maxRiskPct" inputmode="decimal" value="${esc(String(o.maxRiskPct))}" />`)}</div><div class="row2">${field("Halt at a day's loss of (%)", `<input name="maxDailyLossPct" inputmode="decimal" value="${esc(String(o.maxDailyLossPct))}" />`)}${field("Leads open at once", `<input name="maxOpen" inputmode="numeric" value="${esc(String(o.maxOpen))}" />`)}</div><div class="row2">${field("A cycle every (min)", `<input name="everyMin" inputmode="numeric" value="${esc(String(o.everyMin))}" />`)}${field("Evening report (New York)", `<input name="reportAt" value="${esc(o.reportAt)}" placeholder="21:00" />`)}</div><div class="row2">${field("Session (hours)", `<input name="hours" inputmode="numeric" value="${esc(String(o.hours))}" />`)}<p class="dim small">How long a session runs before it ends, up to two weeks (${dkHoursBounds()[1]} h) — from the next one you start: the one running keeps its end.</p></div>`,
     go: "Sign the objective",
     draft(form) {
       const f = formFields(form);
       if (!String(f.text || "").trim()) return "Say what the desk is for, in a sentence.";
-      for (const k of ["targetPct", "maxRiskPct", "maxDailyLossPct", "everyMin", "maxOpen"]) if (!(Number(f[k]) > 0)) return "Every number is more than zero.";
+      for (const k of ["targetPct", "maxRiskPct", "maxDailyLossPct", "everyMin", "maxOpen", "hours"]) if (!(Number(f[k]) > 0)) return "Every number is more than zero.";
       if (!/^\d{1,2}:\d{2}$/.test(String(f.reportAt))) return "The report's hour is hh:mm, New York.";
-      return { type: "setDesk", desk: "desk", change: "objective", value: JSON.stringify({ text: String(f.text).trim(), venue: f.venue, universe: f.universe, targetPct: Number(f.targetPct), maxRiskPct: Number(f.maxRiskPct), maxDailyLossPct: Number(f.maxDailyLossPct), everyMin: Number(f.everyMin), maxOpen: Number(f.maxOpen), reportAt: f.reportAt }) };
+      // a session's hours inside what the desk takes, said here: the desk would hold one outside to the nearest end without a word
+      const [lo, hi] = dkHoursBounds();
+      if (Number(f.hours) < lo || Number(f.hours) > hi) return `A session is ${lo} to ${hi} hours, not ${String(f.hours).trim()}.`;
+      return { type: "setDesk", desk: "desk", change: "objective", value: JSON.stringify({ text: String(f.text).trim(), venue: f.venue, universe: f.universe, targetPct: Number(f.targetPct), maxRiskPct: Number(f.maxRiskPct), maxDailyLossPct: Number(f.maxDailyLossPct), hours: Number(f.hours), everyMin: Number(f.everyMin), maxOpen: Number(f.maxOpen), reportAt: f.reportAt }) };
     },
-    show(p) { const x = JSON.parse(p.action.value); return `<div class="big"><span>“${esc(x.text)}”</span></div><div class="path">At ${esc(nameOf(x.venue))} · target ${esc(dkPct(x.targetPct))} · at most ${esc(String(x.maxRiskPct))}% a lead · halt at -${esc(String(x.maxDailyLossPct))}% · ${esc(String(x.maxOpen))} open at once · every ${esc(String(x.everyMin))} min · report ${esc(x.reportAt)} New York.</div>`; },
+    show(p) { const x = JSON.parse(p.action.value); return `<div class="big"><span>“${esc(x.text)}”</span></div><div class="path">At ${esc(nameOf(x.venue))} · target ${esc(dkPct(x.targetPct))} · at most ${esc(String(x.maxRiskPct))}% a lead · halt at -${esc(String(x.maxDailyLossPct))}% · ${esc(String(x.maxOpen))} open at once · every ${esc(String(x.everyMin))} min · sessions of ${esc(String(x.hours))} h · report ${esc(x.reportAt)} New York.</div>`; },
     done: () => { forget("/api/account/desk"); return "The objective is signed."; },
   });
 }

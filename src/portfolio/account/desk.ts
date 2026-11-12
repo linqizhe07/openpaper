@@ -211,6 +211,11 @@ export interface DeskSession {
   halted?: { at: string; why: string; until: string } | undefined;
   /** cycles run in this session */
   cycles: number;
+  /** THE VENUE COULD NOT FUND AN ENTRY: Risk found the desk's venue would refuse a lead of the objective's size for want of money there (a
+   * paper account whose money is all in what it holds) — when, at which venue, what it then had free, and the venue's own words. While that
+   * venue has no more free than that, the desk scans nothing: every lead would end the same way, each costing a thought. It says so each
+   * cycle with the way out, and scans again once the venue has more (money added, a holding sold, a lead closed) */
+  unfunded?: { at: string; venue: string; freeUsd: number; words: string } | undefined;
 }
 
 export type LeadState = "scanned" | "rejected" | "cleared" | "confirmed" | "executed" | "closing" | "closed" | "refused";
@@ -470,7 +475,7 @@ export interface DeskFeed {
   lastThink: Partial<Record<RoleId, DeskThink>>;
   lastScan: DeskScan | null;
   autonomy: DeskAutonomy | null;
-  session: { state: "live" | "paused" | "halted" | "ended"; startedAt: string; endsAt: string; hours: number; cycles: number; halted?: DeskSession["halted"] } | null;
+  session: { state: "live" | "paused" | "halted" | "ended"; startedAt: string; endsAt: string; hours: number; cycles: number; halted?: DeskSession["halted"]; unfunded?: DeskSession["unfunded"] } | null;
   venue: { id: string; name: string; usd: number; paper: boolean; connected: boolean };
   equity: { nowUsd: number; startUsd: number; changeUsd: number; changePct: number; tail: Array<[number, number]> };
   target: { pct: number; progressPct: number; reachedUsd: number; targetUsd: number };
@@ -792,6 +797,11 @@ export interface DeskWorld {
   nonce(): number;
   venueName(id: string): string;
   log(row: LedgerRowInput): void;
+  /** what a venue would say of an entry of so many dollars now, by its own rule before an order — nothing placed, nothing signed
+   * (service.ts: the order desk's wouldRefuse, the venue's estimate): its words where it would refuse the order, with `lacks: "money"`
+   * where that is for want of buying power; nothing where it would take it or says nothing before an order. Absent where the account
+   * gives no such read: Risk then clears on its other checks, and the door says what the venue says */
+  wouldRefuse?(o: { venue: string; symbol: string; side: "buy" | "sell"; usd: number }): Promise<{ words: string; lacks?: "money" | undefined } | undefined>;
   /** the news and the calendar the account reads (service.ts news, calendar; live/news.ts, live/calendars.ts), where it has them: the
    * headlines Search and Risk are shown, a lead's own headlines, a US share's earnings within the week. Absent where the account reads
    * none; a reader that does not answer in a few seconds is left out of what a seat sees, never guessed at */
@@ -879,6 +889,9 @@ const PLAN = { tpPct: 1.5, slPct: 0.8, maxHours: 12 };
 const PLAN_BOUNDS = { tpPct: [0.2, 25], slPct: [0.2, 15], maxHours: [1, 168] } as const;
 
 const r2 = (n: number) => Number(n.toFixed(2));
+/** the dollars free to spend at a venue now, as the account's page has them: its cash and stablecoins not in transit — of each row, the
+ * part the venue says is free where it says only part is (the rest is margin in use, or held by open orders) */
+const freeUsdAt = (venue: AccountPage["venues"][number]): number => r2(venue.holdings.filter((h) => (h.class === "stable" || h.class === "cash") && !h.inTransit).reduce((sum, h) => sum + (h.freeUsd ?? h.usd), 0));
 const pct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 const usd = (n: number) => `${n < 0 ? "-" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 /** the places a figure carries as written (at most eight): 62420.7 → 1, 0.1 → 1, 60000 → 0 */
@@ -1847,7 +1860,7 @@ export class Desk {
     this.file.objective = o;
     if (brain) this.file.brain = brain;
     this.save();
-    this.room("you", "you", `You changed the objective: “${o.text}” · target ${pct(o.targetPct)} · at most ${o.maxRiskPct}% a lead · halt at -${o.maxDailyLossPct}% · every ${o.everyMin} min · report ${o.reportAt}.`);
+    this.room("you", "you", `You changed the objective: “${o.text}” · target ${pct(o.targetPct)} · at most ${o.maxRiskPct}% a lead · halt at -${o.maxDailyLossPct}% · every ${o.everyMin} min · sessions of ${o.hours} h · report ${o.reportAt}.`);
     if (brain) this.room("you", "you", this.brainLine(brain));
     return { ok: true, kind: "account", summary: `the desk's objective changed${brain ? `, thinking with ${brain.model} (${this.brain.label})` : ""}` };
   }
@@ -2204,6 +2217,19 @@ export class Desk {
       this.room("head", "cycle", `Cycle ${n} (${why}): the Sniper has no trading limit at ${venue.name}: the door would refuse its orders, so nothing is scanned. Give it one under Agents.`);
       return;
     }
+    // a venue that could not fund an entry (clearing) and has no more free now would refuse every lead of this cycle the same way: said as
+    // what it is, with the way out, before Search thinks. More free there (money added, a holding sold, a lead closed), or another venue:
+    // the mark goes, and the desk scans again
+    const short = f.session.unfunded;
+    if (short) {
+      const free = freeUsdAt(venue);
+      if (short.venue === venue.id && free <= short.freeUsd + 0.005) {
+        this.room("head", "cycle", `Cycle ${n} (${why}): ${venue.name} cannot fund an entry — ${short.words} — and has no more free now (${usd(free)}), so nothing is scanned. ${venue.paper ? "Add paper money to it (its Details under Venues), or free what it holds." : "Add money there, or free what it holds."}`);
+        return;
+      }
+      delete f.session.unfunded;
+      this.save();
+    }
     const scan = await this.search(venue, page);
     // Search's brain gave nothing (it did not answer, or answered with no decision), or there was no table to show it: the cycle says that,
     // never "nothing worth a lead" — the market was not judged quiet, it was not judged at all
@@ -2376,6 +2402,15 @@ export class Desk {
     if (lossRoom <= 0) return reject(`no room left in the day's loss line (${usd(today.pnlUsd)} today)`);
     if (!(maxSize > 0)) return reject(`nothing left of the Sniper's limit (${usd(limit.leftUsd)} of ${usd(limit.budgetUsd)})`);
     if (m.minNotional !== undefined && maxSize < m.minNotional) return reject(`the most this lead may be (${usd(maxSize)}) is under the venue's smallest order (${usd(m.minNotional)})`);
+    // THE VENUE'S OWN RULE ON AN ENTRY OF THIS SIZE NOW (the account's read: nothing placed, nothing signed). One it would refuse is rejected
+    // here in the venue's words, before the brain is asked: the door would only come back with the same answer. And where that is for want
+    // of money — a paper account whose money is all in what it holds — the session keeps what the venue had free: no lead of this size can
+    // be entered there until it has more, so the next cycles scan nothing and say why (cycle), instead of thinking about leads all day
+    const says = await this.world.wouldRefuse?.({ venue: venue.id, symbol: lead.symbol, side: lead.side, usd: maxSize }).catch(() => undefined);
+    if (says) {
+      if (says.lacks === "money") s.unfunded = { at: this.world.now(), venue: venue.id, freeUsd: freeUsdAt(venue), words: says.words };
+      return reject(`an entry of ${usd(maxSize)} would be refused now — ${says.words}`);
+    }
     // THE OWNER'S LESSONS (account/lessons.ts): an adopted rule on which leads to take is a hard check like the ones above, judged in numbers
     // before the brain is asked. One the market gave no number for lets the lead through and says so — never in silence
     const c = lead.checks;
@@ -3217,7 +3252,7 @@ export class Desk {
       lastThink: Object.fromEntries(Object.entries(this.lastThink).map(([k, v]) => [k, { ...v }])) as DeskFeed["lastThink"],
       lastScan: f.lastScan ?? null,
       autonomy: f.autonomy ?? null,
-      session: s ? { state, startedAt: s.startedAt, endsAt: s.endsAt, hours: s.hours, cycles: s.cycles, ...(s.halted ? { halted: s.halted } : {}) } : null,
+      session: s ? { state, startedAt: s.startedAt, endsAt: s.endsAt, hours: s.hours, cycles: s.cycles, ...(s.halted ? { halted: s.halted } : {}), ...(s.unfunded ? { unfunded: s.unfunded } : {}) } : null,
       venue,
       equity: { ...equity, tail: f.equity.slice(-FEED_EQUITY_TAIL).map(([t, u]) => [t, u] as [number, number]) },
       target,

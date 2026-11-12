@@ -104,10 +104,11 @@ async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record
   if (!registered) {
     registered = true;
     register({ kind: "standin-desk", label: "a desk stand-in", needs: "key-file", example: "", venues: [], async open(req) {
-      return { source: { name: req.label || "Ex", kind: "cex", reference: "standin", via: "a stand-in", probe: { can: ["read", "trade"], note: "" }, read: async () => [{ asset: "USDT", amount: 5000, usd: 5000 }], trader: TRADER.t, readOnlyBecause: "a stand-in moves no money" } as never, first: [{ asset: "USDT", amount: 5000, usd: 5000 }], summary: "connected" };
+      return { source: { name: req.label || "Ex", kind: "cex", reference: "standin", via: "a stand-in", probe: { can: ["read", "trade"], note: "" }, read: async () => [{ asset: "USDT", amount: BAL.usd, usd: BAL.usd }], trader: TRADER.t, readOnlyBecause: "a stand-in moves no money" } as never, first: [{ asset: "USDT", amount: 5000, usd: 5000 }], summary: "connected" };
     } });
   }
   TRADER.t = trader;
+  BAL.usd = 5000;
   let n = 0;
   // the real clock and the account's clock move together: `advance` pushes both, so kept reads (markets, prices) expire as they would
   let skew = o.at ?? 0;
@@ -146,6 +147,8 @@ async function boot(o: { home?: string; brain?: Brain | Brain[]; prices?: Record
   return { svc, desk, home, own, as, advance, letIn, limit, hire, markets, trader };
 }
 const TRADER: { t: LiveTrader } = { t: traderOf({}) };
+/** what the stand-in venue holds, in dollars: a test adds to it as an owner adds money */
+const BAL = { usd: 5000 };
 
 describe("the desk is hired", () => {
   it("what hiring offers: eight roles with charters, a key for each house seat, the brain's standing", async () => {
@@ -715,6 +718,23 @@ describe("the floor, the clock, the words", () => {
     expect(v.objective.text).toBe("Majors only, smaller");
     expect(v.brain).toMatchObject({ provider: "claude", model: "claude-haiku-5-5", effort: "low" });
     expect(readRoom(home).filter((m) => m.from === "you").slice(-2).map((m) => m.text)).toEqual([expect.stringMatching(/^You changed the objective: “Majors only, smaller”/), "You changed the brain: Claude · Anthropic API · claude-haiku-5-5 · low effort."]);
+  });
+
+  it("the objective's hours are a session's length from the next one started: the session running keeps its end, and the room says them", async () => {
+    const { desk, hire, own, home } = await boot();
+    await hire();
+    const first = (await desk.view())!.session!;
+    expect([first.hours, Date.parse(first.endsAt) - Date.parse(first.startedAt)]).toEqual([22, 22 * 3_600_000]);
+    // two weeks, the most the desk takes; more than that is held to it
+    expect(code(await own({ type: "setDesk", desk: "desk", change: "objective", value: JSON.stringify({ hours: 500 }) }))).toBe("account");
+    expect((await desk.view())!.objective.hours).toBe(336);
+    expect((await desk.view())!.session).toMatchObject({ hours: 22, endsAt: first.endsAt });
+    expect(readRoom(home).filter((m) => m.from === "you").at(-1)?.text).toContain("· sessions of 336 h ·");
+    // the session ended and a new one started: it runs the objective's hours
+    expect(code(await own({ type: "setDesk", desk: "desk", change: "end", value: "" }))).toBe("account");
+    expect(code(await own({ type: "setDesk", desk: "desk", change: "resume", value: "" }))).toBe("account");
+    const next = (await desk.view())!.session!;
+    expect([next.state, next.hours, Date.parse(next.endsAt) - Date.parse(next.startedAt)]).toEqual(["live", 336, 336 * 3_600_000]);
   });
 
   it("the room says the effort as it is SENT: a provider whose docs name no effort gets its own default, one that does not take the desk's gets its own — said so, not as the desk's word", async () => {
@@ -1460,3 +1480,81 @@ describe("the desk reads the news and the calendar, and answers the owner", () =
     expect((await mute.svc.deskAsk("anything?") as Refusal).message).toContain("the Head did not answer");
   });
 });
+
+/** A VENUE THAT CANNOT FUND AN ENTRY. The desk's first real session placed nothing for weeks and thought all the while (a limit the door
+ * refused); the next thing in its way was a paper account whose money was all in what its owner had bought. A lead its venue has no money
+ * for is rejected by Risk's hard checks in the venue's own words, before the brain is asked; the cycles after scan nothing and say why,
+ * with the way out; and once the venue has more, the desk scans again. A refusal for anything else stops only that lead */
+describe("a venue that cannot fund an entry", () => {
+  const lead = { leads: [{ symbol: "BTC/USDT", side: "buy", thesis: "BTC is up 2.5% on $2B of volume", confidence: 0.7 }], note: "" };
+  const clear = { verdict: "clear", why: "the spread is tight", sizeUsd: 40, tpPct: 2, slPct: 1, maxHours: 12 };
+  const WORDS = "Ex: not enough buying power — $50.05 needed, $10.00 free";
+
+  it("the lead is rejected in the venue's words before Risk's brain is asked; the next cycle scans nothing and says why; with more money there, the desk scans again", async () => {
+    const asked = { search: 0, risk: 0 };
+    const brain = brainOf({ search: () => (asked.search++, lead), risk: () => (asked.risk++, clear) });
+    const { desk, hire, own, trader, advance, home } = await boot({ brain });
+    let short = true;
+    const estimates: Array<{ symbol: string; side: string }> = [];
+    trader.estimate = async (o) => (estimates.push({ symbol: o.symbol, side: o.side }), short ? { refuses: WORDS, lacks: "money" } : {});
+    await hire();
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    await desk.cycle("test");
+    // the venue was asked about an entry of the objective's size (1% of $5,000); Risk's brain never was; nothing went to the door
+    expect(estimates).toEqual([{ symbol: "BTC/USDT", side: "buy" }]);
+    expect(asked).toEqual({ search: 1, risk: 0 });
+    expect(trader.placed).toEqual([]);
+    const said = () => readRoom(home).map((m) => `${m.from} ${m.kind}: ${m.text}`);
+    expect(said().find((x) => x.startsWith("risk clearance"))).toBe(`risk clearance: RISK CLEARANCE L-0001 | an entry of $50.00 would be refused now — ${WORDS} | Verdict: REJECT`);
+    expect((await desk.view())!.session?.unfunded).toMatchObject({ venue: "ex", freeUsd: 5000, words: WORDS });
+    // the next cycle: the venue has no more free, so Search is not asked either — the Head says what it is, with the way out; the feed carries it
+    advance(15 * 60_000);
+    await desk.cycle("test");
+    expect(asked).toEqual({ search: 1, risk: 0 });
+    expect(said().at(-1)).toBe(`head cycle: Cycle 2 (test): Ex cannot fund an entry — ${WORDS} — and has no more free now ($5,000.00), so nothing is scanned. Add money there, or free what it holds.`);
+    expect((await desk.feed(0))!.session?.unfunded?.words).toBe(WORDS);
+    // money arrives at the venue: the mark goes, the desk scans, Risk clears, the Sniper places
+    BAL.usd = 6000;
+    short = false;
+    advance(15 * 60_000);
+    await desk.cycle("test");
+    expect(asked).toEqual({ search: 2, risk: 1 });
+    expect(trader.placed.map((o) => [o.symbol, o.side])).toEqual([["BTC/USDT", "buy"]]);
+    expect((await desk.view())!.session?.unfunded).toBeUndefined();
+    expect((await desk.feed(0))!.session?.unfunded).toBeUndefined();
+  });
+
+  it("a refusal that is not for want of money rejects that lead alone: the next cycle scans as ever", async () => {
+    const asked = { search: 0, risk: 0 };
+    const brain = brainOf({ search: () => (asked.search++, lead), risk: () => (asked.risk++, clear) });
+    const { desk, hire, own, trader, advance, home } = await boot({ brain });
+    let thin = true;
+    trader.estimate = async () => (thin ? { refuses: "Ex: the order book holds 0.0001 BTC on the ask side within the worst price the order allows" } : {});
+    await hire();
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    await desk.cycle("test");
+    expect(asked).toEqual({ search: 1, risk: 0 });
+    expect(readRoom(home).find((m) => m.kind === "clearance")?.text).toContain("an entry of $50.00 would be refused now — Ex: the order book holds 0.0001 BTC");
+    expect((await desk.view())!.session?.unfunded).toBeUndefined();
+    thin = false;
+    advance(15 * 60_000);
+    await desk.cycle("test");
+    expect(asked).toEqual({ search: 2, risk: 1 });
+    expect(trader.placed.length).toBe(1);
+  });
+
+  it("a venue that says nothing before an order, or whose estimate fails, changes nothing: Risk clears on its other checks", async () => {
+    const asked = { risk: 0 };
+    const brain = brainOf({ search: () => lead, risk: () => (asked.risk++, clear) });
+    const { desk, hire, own, trader } = await boot({ brain });
+    trader.estimate = async () => {
+      throw new Error("the venue's estimate is down");
+    };
+    await hire();
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    await desk.cycle("test");
+    expect(asked.risk).toBe(1);
+    expect(trader.placed.length).toBe(1);
+  });
+});
+
