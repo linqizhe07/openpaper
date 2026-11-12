@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 78,
+      "title": "The desk knows when the agents' session has ended, and the renewal starts a new one",
+      "mergedAt": "2026-11-12T03:53:45Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/78",
+      "branch": "fix/desk-agents-session"
+    },
+    {
       "number": 77,
       "title": "What stops the desk is said and has a way out: a venue that cannot fund an entry, a session's length, keys and limits about to run out",
       "mergedAt": "2026-11-12T03:32:48Z",
