@@ -3,6 +3,13 @@
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
     {
+      "number": 77,
+      "title": "What stops the desk is said and has a way out: a venue that cannot fund an entry, a session's length, keys and limits about to run out",
+      "mergedAt": "2026-11-12T03:32:48Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/77",
+      "branch": "fix/desk-unfunded"
+    },
+    {
       "number": 76,
       "title": "The README cut in both languages, with a paragraph on why finance needs an open network",
       "mergedAt": "2026-11-12T02:35:47Z",
