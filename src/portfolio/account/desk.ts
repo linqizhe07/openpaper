@@ -449,6 +449,8 @@ export interface SeatLimit {
   venues: string[];
   renewHours?: number | undefined;
   renewsAt?: string | undefined;
+  /** until when the owner signed it: past that the seat has no limit, whatever is left of its budget */
+  validUntil?: string | undefined;
 }
 
 /** a seat's standing at the door: its key let in or not, its trading limit, its cards waiting — and, where the limit signed for it counts
@@ -459,6 +461,10 @@ export interface SeatStanding {
   limit?: SeatLimit | undefined;
   cards: number;
   limitVoid?: string | undefined;
+  /** until when the seat's key is let in, as the owner signed it (the newest approval): past that the door takes nothing from it. The page
+   * says a key or a limit that runs out soon before it does, and renews it with the rest — a desk hired for thirty days stopped on the
+   * thirty-first with no word but a seat's "key expired" */
+  keyUntil?: string | undefined;
 }
 
 /** The floor's read (GET /api/account/desk/feed?since=<seq>), asked every second while the floor shows: the room's lines after `since`, who
@@ -494,7 +500,7 @@ export interface DeskFeed {
    * have, in percent */
   name: string;
   objective: DeskObjective;
-  seats: Array<{ role: RoleId; kind: "house" | "outside"; name: string; status: SeatStanding["status"]; limit?: SeatLimit | undefined; limitVoid?: string | undefined }>;
+  seats: Array<{ role: RoleId; kind: "house" | "outside"; name: string; status: SeatStanding["status"]; limit?: SeatLimit | undefined; limitVoid?: string | undefined; keyUntil?: string | undefined }>;
   hard: { maxSpreadPct: number };
 }
 
@@ -2205,7 +2211,7 @@ export class Desk {
       return;
     }
     if (!sniper || sniper.status !== "ok") {
-      this.room("head", "cycle", `Cycle ${n} (${why}): the Sniper seat is ${sniper ? sniper.status : "empty"}: nothing would be placed, so nothing is scanned. Let it in under Agents.`);
+      this.room("head", "cycle", `Cycle ${n} (${why}): the Sniper seat is ${sniper ? sniper.status : "empty"}: nothing would be placed, so nothing is scanned. ${sniper && sniper.status !== "revoked" ? "Let it in again: Renew the seats' limits on the Superagent page, or under Agents." : "Let it in under Agents."}`);
       return;
     }
     // a limit that counts no more is said as what it is, with the way out: the page's renewal signs the seats' limits again in one go
@@ -2269,8 +2275,8 @@ export class Desk {
       const signed = page.spend.find((x) => x.agent === s.address && x.scope === "trade" && !x.expired && x.budgetUsd > 0);
       // a limit whose signature is not an owner's now is no limit: the door refuses what it would place (AccountEngine.limitSigner)
       const spend = signed?.void === undefined ? signed : undefined;
-      const limit: SeatLimit | undefined = spend ? { perOrderUsd: spend.perPaymentUsd, leftUsd: r2(Math.max(0, spend.budgetUsd - spend.spentUsd - spend.reservedUsd)), budgetUsd: spend.budgetUsd, venues: spend.allow, ...(spend.renewHours ? { renewHours: spend.renewHours, ...(spend.renewsAt ? { renewsAt: spend.renewsAt } : {}) } : {}) } : undefined;
-      out.set(s.role, { status, limit, cards: page.cards.filter((c) => c.agent === s.address).length, ...(signed?.void !== undefined ? { limitVoid: signed.void } : {}) });
+      const limit: SeatLimit | undefined = spend ? { perOrderUsd: spend.perPaymentUsd, leftUsd: r2(Math.max(0, spend.budgetUsd - spend.spentUsd - spend.reservedUsd)), budgetUsd: spend.budgetUsd, venues: spend.allow, ...(spend.renewHours ? { renewHours: spend.renewHours, ...(spend.renewsAt ? { renewsAt: spend.renewsAt } : {}) } : {}), validUntil: spend.validUntil } : undefined;
+      out.set(s.role, { status, limit, cards: page.cards.filter((c) => c.agent === s.address).length, ...(signed?.void !== undefined ? { limitVoid: signed.void } : {}), ...(key ? { keyUntil: key.validUntil } : {}) });
     }
     return out;
   }
@@ -3136,7 +3142,7 @@ export class Desk {
       brain: { ...brain, provider: f.brain.provider, label: this.brain.label, model: f.brain.model, effort: f.brain.effort, ...(f.brain.price ? { price: f.brain.price } : {}), spend: this.spendNow() },
       ...(f.autonomy ? { autonomy: f.autonomy } : {}),
       ...(f.lastScan ? { lastScan: f.lastScan } : {}),
-      seats: f.seats.map((x) => ({ ...x, status: standing.get(x.role)?.status ?? "not let in", limit: standing.get(x.role)?.limit, cards: standing.get(x.role)?.cards ?? 0, ...(standing.get(x.role)?.limitVoid !== undefined ? { limitVoid: standing.get(x.role)!.limitVoid } : {}) })),
+      seats: f.seats.map((x) => ({ ...x, status: standing.get(x.role)?.status ?? "not let in", limit: standing.get(x.role)?.limit, cards: standing.get(x.role)?.cards ?? 0, ...(standing.get(x.role)?.limitVoid !== undefined ? { limitVoid: standing.get(x.role)!.limitVoid } : {}), ...(standing.get(x.role)?.keyUntil !== undefined ? { keyUntil: standing.get(x.role)!.keyUntil } : {}) })),
       ...(s ? { session: { ...s, state, elapsedMs: Math.max(0, Math.min(nowMs, Date.parse(s.endedAt ?? s.endsAt)) - Date.parse(s.startedAt)), remainingMs: Math.max(0, Date.parse(s.endsAt) - nowMs) } } : {}),
       equity: { ...eq, mult: start ? Number((now / start).toFixed(3)) : 1, points: f.equity },
       target,
@@ -3288,7 +3294,7 @@ export class Desk {
       brain: { ok: brain.ok, ...(brain.ok || !brain.why ? {} : { why: brain.why }), ...(brain.ok || !brain.fix ? {} : { fix: brain.fix }), provider: f.brain.provider, label: this.brain.label, model: f.brain.model, spend: this.spendNow() },
       name: f.name,
       objective: { ...f.objective },
-      seats: f.seats.map((x) => ({ role: x.role, kind: x.kind, name: x.name, status: standing.get(x.role)?.status ?? "not let in", ...(standing.get(x.role)?.limit ? { limit: standing.get(x.role)!.limit } : {}), ...(standing.get(x.role)?.limitVoid !== undefined ? { limitVoid: standing.get(x.role)!.limitVoid } : {}) })),
+      seats: f.seats.map((x) => ({ role: x.role, kind: x.kind, name: x.name, status: standing.get(x.role)?.status ?? "not let in", ...(standing.get(x.role)?.limit ? { limit: standing.get(x.role)!.limit } : {}), ...(standing.get(x.role)?.limitVoid !== undefined ? { limitVoid: standing.get(x.role)!.limitVoid } : {}), ...(standing.get(x.role)?.keyUntil !== undefined ? { keyUntil: standing.get(x.role)!.keyUntil } : {}) })),
       hard: { maxSpreadPct: MAX_SPREAD_PCT },
     };
   }

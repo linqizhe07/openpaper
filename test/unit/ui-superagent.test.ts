@@ -679,12 +679,52 @@ describe("the setup: what Start the superagent signs, in order", () => {
     expect(p.out("ACTS.slice(1).map((d) => d.renewHours)")).toEqual([24, 24, 24]);
     expect(p.out<Array<[string, string]>>("ASKED").map(([, t]) => t)).toEqual(["Renew the seats' limits"]);
     expect(p.out("[LOADS, busy]")).toEqual([1, false]);
-    expect(p.out("SG.started")).toMatchObject({ text: "Renewed: 3 trading limits now counted afresh every 24 hours.", tone: "ok" });
+    expect(p.out("SG.started")).toMatchObject({ text: "Renewed: 1 seat let in again for 30 days, 3 trading limits now counted afresh every 24 hours.", tone: "ok" });
     // a no signs nothing
     p.run("ACTS = []; confirmSheet = async () => false");
     expect(await p.run<Promise<boolean>>("sgRenew()")).toBe(false);
     expect(p.out("ACTS")).toEqual([]);
     p.run("SG.view = null; SG.started = null");
+  });
+
+  it("a desk whose seats' keys run out within the week says so before it stops, and the renewal lets every such seat in again with the limits — the desk hired thirty days ago", () => {
+    const DAY = 24 * 60 * MIN;
+    const due = iso(NOW + 14 * 60 * MIN);
+    const when = p.run<string>(`nyDay(${JSON.stringify(due)}) + " " + nyTime(${JSON.stringify(due)}) + " New York"`);
+    // the real desk on the day this was written: every key let in until tomorrow, the Sniper's limit void (none is read from it), the Exit's
+    // signed without renewing, no Watch seat
+    const old = { ...VIEW, seats: VIEW.seats.filter((x) => x.role !== "watch").map((x) => ({ ...x, status: "ok", keyUntil: due, ...(x.role === "sniper" ? { limit: undefined, limitVoid: "it was signed by device 810765ed, which no longer signs for the account" } : x.role === "exit" ? { limit: { perOrderUsd: 5_000, leftUsd: 10_000, budgetUsd: 10_000, venues: ["paper-1"], validUntil: iso(NOW + 9 * DAY) } } : {}) })) };
+    expect(p.out<Array<{ role: string }>>(`sgKeysOut(${JSON.stringify(old)}, ${NOW})`).map((x) => x.role)).toEqual(["head", "search", "risk", "sniper", "exit"]);
+    const steps = p.out<Array<{ say: string; draft: Record<string, unknown> }>>(`sgRenewSteps(${JSON.stringify(old)}, SG.catalog, sgPaperVenues()[0], ${NOW})`);
+    // every key first — the account grants a limit only to a key let in now — then the two limits, each for thirty days
+    expect(steps.map((x) => x.say)).toEqual(["Let in Desk Head", "Let in Desk Search", "Let in Desk Risk", "Let in Desk Sniper", "Let in Desk Exit", "Sniper's trading limit, renewing", "Exit's trading limit, renewing"]);
+    expect(steps.slice(0, 5).map((x) => [x.draft.type, x.draft.validUntil])).toEqual([1, 2, 3, 4, 5].map(() => ["approveAgent", UNTIL]));
+    expect(steps.slice(5).map((x) => [x.draft.type, x.draft.renewHours, x.draft.validUntil])).toEqual([["approveSpend", 24, UNTIL], ["approveSpend", 24, UNTIL]]);
+    const words = p.run<string>(`sgRenewWords(${JSON.stringify(old)}, SG.catalog, sgPaperVenues()[0], ${NOW})`);
+    expect(words).toContain("Renewing signs a trading limit for Sniper, Exit at Paper account that renews");
+    expect(words).toContain(`It also lets Head of desk, Search, Risk, Sniper, Exit in again for 30 days: the keys of Head of desk, Search, Risk, Sniper, Exit run out ${when}.`);
+    // the line under the header: the limits first, as before, with the one button; then the keys, with when
+    p.run("SG.started = null; SG.params = {}");
+    const note = (v: unknown, owner = true) => p.run<string>(`sgNoteHtml(${JSON.stringify(feed())}, ${JSON.stringify(v)}, ${owner}, ${NOW})`);
+    const said = note(old);
+    expect(said.match(/data-sg-act="renew"/g)?.length).toBe(1);
+    expect(said).toContain(`<span class="sg-warn-t">These seats' keys run out ${when} (Head of desk, Search, Risk, Sniper, Exit): the desk stops then until they are let in again.</span>`);
+    // a desk whose limits renew already: the keys alone, and the button with them — for the owner only
+    const renewing = { perOrderUsd: 150, leftUsd: 1_850, budgetUsd: 2_000, venues: ["paper-1"], renewHours: 24, validUntil: iso(NOW + 20 * DAY) };
+    const keysOnly = { ...old, seats: old.seats.map((x) => (x.role === "sniper" || x.role === "exit" ? { ...x, limit: renewing, limitVoid: undefined } : x)) };
+    expect(note(keysOnly)).toBe(`<span class="sg-warn-t">These seats' keys run out ${when} (Head of desk, Search, Risk, Sniper, Exit): the desk stops then until they are let in again. <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button></span>`);
+    expect(note(keysOnly, false)).not.toContain("data-sg-act");
+    expect(p.out<Array<{ say: string }>>(`sgRenewSteps(${JSON.stringify(keysOnly)}, SG.catalog, sgPaperVenues()[0], ${NOW})`).map((x) => x.say)).toEqual(["Let in Desk Head", "Let in Desk Search", "Let in Desk Risk", "Let in Desk Sniper", "Let in Desk Exit"]);
+    expect(p.run<string>(`sgRenewWords(${JSON.stringify(keysOnly)}, SG.catalog, sgPaperVenues()[0], ${NOW})`)).toBe(`Renewing lets Head of desk, Search, Risk, Sniper, Exit in again for 30 days: the keys of Head of desk, Search, Risk, Sniper, Exit run out ${when}.`);
+    // a key that has run out and a renewing limit that runs out in three days, each said; keys and limits that stand for more than a week: nothing
+    const mixed = { ...keysOnly, seats: keysOnly.seats.map((x) => (x.role === "risk" ? { ...x, status: "expired" } : x.role === "sniper" ? { ...x, keyUntil: iso(NOW + 20 * DAY), limit: { ...renewing, validUntil: iso(NOW + 3 * DAY) } } : { ...x, keyUntil: iso(NOW + 20 * DAY) })) };
+    const lim = iso(NOW + 3 * DAY);
+    const limWhen = p.run<string>(`nyDay(${JSON.stringify(lim)}) + " " + nyTime(${JSON.stringify(lim)}) + " New York"`);
+    expect(note(mixed)).toBe(`<span class="sg-warn-t">This seat's key is not let in now, so the door takes nothing from it (Risk). This seat's trading limit runs out ${limWhen} (Sniper). <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button></span>`);
+    expect(p.out<Array<{ say: string }>>(`sgRenewSteps(${JSON.stringify(mixed)}, SG.catalog, sgPaperVenues()[0], ${NOW})`).map((x) => x.say)).toEqual(["Let in Desk Risk", "Sniper's trading limit, renewing"]);
+    const fine = { ...keysOnly, seats: keysOnly.seats.map((x) => ({ ...x, keyUntil: iso(NOW + 20 * DAY) })) };
+    expect(note(fine)).toBe("");
+    expect(p.run(`sgRenewSteps(${JSON.stringify(fine)}, SG.catalog, sgPaperVenues()[0], ${NOW})`)).toBe("Every trading seat's limit renews already.");
   });
 
   it("a seat whose limit counts no more — signed by a browser that signed out — is said first, with whose signature it was; the renewal signs it again, and without the button the way out is a limit under Agents", () => {

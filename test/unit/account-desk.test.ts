@@ -720,6 +720,17 @@ describe("the floor, the clock, the words", () => {
     expect(readRoom(home).filter((m) => m.from === "you").slice(-2).map((m) => m.text)).toEqual([expect.stringMatching(/^You changed the objective: “Majors only, smaller”/), "You changed the brain: Claude · Anthropic API · claude-haiku-5-5 · low effort."]);
   });
 
+  it("a seat's standing says until when its key is let in and its limit stands: what the page says before either runs out", async () => {
+    const { desk, hire } = await boot();
+    await hire();
+    const key = new Date(START + 30 * DAY).toISOString();
+    const lim = new Date(START + 7 * DAY).toISOString();
+    const v = (await desk.view())!;
+    expect(v.seats.map((x) => [x.role, x.keyUntil, x.limit?.validUntil])).toEqual([["head", key, undefined], ["search", key, undefined], ["risk", key, undefined], ["sniper", key, lim], ["exit", key, lim]]);
+    const f = (await desk.feed(0))!;
+    expect(f.seats.map((x) => [x.role, x.keyUntil, x.limit?.validUntil])).toEqual([["head", key, undefined], ["search", key, undefined], ["risk", key, undefined], ["sniper", key, lim], ["exit", key, lim]]);
+  });
+
   it("the objective's hours are a session's length from the next one started: the session running keeps its end, and the room says them", async () => {
     const { desk, hire, own, home } = await boot();
     await hire();
