@@ -453,6 +453,12 @@ export interface SeatLimit {
   validUntil?: string | undefined;
 }
 
+/** the agents' session on the account: until when any agent may write, and whether that moment has passed */
+export interface AgentsSession {
+  expiresAt: string;
+  ended: boolean;
+}
+
 /** a seat's standing at the door: its key let in or not, its trading limit, its cards waiting — and, where the limit signed for it counts
  * no more (its signature is not an owner's now: a browser that signed out), why, with no limit read from it: the door refuses whatever it
  * would place, so the desk never takes that limit for one */
@@ -502,6 +508,8 @@ export interface DeskFeed {
   objective: DeskObjective;
   seats: Array<{ role: RoleId; kind: "house" | "outside"; name: string; status: SeatStanding["status"]; limit?: SeatLimit | undefined; limitVoid?: string | undefined; keyUntil?: string | undefined }>;
   hard: { maxSpreadPct: number };
+  /** the agents' session on the account (DeskWorld.agentsSession), where the account keeps one: the floor says it ended, or a week before */
+  agents?: AgentsSession | undefined;
 }
 
 /** What the brain cost: the calls answered (`calls`, with their tokens and the estimate in dollars — the tokens of a model nobody prices
@@ -808,6 +816,10 @@ export interface DeskWorld {
    * where that is for want of buying power; nothing where it would take it or says nothing before an order. Absent where the account
    * gives no such read: Risk then clears on its other checks, and the door says what the venue says */
   wouldRefuse?(o: { venue: string; symbol: string; side: "buy" | "sell"; usd: number }): Promise<{ words: string; lacks?: "money" | undefined } | undefined>;
+  /** THE AGENTS' SESSION, as the account's dial has it (service.ts openness.sessionExpiresAt): until when any agent may write, and whether
+   * that has passed. Past it the door refuses every agent's order — the desk's own seats' among them — until the owner starts a new one;
+   * the desk says so before a seat thinks, and the page a week before it runs out. Absent where the account keeps no such dial */
+  agentsSession?(): AgentsSession;
   /** the news and the calendar the account reads (service.ts news, calendar; live/news.ts, live/calendars.ts), where it has them: the
    * headlines Search and Risk are shown, a lead's own headlines, a US share's earnings within the week. Absent where the account reads
    * none; a reader that does not answer in a few seconds is left out of what a seat sees, never guessed at */
@@ -1115,6 +1127,8 @@ export interface DeskView {
   name: string;
   createdAt: string;
   objective: DeskObjective;
+  /** the agents' session on the account (DeskWorld.agentsSession), where the account keeps one: the renewal starts a new one with the rest */
+  agents?: AgentsSession | undefined;
   brain: BrainStatus & { provider: string; label: string; effort: string; price?: BrainConfig["price"]; spend: DeskFile["spend"] };
   /** the superagent: whether the owner signed the desk's orders at its paper account to go without cards (absent: never said) */
   autonomy?: DeskAutonomy | undefined;
@@ -2205,6 +2219,14 @@ export class Desk {
       this.room("head", "cycle", `Cycle ${n} (${why}): ${open} lead${open === 1 ? "" : "s"} open, the most the objective allows — nothing new scanned.`);
       return;
     }
+    // THE AGENTS' SESSION (the account's dial): past its end the door refuses every agent's order, the desk's own seats' among them. Said
+    // before a seat thinks, with the way out, as a limit that counts no more is — a desk whose every entry the door turns away must not
+    // look for leads all day
+    const agents = this.world.agentsSession?.();
+    if (agents?.ended) {
+      this.room("head", "cycle", `Cycle ${n} (${why}): the agents' session ended on ${ny(Date.parse(agents.expiresAt)).day} (New York), so the door refuses every agent's order and nothing is scanned. Start a new one: Renew the seats' limits on the Superagent page, or Settings.`);
+      return;
+    }
     const sniper = standing.get("sniper");
     if (!f.seats.some((s) => s.role === "search")) {
       this.room("head", "cycle", `Cycle ${n} (${why}): no Search seat, so no lead is scanned.`);
@@ -3159,6 +3181,7 @@ export class Desk {
       venue,
       lessons: [...(f.lessons ?? [])].reverse(),
       versions: [...(f.versions ?? [])].reverse(),
+      ...(this.world.agentsSession ? { agents: this.world.agentsSession() } : {}),
     };
   }
 
@@ -3296,6 +3319,7 @@ export class Desk {
       objective: { ...f.objective },
       seats: f.seats.map((x) => ({ role: x.role, kind: x.kind, name: x.name, status: standing.get(x.role)?.status ?? "not let in", ...(standing.get(x.role)?.limit ? { limit: standing.get(x.role)!.limit } : {}), ...(standing.get(x.role)?.limitVoid !== undefined ? { limitVoid: standing.get(x.role)!.limitVoid } : {}), ...(standing.get(x.role)?.keyUntil !== undefined ? { keyUntil: standing.get(x.role)!.keyUntil } : {}) })),
       hard: { maxSpreadPct: MAX_SPREAD_PCT },
+      ...(this.world.agentsSession ? { agents: this.world.agentsSession() } : {}),
     };
   }
 

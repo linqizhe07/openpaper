@@ -533,7 +533,7 @@ describe("what the floor draws", () => {
 
 describe("the floor's feed", () => {
   // the spec's shape, and beside it what the floor needs without a second read: the name, the objective, the seats, Risk's spread line
-  const SHAPE = ["autonomy", "brain", "equity", "funnel", "inFlight", "lastScan", "lastThink", "leads", "room", "routines", "seq", "session", "target", "today", "venue", "working", "name", "objective", "seats", "hard"].sort();
+  const SHAPE = ["autonomy", "brain", "equity", "funnel", "inFlight", "lastScan", "lastThink", "leads", "room", "routines", "seq", "session", "target", "today", "venue", "working", "name", "objective", "seats", "hard", "agents"].sort();
 
   it("the room after a seq, oldest first, at most 200 (the newest); the rest of the shape from the desk's own record; a since past the room reads as 0", async () => {
     const { desk, hire, autonomy, own, as, home } = await boot();

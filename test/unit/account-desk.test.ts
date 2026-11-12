@@ -1535,6 +1535,31 @@ describe("a venue that cannot fund an entry", () => {
     expect((await desk.feed(0))!.session?.unfunded).toBeUndefined();
   });
 
+  it("the agents' session ended: the door would refuse every seat's order, so nothing is scanned and the Head says why — until the owner starts a new one", async () => {
+    const asked = { search: 0, risk: 0 };
+    const brain = brainOf({ search: () => (asked.search++, lead), risk: () => (asked.risk++, clear) });
+    const { desk, hire, own, svc, trader, advance, home } = await boot({ brain });
+    await hire();
+    await own({ type: "setPolicy", change: "mode", value: "open" });
+    // the view and the feed carry the session: thirty days from the account's start, not ended
+    expect((await desk.view())!.agents).toMatchObject({ ended: false });
+    expect((await desk.feed(0))!.agents).toEqual((await desk.view())!.agents);
+    // the owner stops every agent: the session ends now
+    const ended = svc.revokeAll().sessionExpiresAt;
+    await desk.cycle("test");
+    expect(asked).toEqual({ search: 0, risk: 0 });
+    expect(trader.placed).toEqual([]);
+    expect(readRoom(home).at(-1)?.text).toBe(`Cycle 1 (test): the agents' session ended on ${ended.slice(0, 10)} (New York), so the door refuses every agent's order and nothing is scanned. Start a new one: Renew the seats' limits on the Superagent page, or Settings.`);
+    expect((await desk.feed(0))!.agents).toEqual({ expiresAt: ended, ended: true });
+    // a new session, signed: the desk scans, Risk clears, the Sniper places
+    expect(code(await own({ type: "setPolicy", change: "session", value: "30d" }))).toBe("account");
+    advance(15 * 60_000);
+    await desk.cycle("test");
+    expect(asked).toEqual({ search: 1, risk: 1 });
+    expect(trader.placed.length).toBe(1);
+    expect((await desk.view())!.agents?.ended).toBe(false);
+  });
+
   it("a refusal that is not for want of money rejects that lead alone: the next cycle scans as ever", async () => {
     const asked = { search: 0, risk: 0 };
     const brain = brainOf({ search: () => (asked.search++, lead), risk: () => (asked.risk++, clear) });

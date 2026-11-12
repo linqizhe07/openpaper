@@ -842,6 +842,10 @@ function sgLimitsOut(view, catalog, now) {
   const soon = num(now) + SG_SOON_DAYS * DAY;
   return (view.seats || []).filter((s) => s.kind === "house" && sgSpec(s.role, catalog).trades && !!s.limit && num(s.limit.renewHours) > 0 && !!s.limit.validUntil && Date.parse(s.limit.validUntil) <= soon);
 }
+/* THE AGENTS' SESSION on the account (desk.ts AgentsSession, in the desk's view and its feed): "ended" — the door refuses every agent's
+   order, the desk's own seats' too — "soon" where it runs out within SG_SOON_DAYS, "" where it stands longer or the account keeps none */
+const sgSessionOut = (agents, now) => (!agents || !agents.expiresAt ? "" : agents.ended ? "ended" : Date.parse(agents.expiresAt) <= num(now) + SG_SOON_DAYS * DAY ? "soon" : "");
+const sgSessionWhen = (agents) => `${nyDay(agents.expiresAt)} ${nyTime(agents.expiresAt)} New York`;
 /* when the first of these runs out, as a person reads it: "Thu 12 Nov 12:46 New York" (`at`: what holds the moment) */
 const sgOutWhen = (list, at) => {
   const t = list.map(at).filter(Boolean).sort()[0];
@@ -861,12 +865,15 @@ function sgRenewSteps(view, catalog, venue, now) {
   // and what runs out within the week: a seat's key (any house seat's), a renewing limit — let in again and signed again with the rest
   const keys = sgKeysOut(view, now);
   const limits = [...stale, ...sgLimitsOut(view, catalog, now)];
-  if (!limits.length && !keys.length) return "Every trading seat's limit renews already.";
+  // and the agents' session on the account, ended or about to: with it gone the door refuses whatever the seats' keys and limits allow
+  const session = sgSessionOut(view.agents, now);
+  if (!limits.length && !keys.length && !session) return "Every trading seat's limit renews already.";
   const revoked = stale.find((s) => s.status === "revoked");
   if (revoked) return `${sgSpec(revoked.role, catalog).name}'s key was revoked, and a revoked key is never let in again: hire the seat again from the Agents pane first.`;
   const per = sgPer(venue, view.objective && view.objective.maxRiskPct);
   const until = num(now) + SG_SEAT_DAYS * DAY;
   const steps = [];
+  if (session) steps.push({ say: "A new session for the agents", draft: { type: "setPolicy", change: "session", value: "30d" } });
   for (const s of keys) steps.push({ say: `Let in ${s.name}`, draft: { type: "approveAgent", agentAddress: s.address, agentName: String(s.name), validUntil: until } });
   for (const s of limits) steps.push({ say: `${sgSpec(s.role, catalog).name}'s trading limit, renewing`, draft: { type: "approveSpend", agent: s.address, scope: "trade", allow: venue.id, perPayment: sgSeatLimit(venue, per).perPayment, budget: sgSeatLimit(venue, per).budget, windowHours: SG_WINDOW_HOURS, validUntil: until, renewHours: SG_RENEW_HOURS } });
   return steps;
@@ -889,6 +896,8 @@ function sgRenewWords(view, catalog, venue, now) {
     const why = [gone.length ? `${names(gone)} ${gone.length > 1 ? "are" : "is"} not let in now` : "", soon.length ? `the key${soon.length > 1 ? "s" : ""} of ${names(soon)} run${soon.length > 1 ? "" : "s"} out ${sgOutWhen(soon, (s) => s.keyUntil)}` : ""].filter(Boolean).join(", and ");
     parts.push(`${sign.length ? "It also lets" : "Renewing lets"} ${names(more)} in again for ${SG_SEAT_DAYS} days: ${why}.`);
   }
+  const session = sgSessionOut(view && view.agents, at);
+  if (session) parts.push(`${parts.length ? "It also starts" : "Renewing starts"} a new session for the agents — theirs ${session === "ended" ? "ended" : "runs out"} ${sgSessionWhen(view.agents)} — so every agent may act for 30 more days, each still only inside its limit.`);
   return parts.join(" ");
 }
 
@@ -1392,6 +1401,17 @@ function sgNoteHtml(feed, view, owner, now) {
       limitsOut.length ? `${limitsOut.length > 1 ? "These seats' trading limits run" : "This seat's trading limit runs"} out ${esc(sgOutWhen(limitsOut, (x) => x.limit.validUntil))} (${names(limitsOut)}).` : "",
     ].filter(Boolean).join(" ");
     out.push(`<span class="sg-warn-t">${said}${renew}</span>`);
+  }
+  // THE AGENTS' SESSION ENDED, OR RUNS OUT WITHIN THE WEEK (feed.agents: the account's dial). Past its end the door refuses every agent's
+  // order — the desk's own seats' too, and the desk scans nothing — whatever their keys and limits allow: said with the same way out,
+  // which starts a new one with the rest (the button once: here only where no line above has it; elsewhere it is Settings')
+  const session = sgSessionOut(feed.agents, now);
+  if (session) {
+    const can = owner && feed.venue && feed.venue.paper;
+    const above = can && (stale.length > 0 || keysOut.length > 0 || limitsOut.length > 0);
+    const renew = can && !above ? ` <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button>` : "";
+    const where = can ? "" : " (Settings, Agents' session)";
+    out.push(`<span class="sg-warn-t">${session === "ended" ? `The agents' session ended ${esc(sgSessionWhen(feed.agents))}: the door refuses every agent's order, the desk's own too, until you start a new one${where}.` : `The agents' session runs out ${esc(sgSessionWhen(feed.agents))}: every agent's order stops then until you start a new one${where}.`}${renew}</span>`);
   }
   const want = SG.params && SG.params.venue;
   if (want && feed.venue && want !== feed.venue.id && A) {
@@ -2332,10 +2352,11 @@ async function sgRenew() {
     SG.started = { at: Date.now(), text: words, tone: "warn" };
     flash = words;
   } else {
+    const session = steps.some((x) => x.draft.type === "setPolicy");
     const keys = steps.filter((x) => x.draft.type === "approveAgent").length;
     const limits = steps.filter((x) => x.draft.type === "approveSpend").length;
-    SG.started = { at: Date.now(), text: `Renewed: ${[keys ? `${plural(keys, "seat")} let in again for ${SG_SEAT_DAYS} days` : "", limits ? `${plural(limits, "trading limit")} now counted afresh every ${SG_RENEW_HOURS} hours` : ""].filter(Boolean).join(", ")}.`, tone: "ok" };
-    said = limits ? `The seats' trading limits renew now: their entries are counted afresh every ${SG_RENEW_HOURS} hours, and a close counts against none of it.` : `The seats are let in again for ${SG_SEAT_DAYS} days.`;
+    SG.started = { at: Date.now(), text: `Renewed: ${[session ? "a new session for the agents" : "", keys ? `${plural(keys, "seat")} let in again for ${SG_SEAT_DAYS} days` : "", limits ? `${plural(limits, "trading limit")} now counted afresh every ${SG_RENEW_HOURS} hours` : ""].filter(Boolean).join(", ")}.`, tone: "ok" };
+    said = limits ? `The seats' trading limits renew now: their entries are counted afresh every ${SG_RENEW_HOURS} hours, and a close counts against none of it.` : keys ? `The seats are let in again for ${SG_SEAT_DAYS} days.` : "The agents may act again for 30 days.";
   }
   sgAfter();
   await load().catch(() => {});
