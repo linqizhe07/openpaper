@@ -1,7 +1,14 @@
 {
-  "asOf": "2026-11-11",
+  "asOf": "2026-11-12",
   "source": "https://api.github.com/repos/linqizhe07/openpaper/pulls?state=closed",
   "merged": [
+    {
+      "number": 76,
+      "title": "The README cut in both languages, with a paragraph on why finance needs an open network",
+      "mergedAt": "2026-11-12T02:35:47Z",
+      "url": "https://github.com/linqizhe07/openpaper/pull/76",
+      "branch": "docs/readme-cut"
+    },
     {
       "number": 75,
       "title": "The README made lean in both languages; the Chinese README's detailed sections move to docs/tour.zh.md",
