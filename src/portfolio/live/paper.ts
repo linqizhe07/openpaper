@@ -2618,7 +2618,7 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
    * or the units it needs beyond what the open orders hold (P1 — fill's and roomFor's own sums and words), and a market order's size beyond
    * what the book holds within its worst price (P2: the stream's levels, else the source's book read for it — a book that does not answer
    * in time says nothing). A close of the whole holding counts the plain sells on it as canceled with it, and says so */
-  const wouldRefuse = async (o: Parameters<NonNullable<LiveTrader["estimate"]>>[0], q: Quoted, feeBps: number): Promise<Pick<OrderEstimate, "refuses" | "note">> => {
+  const wouldRefuse = async (o: Parameters<NonNullable<LiveTrader["estimate"]>>[0], q: Quoted, feeBps: number): Promise<Pick<OrderEstimate, "refuses" | "lacks" | "note">> => {
     if (!(o.qty > 0) || !(o.price > 0)) return {};
     const type = o.type ?? "market";
     const perp = q.m.kind === "perp";
@@ -2635,11 +2635,11 @@ export async function paperSource(req: PaperRequest): Promise<{ source: LiveSour
       if (!o.reduceOnly && !closes) {
         const lev = p?.leverage ?? levOf(o.symbol, Math.max(1, Math.floor(pos(q.m.maxLeverage) ?? b.markets[o.symbol]?.maxLeverage ?? 1)));
         const need = round((o.qty * at) / lev + charges(o.qty * at), 6);
-        if (free + 1e-9 < need) return { refuses: `${b.name}: not enough paper buying power — ${usd(need)} needed as margin and fee at ${lev}x, ${usd(Math.max(0, free))} free${heldWords(h)}` };
+        if (free + 1e-9 < need) return { refuses: `${b.name}: not enough paper buying power — ${usd(need)} needed as margin and fee at ${lev}x, ${usd(Math.max(0, free))} free${heldWords(h)}`, lacks: "money" };
       }
     } else if (o.side === "buy") {
       const need = round(o.qty * at + charges(o.qty * at), 6);
-      if (free + 1e-9 < need) return { refuses: `${b.name}: not enough paper buying power — ${usd(need)} needed, ${usd(Math.max(0, free))} free${heldWords(h)}` };
+      if (free + 1e-9 < need) return { refuses: `${b.name}: not enough paper buying power — ${usd(need)} needed, ${usd(Math.max(0, free))} free${heldWords(h)}`, lacks: "money" };
     } else {
       const held = b.holdings[o.symbol]?.qty ?? 0;
       const selling = h.units.get(o.symbol) ?? 0;

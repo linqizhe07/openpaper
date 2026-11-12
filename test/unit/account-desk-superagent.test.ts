@@ -1165,8 +1165,9 @@ describe("the plan's exits act at once (feat/paper-live p0): the entry carries t
     expect(code(r)).toBe("account");
     const v = (await desk.view())!;
     const sniper = v.seats.find((s) => s.role === "sniper")!.limit;
-    expect(sniper).toEqual({ perOrderUsd: 150, leftUsd: 2000, budgetUsd: 2000, venues: ["pap"], renewHours: 24, renewsAt: new Date(START + DAY).toISOString() });
-    expect(v.seats.find((s) => s.role === "exit")!.limit).toEqual({ perOrderUsd: 100, leftUsd: 500, budgetUsd: 500, venues: ["pap"] });
+    // each with until when it was signed: the page says a limit that runs out within the week before it does
+    expect(sniper).toEqual({ perOrderUsd: 150, leftUsd: 2000, budgetUsd: 2000, venues: ["pap"], renewHours: 24, renewsAt: new Date(START + DAY).toISOString(), validUntil: new Date(START + 30 * DAY).toISOString() });
+    expect(v.seats.find((s) => s.role === "exit")!.limit).toEqual({ perOrderUsd: 100, leftUsd: 500, budgetUsd: 500, venues: ["pap"], validUntil: new Date(START + 7 * DAY).toISOString() });
     const feedSeat = (await desk.feed(0))!.seats.find((s) => s.role === "sniper")!;
     expect(feedSeat.limit).toMatchObject({ renewHours: 24, renewsAt: new Date(START + DAY).toISOString() });
   });

@@ -883,6 +883,13 @@ describe("a paper account the owner runs: started again, paper money added, its 
     // more than the paper cash: said before anything is signed
     const big = await engine.prepare({ type: "liveOrder", venue: "paper-1", symbol: "BTC/USD", side: "buy", orderType: "market", qty: "1" });
     expect(isRefusal(big) && [big.code, big.message, (big.detail as { beforeSigning?: boolean } | undefined)?.beforeSigning]).toEqual(["E_VENUE_REJECTED", "Paper account: not enough paper buying power — $60,070.01 needed, $10,000.00 free", true]);
+    // the desk's read of the same rule (LiveOrders.wouldRefuse: nothing placed, nothing signed): the venue's words and that it is money it
+    // lacks; nothing for an entry the account can fund, or for one that cannot be planned at all
+    // (a buy in dollars is sized so that a price 2% worse still costs no more: $20,000 buys about $19,608 of it, and the fee on that)
+    expect(await engine.trade.wouldRefuse({ venue: "paper-1", symbol: "BTC/USD", side: "buy", usd: 20_000 })).toEqual({ words: "Paper account: not enough paper buying power — $19,627.40 needed, $10,000.00 free", lacks: "money" });
+    expect(await engine.trade.wouldRefuse({ venue: "paper-1", symbol: "BTC/USD", side: "buy", usd: 50 })).toBeUndefined();
+    expect(await engine.trade.wouldRefuse({ venue: "paper-1", symbol: "NOPE/USD", side: "buy", usd: 50 })).toBeUndefined();
+    expect(await engine.trade.wouldRefuse({ venue: "paper-1", symbol: "BTC/USD", side: "buy", usd: 0 })).toBeUndefined();
     // bought, and a stop-loss resting on all of it: a part sold is refused before signing, saying what is free; all of it closes, and says
     // the stop goes with it
     expect(code(await order("paper-1", { symbol: "BTC/USD", side: "buy", orderType: "market", qty: "0.1" }))).toBe("order");

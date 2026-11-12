@@ -826,6 +826,28 @@ function sgUnrenewed(view, catalog) {
   return (view.seats || []).filter((s) => s.kind === "house" && sgSpec(s.role, catalog).trades && !(s.limit && num(s.limit.renewHours) > 0));
 }
 
+/* how far ahead a key or a limit that runs out is said, and renewed with the rest: a week */
+const SG_SOON_DAYS = 7;
+/** THE DESK'S HOUSE SEATS WHOSE KEY NEEDS LETTING IN AGAIN: not let in now (it ran out, or never was — a revoked key is never let in again,
+ * and is not here), or let in only until a moment within SG_SOON_DAYS (keyUntil: desk.ts SeatStanding). A desk hired for thirty days
+ * stops on the thirty-first — the Sniper's key gone, nothing is placed — so it is said before it does, and renewed with the limits */
+function sgKeysOut(view, now) {
+  if (!view) return [];
+  const soon = num(now) + SG_SOON_DAYS * DAY;
+  return (view.seats || []).filter((s) => s.kind === "house" && s.status !== "revoked" && (s.status !== "ok" || (!!s.keyUntil && Date.parse(s.keyUntil) <= soon)));
+}
+/* its house seats that trade whose renewing limit runs out within SG_SOON_DAYS (one that does not renew, or none at all, is sgUnrenewed's) */
+function sgLimitsOut(view, catalog, now) {
+  if (!view || !catalog) return [];
+  const soon = num(now) + SG_SOON_DAYS * DAY;
+  return (view.seats || []).filter((s) => s.kind === "house" && sgSpec(s.role, catalog).trades && !!s.limit && num(s.limit.renewHours) > 0 && !!s.limit.validUntil && Date.parse(s.limit.validUntil) <= soon);
+}
+/* when the first of these runs out, as a person reads it: "Thu 12 Nov 12:46 New York" (`at`: what holds the moment) */
+const sgOutWhen = (list, at) => {
+  const t = list.map(at).filter(Boolean).sort()[0];
+  return t ? `${nyDay(t)} ${nyTime(t)} New York` : "soon";
+};
+
 /** A DESK WHOSE SEATS' LIMITS DO NOT RENEW (sgUnrenewed: hired before the renewing limit, like a Superagent from before it) spends its
  * budget once — about twenty entries — and then stops; Start again, Resume and the Agents pane's "Give a limit" re-use or draft limits
  * that do not renew, so nothing else gets it out short of ending the desk and hiring it again. Here each such seat is given the setup's
@@ -836,23 +858,38 @@ function sgRenewSteps(view, catalog, venue, now) {
   if (!view || !catalog) return "The desk is being read: a moment.";
   if (!venue || !venue.paper) return "The desk's venue is not read as a paper account now: its seats' limits renew at a paper account only.";
   const stale = sgUnrenewed(view, catalog);
-  if (!stale.length) return "Every trading seat's limit renews already.";
+  // and what runs out within the week: a seat's key (any house seat's), a renewing limit — let in again and signed again with the rest
+  const keys = sgKeysOut(view, now);
+  const limits = [...stale, ...sgLimitsOut(view, catalog, now)];
+  if (!limits.length && !keys.length) return "Every trading seat's limit renews already.";
   const revoked = stale.find((s) => s.status === "revoked");
   if (revoked) return `${sgSpec(revoked.role, catalog).name}'s key was revoked, and a revoked key is never let in again: hire the seat again from the Agents pane first.`;
   const per = sgPer(venue, view.objective && view.objective.maxRiskPct);
   const until = num(now) + SG_SEAT_DAYS * DAY;
   const steps = [];
-  for (const s of stale) if (s.status !== "ok") steps.push({ say: `Let in ${s.name}`, draft: { type: "approveAgent", agentAddress: s.address, agentName: String(s.name), validUntil: until } });
-  for (const s of stale) steps.push({ say: `${sgSpec(s.role, catalog).name}'s trading limit, renewing`, draft: { type: "approveSpend", agent: s.address, scope: "trade", allow: venue.id, perPayment: sgSeatLimit(venue, per).perPayment, budget: sgSeatLimit(venue, per).budget, windowHours: SG_WINDOW_HOURS, validUntil: until, renewHours: SG_RENEW_HOURS } });
+  for (const s of keys) steps.push({ say: `Let in ${s.name}`, draft: { type: "approveAgent", agentAddress: s.address, agentName: String(s.name), validUntil: until } });
+  for (const s of limits) steps.push({ say: `${sgSpec(s.role, catalog).name}'s trading limit, renewing`, draft: { type: "approveSpend", agent: s.address, scope: "trade", allow: venue.id, perPayment: sgSeatLimit(venue, per).perPayment, budget: sgSeatLimit(venue, per).budget, windowHours: SG_WINDOW_HOURS, validUntil: until, renewHours: SG_RENEW_HOURS } });
   return steps;
 }
 
 /* the words of the renewal, before the owner says yes: exactly what signing does, with the setup's own words for the limit */
-function sgRenewWords(view, catalog, venue) {
-  const stale = sgUnrenewed(view, catalog);
+function sgRenewWords(view, catalog, venue, now) {
+  const at = now === undefined ? nowMs() : now;
+  const sign = [...sgUnrenewed(view, catalog), ...sgLimitsOut(view, catalog, at)];
+  const keys = sgKeysOut(view, at);
   const per = sgPer(venue, view && view.objective && view.objective.maxRiskPct);
-  const names = stale.map((s) => sgSpec(s.role, catalog).name).join(", ");
-  return `Renewing signs a trading limit for ${names} at ${venue ? venue.name : "the paper account"} that renews — entries sized at ${num(view && view.objective && view.objective.maxRiskPct)}% of what the paper account holds when a session starts (${money(per)} now), ${sgLimitWords(venue, per)}, for ${SG_SEAT_DAYS} days. Each replaces the seat's limit now${stale.some((s) => s.status !== "ok") ? "; a seat whose key is not let in now is let in again first" : ""}.`;
+  const names = (l) => l.map((s) => sgSpec(s.role, catalog).name).join(", ");
+  const parts = [];
+  if (sign.length) parts.push(`Renewing signs a trading limit for ${names(sign)} at ${venue ? venue.name : "the paper account"} that renews — entries sized at ${num(view && view.objective && view.objective.maxRiskPct)}% of what the paper account holds when a session starts (${money(per)} now), ${sgLimitWords(venue, per)}, for ${SG_SEAT_DAYS} days. Each replaces the seat's limit now${sign.some((s) => s.status !== "ok") ? "; a seat whose key is not let in now is let in again first" : ""}.`);
+  // the keys let in again that the sentence above has not said: a seat's that is let in now and runs out within the week, a seat's that does not trade
+  const more = keys.filter((s) => !(sign.includes(s) && s.status !== "ok"));
+  if (more.length) {
+    const gone = more.filter((s) => s.status !== "ok");
+    const soon = more.filter((s) => s.status === "ok");
+    const why = [gone.length ? `${names(gone)} ${gone.length > 1 ? "are" : "is"} not let in now` : "", soon.length ? `the key${soon.length > 1 ? "s" : ""} of ${names(soon)} run${soon.length > 1 ? "" : "s"} out ${sgOutWhen(soon, (s) => s.keyUntil)}` : ""].filter(Boolean).join(", and ");
+    parts.push(`${sign.length ? "It also lets" : "Renewing lets"} ${names(more)} in again for ${SG_SEAT_DAYS} days: ${why}.`);
+  }
+  return parts.join(" ");
 }
 
 /** signatures one after another, each through the owner's device key (Owner.act: prepare, sign, send); the first refusal stops the rest.
@@ -1314,6 +1351,9 @@ function sgNoteHtml(feed, view, owner, now) {
   const s = feed.session;
   const out = [];
   if (s && s.halted) out.push(`<span class="sg-warn-t">Halted: ${esc(sgTidy(s.halted.why))}</span>`);
+  // the desk's venue could not fund an entry and has had no more free since (desk.ts DeskSession.unfunded): the desk scans nothing until
+  // it has — said with the venue's own words and the way out, so a desk that places nothing is never read as a quiet market
+  if (s && s.unfunded && s.state !== "ended") out.push(`<span class="sg-warn-t">Nothing is scanned: ${esc(sgVenueName(feed, view))} cannot fund an entry — ${esc(sgTidy(s.unfunded.words))}. ${feed.venue && feed.venue.paper ? "Add paper money to it (its Details under Venues), or free what it holds" : "Add money there, or free what it holds"}: the desk scans again once it has more.</span>`);
   // what Start (or a move) said, for a minute: done in the accent — with, until the desk's first cycle has run, that it starts within
   // seconds (the feed's own count says when it has) — or stopped short, in amber
   if (SG.started && now - SG.started.at < SG_STARTED_MS) {
@@ -1334,6 +1374,23 @@ function sgNoteHtml(feed, view, owner, now) {
     const none = stale.filter((x) => !x.limit && !x.limitVoid);
     const dead = voided.length ? `${voided.length > 1 ? "These seats' trading limits count" : "This seat's trading limit counts"} no more — ${voided.map((x) => `${names([x])}: ${esc(x.limitVoid)}`).join("; ")} — so the door refuses ${voided.length > 1 ? "their" : "its"} orders until ${voided.length > 1 ? "they are" : "it is"} signed again${renew ? "" : " (a limit under Agents)"}.` : "";
     const said = [dead, once.length ? `The seats' trading limits do not renew: once a budget is spent, that seat's orders stop until a new limit is signed (${names(once)}).` : "", none.length ? `${none.length > 1 ? "These seats have" : "This seat has"} no trading limit now — none was signed, or the one signed ran out — so ${none.length > 1 ? "they place" : "it places"} nothing (${names(none)}).` : ""].filter(Boolean).join(" ");
+    out.push(`<span class="sg-warn-t">${said}${renew}</span>`);
+  }
+  // A SEAT'S KEY NOT LET IN NOW, OR ONE THAT RUNS OUT WITHIN THE WEEK (sgKeysOut), and a renewing limit that does (sgLimitsOut): said before
+  // the desk stops for it — the Sniper's key gone, nothing is placed — with the same way out, which lets the seats in again and signs the
+  // limits again. A seat the lines above already name as having no limit and no key is not named twice
+  const keysOut = sgKeysOut(view, now).filter((x) => !(stale.includes(x) && x.status !== "ok"));
+  const limitsOut = feed.venue && feed.venue.paper ? sgLimitsOut(view, SG.catalog, now) : [];
+  if (keysOut.length || limitsOut.length) {
+    const names = (l) => esc(l.map((x) => sgSpec(x.role, SG.catalog).name).join(", "));
+    const gone = keysOut.filter((x) => x.status !== "ok");
+    const soon = keysOut.filter((x) => x.status === "ok");
+    const renew = owner && feed.venue && feed.venue.paper && !stale.length ? ` <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button>` : "";
+    const said = [
+      gone.length ? `${gone.length > 1 ? "These seats' keys are" : "This seat's key is"} not let in now, so the door takes nothing from ${gone.length > 1 ? "them" : "it"} (${names(gone)}).` : "",
+      soon.length ? `${soon.length > 1 ? "These seats' keys run" : "This seat's key runs"} out ${esc(sgOutWhen(soon, (x) => x.keyUntil))} (${names(soon)}): the desk stops then until ${soon.length > 1 ? "they are" : "it is"} let in again.` : "",
+      limitsOut.length ? `${limitsOut.length > 1 ? "These seats' trading limits run" : "This seat's trading limit runs"} out ${esc(sgOutWhen(limitsOut, (x) => x.limit.validUntil))} (${names(limitsOut)}).` : "",
+    ].filter(Boolean).join(" ");
     out.push(`<span class="sg-warn-t">${said}${renew}</span>`);
   }
   const want = SG.params && SG.params.venue;
@@ -2260,7 +2317,7 @@ async function sgRenew() {
     toast(steps, "no");
     return false;
   }
-  if (!(await confirmSheet(sgRenewWords(view, SG.catalog, venue), { title: "Renew the seats' limits", yes: "Sign them" }))) return false;
+  if (!(await confirmSheet(sgRenewWords(view, SG.catalog, venue, nowMs()), { title: "Renew the seats' limits", yes: "Sign them" }))) return false;
   busy = true;
   document.body.classList.add("busy");
   let out;
@@ -2275,8 +2332,10 @@ async function sgRenew() {
     SG.started = { at: Date.now(), text: words, tone: "warn" };
     flash = words;
   } else {
-    SG.started = { at: Date.now(), text: `Renewed: ${plural(steps.filter((x) => x.draft.type === "approveSpend").length, "trading limit")} now counted afresh every ${SG_RENEW_HOURS} hours.`, tone: "ok" };
-    said = `The seats' trading limits renew now: their entries are counted afresh every ${SG_RENEW_HOURS} hours, and a close counts against none of it.`;
+    const keys = steps.filter((x) => x.draft.type === "approveAgent").length;
+    const limits = steps.filter((x) => x.draft.type === "approveSpend").length;
+    SG.started = { at: Date.now(), text: `Renewed: ${[keys ? `${plural(keys, "seat")} let in again for ${SG_SEAT_DAYS} days` : "", limits ? `${plural(limits, "trading limit")} now counted afresh every ${SG_RENEW_HOURS} hours` : ""].filter(Boolean).join(", ")}.`, tone: "ok" };
+    said = limits ? `The seats' trading limits renew now: their entries are counted afresh every ${SG_RENEW_HOURS} hours, and a close counts against none of it.` : `The seats are let in again for ${SG_SEAT_DAYS} days.`;
   }
   sgAfter();
   await load().catch(() => {});
