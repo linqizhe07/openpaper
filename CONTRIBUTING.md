@@ -25,7 +25,7 @@ npx tsx test/standin/ui-standin.ts --port 4821 --superagent
 - **Keys stay in files under the home directory.** Their values never enter the page, the log, the ledger or an error message.
 - **A venue's rules are the venue's own words, read from the user's network.** Nothing in the code decides from the developer's IP, and the account never routes around a block.
 - **A runnable command in the docs never contains a placeholder value.** Readers run them verbatim.
-- **Every `/api` route is listed in the header comment of `src/portfolio/server.ts`.**
+- **Every `/api` route is listed in the header comment of `src/portfolio/server.ts`.** A new `ui/*.js` goes on the list in `test/unit/page-scripts.test.ts`; a new MCP tool goes in the header of `src/portfolio/mcp.ts`, the tool table in `docs/tour.zh.md`, and the counts in both READMEs and `site/index.html`.
 - **If you add a test file, run `npm run site:numbers`** so `site/data/numbers.json` matches.
 - **Ideas are welcome from anywhere; code is not.** Don't copy code from a project under a copyleft licence (OpenStock, whose dashboard some of Markets follows, is AGPL-3.0): a line of it would put this whole repository under that licence.
 
