@@ -727,6 +727,37 @@ describe("the setup: what Start the superagent signs, in order", () => {
     expect(p.run(`sgRenewSteps(${JSON.stringify(fine)}, SG.catalog, sgPaperVenues()[0], ${NOW})`)).toBe("Every trading seat's limit renews already.");
   });
 
+  it("the agents' session on the account, ended or a week from its end, is said under the header, and the renewal starts a new one with the rest", () => {
+    const DAY = 24 * 60 * MIN;
+    const renewing = { perOrderUsd: 150, leftUsd: 1_850, budgetUsd: 2_000, venues: ["paper-1"], renewHours: 24, validUntil: iso(NOW + 20 * DAY) };
+    // a desk with nothing else to renew: every key and limit stands for weeks
+    const fine = { ...VIEW, seats: VIEW.seats.filter((x) => x.role !== "watch").map((x) => ({ ...x, status: "ok", keyUntil: iso(NOW + 20 * DAY), ...(x.role === "sniper" || x.role === "exit" ? { limit: renewing } : {}) })) };
+    const gone = { expiresAt: iso(NOW - 7 * DAY), ended: true };
+    const when = (t: string) => p.run<string>(`nyDay(${JSON.stringify(t)}) + " " + nyTime(${JSON.stringify(t)}) + " New York"`);
+    p.run("SG.started = null; SG.params = {}");
+    const note = (agents: unknown, v: unknown = fine, owner = true, f: Record<string, unknown> = {}) => p.run<string>(`sgNoteHtml(${JSON.stringify(feed({ agents, ...f }))}, ${JSON.stringify(v)}, ${owner}, ${NOW})`);
+    // ended: the door refuses every agent's order — the one line, with the button for the owner at a paper account
+    expect(note(gone)).toBe(`<span class="sg-warn-t">The agents' session ended ${when(gone.expiresAt)}: the door refuses every agent's order, the desk's own too, until you start a new one. <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button></span>`);
+    expect(note(gone, fine, false)).toBe(`<span class="sg-warn-t">The agents' session ended ${when(gone.expiresAt)}: the door refuses every agent's order, the desk's own too, until you start a new one (Settings, Agents' session).</span>`);
+    // the renewal: one signature, the same one Settings sends; its words; what it says it did
+    const withSession = { ...fine, agents: gone };
+    expect(p.out<Array<{ say: string; draft: Record<string, unknown> }>>(`sgRenewSteps(${JSON.stringify(withSession)}, SG.catalog, sgPaperVenues()[0], ${NOW})`)).toEqual([{ say: "A new session for the agents", draft: { type: "setPolicy", change: "session", value: "30d" } }]);
+    expect(p.run<string>(`sgRenewWords(${JSON.stringify(withSession)}, SG.catalog, sgPaperVenues()[0], ${NOW})`)).toBe(`Renewing starts a new session for the agents — theirs ended ${when(gone.expiresAt)} — so every agent may act for 30 more days, each still only inside its limit.`);
+    // a week from its end: said ahead; more than a week, or an account that keeps no session: nothing
+    const soon = { expiresAt: iso(NOW + 3 * DAY), ended: false };
+    expect(note(soon)).toBe(`<span class="sg-warn-t">The agents' session runs out ${when(soon.expiresAt)}: every agent's order stops then until you start a new one. <button type="button" class="sg-link" data-sg-act="renew" data-fk="sg:renew">Renew the seats' limits…</button></span>`);
+    expect(note({ expiresAt: iso(NOW + 20 * DAY), ended: false })).toBe("");
+    expect(note(undefined)).toBe("");
+    expect(p.run(`sgRenewSteps(${JSON.stringify({ ...fine, agents: { expiresAt: iso(NOW + 20 * DAY), ended: false } })}, SG.catalog, sgPaperVenues()[0], ${NOW})`)).toBe("Every trading seat's limit renews already.");
+    // with limits to renew as well: the button once, on the line above; the session first among the signatures, and last among the words
+    const both = { ...VIEW, agents: gone };
+    const said = note(gone, VIEW);
+    expect(said.match(/data-sg-act="renew"/g)?.length).toBe(1);
+    expect(said.endsWith(`<span class="sg-warn-t">The agents' session ended ${when(gone.expiresAt)}: the door refuses every agent's order, the desk's own too, until you start a new one.</span>`)).toBe(true);
+    expect(p.out<Array<{ say: string }>>(`sgRenewSteps(${JSON.stringify(both)}, SG.catalog, sgPaperVenues()[0], ${NOW})`).map((x) => x.say)).toEqual(["A new session for the agents", "Let in Desk Watch", "Sniper's trading limit, renewing", "Exit's trading limit, renewing", "Watch's trading limit, renewing"]);
+    expect(p.run<string>(`sgRenewWords(${JSON.stringify(both)}, SG.catalog, sgPaperVenues()[0], ${NOW})`)).toMatch(/let in again first\. It also starts a new session for the agents — theirs ended /);
+  });
+
   it("a seat whose limit counts no more — signed by a browser that signed out — is said first, with whose signature it was; the renewal signs it again, and without the button the way out is a limit under Agents", () => {
     const why = "it was signed by device 810765ed, which no longer signs for the account";
     const renewing = { perOrderUsd: 150, leftUsd: 1_850, budgetUsd: 2_000, venues: ["paper-1"], renewHours: 24, renewsAt: iso(NOW + 6 * 3_600_000) };
@@ -1318,7 +1349,8 @@ describe("the review's fixes: honest words, the order of a lead's steps, the rea
   it("builds its events without writing an event kind as a `type:` literal (review2-contracts reads those as signed drafts)", () => {
     const src = source("ui/superagent.js");
     const literals = [...src.matchAll(/type:\s*"([a-zA-Z]+)"/g)].map((m) => m[1]);
-    expect(literals.filter((t) => !["approveAgent", "approveSpend", "setDesk", "approveCard"].includes(t!))).toEqual([]);
+    // (setPolicy: the renewal starts a new session for the agents, the signature Settings sends)
+    expect(literals.filter((t) => !["approveAgent", "approveSpend", "setDesk", "approveCard", "setPolicy"].includes(t!))).toEqual([]);
     // and sgPlay still gets { type, … }: what it plays
     const p = page();
     expect(p.out('sgEv("fill", { lead: "L-1", price: 2 })')).toEqual({ type: "fill", lead: "L-1", price: 2 });

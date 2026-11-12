@@ -2817,6 +2817,8 @@ export class PortfolioService {
       log: (row) => void this.ledger.append(unaddressedRow(row)),
       // what the desk's venue would say of an entry now, by its own rule before an order (the order desk's read: nothing placed or signed)
       wouldRefuse: (o) => this.account!.trade.wouldRefuse(o),
+      // the agents' session as the dial has it: past its end the door refuses every agent's write (account/live-orders.ts dial)
+      agentsSession: () => ({ expiresAt: this.openness.sessionExpiresAt, ended: Date.parse(this.openness.sessionExpiresAt) <= Date.parse(this.now()) }),
       // the desk reads what the account reads — the headlines and the calendar (live/news.ts, live/calendars.ts) — on a live account;
       // never in the lab (liveDeps.paperBars: a desk stepped over recorded bars would read today's news into a past day's cycle, and the
       // readers' pacing would slow every replayed cycle)
